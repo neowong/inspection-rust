@@ -1,0 +1,178 @@
+pub mod db;
+pub mod commands;
+pub mod services;
+
+use std::sync::Arc;
+use parking_lot::Mutex;
+use rusqlite::Connection;
+use tauri::Manager;
+
+pub struct AppState {
+    pub db: Arc<Mutex<Connection>>,
+}
+
+impl AppState {
+    pub fn new(db_path: &str) -> Self {
+        let conn = Connection::open(db_path).expect("Failed to open database");
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+            .expect("Failed to set PRAGMAs");
+        db::migrations::run_migrations(&conn).expect("Failed to run migrations");
+        db::seed_data::seed_command_pool(&conn).ok();
+        Self { db: Arc::new(Mutex::new(conn)) }
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+
+    let app_data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("inspection-rust");
+
+    std::fs::create_dir_all(&app_data_dir).ok();
+    let db_path = app_data_dir.join("inspection.db");
+    let state = AppState::new(db_path.to_str().unwrap());
+
+    // Create data directories
+    let data_dir = app_data_dir.join("data");
+    for sub in &["reports", "report_templates", "uploads", "logs"] {
+        std::fs::create_dir_all(data_dir.join(sub)).ok();
+    }
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![
+            // Devices
+            commands::devices::list_devices,
+            commands::devices::get_device,
+            commands::devices::create_device,
+            commands::devices::update_device,
+            commands::devices::delete_device,
+            commands::devices::batch_delete_devices,
+            commands::devices::check_device_status,
+            commands::devices::check_all_devices_status,
+            commands::devices::get_device_status_log,
+            // Templates
+            commands::templates::list_templates,
+            commands::templates::get_template,
+            commands::templates::create_template,
+            commands::templates::update_template,
+            commands::templates::delete_template,
+            commands::templates::batch_delete_templates,
+            commands::templates::auto_generate_template,
+            commands::templates::generate_report_template,
+            // Command Pool
+            commands::command_pool::list_vendors,
+            commands::command_pool::list_commands,
+            commands::command_pool::get_command,
+            commands::command_pool::create_command,
+            commands::command_pool::update_command,
+            commands::command_pool::delete_command,
+            commands::command_pool::batch_delete_commands,
+            // Batches
+            commands::batches::list_batches,
+            commands::batches::create_batch,
+            commands::batches::get_batch,
+            commands::batches::run_batch,
+            commands::batches::pause_batch,
+            commands::batches::stop_batch,
+            commands::batches::restart_batch,
+            commands::batches::retry_device,
+            commands::batches::delete_batch,
+            commands::batches::batch_delete_batches,
+            // AI Inspection Records
+            commands::inspection_records::delete_record,
+            commands::inspection_records::batch_delete_records,
+            commands::inspection_records::analyze_record,
+            commands::inspection_records::analyze_batch,
+            commands::inspection_records::generate_report,
+            commands::inspection_records::generate_batch_reports,
+            commands::inspection_records::download_report,
+            commands::inspection_records::download_batch_report,
+            commands::inspection_records::preview_template_context,
+            commands::inspection_records::get_active_ai_config,
+            // Offline
+            commands::offline::export_scripts,
+            commands::offline::parse_upload_file,
+            commands::offline::import_with_mapping,
+            commands::offline::upload_result,
+            commands::offline::list_imports,
+            commands::offline::delete_import,
+            // Scheduled Tasks
+            commands::scheduled_tasks::list_tasks,
+            commands::scheduled_tasks::create_task,
+            commands::scheduled_tasks::get_task,
+            commands::scheduled_tasks::update_task,
+            commands::scheduled_tasks::delete_task,
+            commands::scheduled_tasks::batch_delete_tasks,
+            commands::scheduled_tasks::pause_task,
+            commands::scheduled_tasks::resume_task,
+            // AI Config
+            commands::ai_config::list_ai_configs,
+            commands::ai_config::create_ai_config,
+            commands::ai_config::update_ai_config,
+            commands::ai_config::delete_ai_config,
+            commands::ai_config::activate_ai_config,
+            commands::ai_config::deactivate_ai_config,
+            // Report Templates
+            commands::report_templates::list_report_templates,
+            commands::report_templates::upload_template,
+            commands::report_templates::download_template,
+            commands::report_templates::preview_template,
+            commands::report_templates::delete_report_template,
+            commands::report_templates::batch_delete_report_templates,
+            // Settings
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            commands::settings::get_report_info_fields,
+            commands::settings::update_report_info_fields,
+            // Chat
+            commands::chat::chat_stream,
+            // Stats & Health (defined in lib.rs)
+            get_stats,
+            health_check,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    let db = state.db.lock();
+    let device_count: i64 = db.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get(0)).unwrap_or(0);
+    let online_count: i64 = db.query_row("SELECT COUNT(*) FROM devices WHERE status='online'", [], |r| r.get(0)).unwrap_or(0);
+    let offline_count: i64 = db.query_row("SELECT COUNT(*) FROM devices WHERE status='offline'", [], |r| r.get(0)).unwrap_or(0);
+    let template_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_templates", [], |r| r.get(0)).unwrap_or(0);
+    let command_count: i64 = db.query_row("SELECT COUNT(*) FROM command_pool", [], |r| r.get(0)).unwrap_or(0);
+    let report_template_count: i64 = db.query_row("SELECT COUNT(*) FROM report_templates", [], |r| r.get(0)).unwrap_or(0);
+    let batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches", [], |r| r.get(0)).unwrap_or(0);
+    let pending_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='pending'", [], |r| r.get(0)).unwrap_or(0);
+    let completed_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='completed'", [], |r| r.get(0)).unwrap_or(0);
+
+    Ok(serde_json::json!({
+        "device_count": device_count,
+        "online_device_count": online_count,
+        "offline_device_count": offline_count,
+        "template_count": template_count,
+        "command_count": command_count,
+        "report_template_count": report_template_count,
+        "batch_count": batch_count,
+        "pending_batch_count": pending_batch_count,
+        "completed_batch_count": completed_batch_count,
+    }))
+}
+
+#[tauri::command]
+fn health_check() -> serde_json::Value {
+    serde_json::json!({"status": "ok", "version": "3.0.0"})
+}
