@@ -4,6 +4,9 @@ import Toolbar from "../components/Toolbar";
 import DataTable from "../components/DataTable";
 import StatusBadge from "../components/StatusBadge";
 import Modal from "../components/Modal";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import { Select } from "../components/ui/Input";
 import type { AiModelConfig } from "../types";
 
 const PROVIDERS = [
@@ -145,8 +148,8 @@ export default function AiConfigPage() {
       render: (c: AiModelConfig) => (
         <span className={`inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium ${
           c.provider === "openai"
-            ? "bg-green-100 text-green-700 border-green-300"
-            : "bg-purple-100 text-purple-700 border-purple-300"
+            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+            : "bg-purple-500/15 text-purple-400 border-purple-500/30"
         }`}>
           {c.provider === "openai" ? "OpenAI" : "Anthropic"}
         </span>
@@ -156,7 +159,7 @@ export default function AiConfigPage() {
       key: "model_id",
       header: "模型ID",
       width: "160px",
-      render: (c: AiModelConfig) => <code className="text-[11px]">{c.model_id}</code>,
+      render: (c: AiModelConfig) => <code className="text-[11px] bg-transparent">{c.model_id}</code>,
     },
     {
       key: "active",
@@ -170,7 +173,7 @@ export default function AiConfigPage() {
       key: "created_at",
       header: "创建时间",
       width: "140px",
-      render: (c: AiModelConfig) => <span className="text-gray-500">{formatTime(c.created_at)}</span>,
+      render: (c: AiModelConfig) => <span className="text-[hsl(var(--text-secondary))]">{formatTime(c.created_at)}</span>,
     },
     {
       key: "actions",
@@ -179,84 +182,44 @@ export default function AiConfigPage() {
       render: (c: AiModelConfig) => (
         <div className="flex gap-1">
           {c.is_active ? (
-            <button
-              className="px-2 py-0.5 text-[11px] border border-yellow-300 text-yellow-700 rounded hover:bg-yellow-50"
-              onClick={() => handleDeactivate(c)}
-            >
-              停用
-            </button>
+            <Button variant="secondary" size="sm" onClick={() => handleDeactivate(c)}>停用</Button>
           ) : (
-            <button
-              className="px-2 py-0.5 text-[11px] bg-green-500 text-white rounded hover:bg-green-600"
-              onClick={() => handleActivate(c)}
-            >
-              启用
-            </button>
+            <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600" onClick={() => handleActivate(c)}>启用</Button>
           )}
-          <button
-            className="px-2 py-0.5 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50"
-            onClick={() => { setDeleteTarget(c); setDeleteOpen(true); }}
-          >
-            删除
-          </button>
+          <Button variant="danger" size="sm" onClick={() => { setDeleteTarget(c); setDeleteOpen(true); }}>删除</Button>
         </div>
       ),
     },
   ], [configs]);
 
-  if (loading) return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+  if (loading) return <div className="p-4 text-[hsl(var(--text-secondary))] text-sm">加载中...</div>;
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-auto">
-      <h1 className="text-lg font-bold">AI 配置</h1>
+      <h1 className="text-xl font-semibold text-[hsl(var(--text-primary))]">AI 配置</h1>
 
       {/* Form Section */}
-      <div className="bg-white rounded border border-gray-200 p-4">
-        <h2 className="text-sm font-semibold mb-3">添加 AI 模型配置</h2>
+      <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-4">
+        <h2 className="text-sm font-semibold mb-3 text-[hsl(var(--text-primary))]">添加 AI 模型配置</h2>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <FormField label="配置名称 *">
-            <input
-              className="form-input"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="例如: 生产环境GPT-4o"
-            />
+            <Input size="sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如: 生产环境GPT-4o" />
           </FormField>
           <FormField label="提供商">
-            <select
-              className="form-input"
-              value={form.provider}
-              onChange={(e) => setForm({ ...form, provider: e.target.value })}
-            >
+            <Select size="sm" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
-            </select>
+            </Select>
           </FormField>
           <FormField label="模型 ID *">
-            <input
-              className="form-input"
-              value={form.model_id}
-              onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-              placeholder="例如: gpt-4o 或 claude-sonnet-4-20250514"
-            />
+            <Input size="sm" value={form.model_id} onChange={(e) => setForm({ ...form, model_id: e.target.value })} placeholder="例如: gpt-4o 或 claude-sonnet-4-20250514" />
           </FormField>
           <FormField label="API 密钥 *">
-            <input
-              className="form-input"
-              type="password"
-              value={form.api_key}
-              onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              placeholder="sk-... 或 sk-ant-..."
-            />
+            <Input size="sm" type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-... 或 sk-ant-..." />
           </FormField>
           <FormField label="Base URL (可选)">
-            <input
-              className="form-input"
-              value={form.base_url}
-              onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-              placeholder="默认使用官方地址"
-            />
+            <Input size="sm" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder="默认使用官方地址" />
           </FormField>
         </div>
 
@@ -264,35 +227,23 @@ export default function AiConfigPage() {
         {testResult && (
           <div className={`mb-3 px-3 py-1.5 rounded text-xs ${
             testResult === "连接成功"
-              ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-red-50 text-red-600 border border-red-200"
+              ? "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))] border border-[hsl(var(--success)/0.3)]"
+              : "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.3)]"
           }`}>
             {testResult}
           </div>
         )}
 
         <div className="flex gap-2">
-          <button
-            className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
-            disabled={testing || !form.model_id.trim() || !form.api_key.trim()}
-            onClick={handleTestConnection}
-          >
-            {testing ? "测试中..." : "测试连接"}
-          </button>
-          <button
-            className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-            disabled={saving || !form.name.trim() || !form.model_id.trim() || !form.api_key.trim()}
-            onClick={handleSave}
-          >
-            {saving ? "保存中..." : "保存配置"}
-          </button>
+          <Button variant="secondary" size="sm" disabled={testing || !form.model_id.trim() || !form.api_key.trim()} loading={testing}>测试连接</Button>
+          <Button size="sm" disabled={saving || !form.name.trim() || !form.model_id.trim() || !form.api_key.trim()} loading={saving}>保存配置</Button>
         </div>
       </div>
 
       {/* Config List */}
       <div className="flex-1 min-h-0 flex flex-col gap-2">
         <Toolbar>
-          <span className="text-xs text-gray-500">共 {configs.length} 个配置</span>
+          <span className="text-xs text-[hsl(var(--text-secondary))]">共 {configs.length} 个配置</span>
         </Toolbar>
 
         <DataTable
@@ -310,42 +261,16 @@ export default function AiConfigPage() {
         onClose={() => { setDeleteOpen(false); setDeleteTarget(null); }}
         footer={
           <>
-            <button
-              className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-              onClick={() => { setDeleteOpen(false); setDeleteTarget(null); }}
-            >
-              取消
-            </button>
-            <button
-              className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-              onClick={handleDelete}
-            >
-              确认删除
-            </button>
+            <Button variant="secondary" size="sm" onClick={() => { setDeleteOpen(false); setDeleteTarget(null); }}>取消</Button>
+            <Button variant="danger" size="sm" onClick={handleDelete}>确认删除</Button>
           </>
         }
       >
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-[hsl(var(--text-primary))]">
           确定要删除配置「{deleteTarget?.name}」吗？此操作不可撤销。
         </p>
       </Modal>
 
-      {/* Form input style */}
-      <style>{`
-        .form-input {
-          width: 100%;
-          padding: 4px 8px;
-          font-size: 12px;
-          border: 1px solid #d1d5db;
-          border-radius: 4px;
-          outline: none;
-          background: #fff;
-        }
-        .form-input:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 1px #3b82f6;
-        }
-      `}</style>
     </div>
   );
 }
@@ -353,7 +278,7 @@ export default function AiConfigPage() {
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-gray-600">{label}</span>
+      <span className="text-xs text-[hsl(var(--text-secondary))]">{label}</span>
       {children}
     </label>
   );
