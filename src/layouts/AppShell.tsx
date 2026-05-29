@@ -1,16 +1,32 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
 type PageKey = "devices" | "templates" | "inspection" | "reports" | "ai-config" | "settings";
 
-const NAV_ITEMS: { key: PageKey; label: string; icon: string; path: string }[] = [
-  { key: "devices",     label: "设备管理", icon: "⊞", path: "/devices" },
-  { key: "templates",   label: "巡检模板", icon: "⊟", path: "/templates" },
-  { key: "inspection",  label: "执行巡检", icon: "▶", path: "/inspection" },
-  { key: "reports",     label: "巡检报告", icon: "▤", path: "/reports" },
-  { key: "ai-config",   label: "AI 配置",  icon: "◆", path: "/ai-config" },
-  { key: "settings",    label: "系统设置", icon: "⚙", path: "/settings" },
+const NAV_ITEMS = [
+  { key: "devices" as const,    label: "设备管理", path: "/devices" },
+  { key: "templates" as const,  label: "巡检模板", path: "/templates" },
+  { key: "inspection" as const, label: "执行巡检", path: "/inspection" },
+  { key: "reports" as const,    label: "巡检报告", path: "/reports" },
+  { key: "ai-config" as const,  label: "AI 配置",  path: "/ai-config" },
+  { key: "settings" as const,   label: "系统设置", path: "/settings" },
 ];
+
+/* ---- Inline SVG icons (16x16, currentColor) ---- */
+const Icon = ({ children }: { children: React.ReactNode }) => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    {children}
+  </svg>
+);
+
+const NAV_ICONS: Record<PageKey, React.ReactNode> = {
+  devices:    <Icon><rect x="1" y="2" width="6" height="5" rx="0.8"/><rect x="9" y="2" width="6" height="5" rx="0.8"/><rect x="1" y="9" width="6" height="5" rx="0.8"/><rect x="9" y="9" width="6" height="5" rx="0.8"/></Icon>,
+  templates:  <Icon><path d="M2 3h5l2 3h5v7H2V3z"/></Icon>,
+  inspection: <Icon><polygon points="4,2 14,8 4,14"/></Icon>,
+  reports:    <Icon><rect x="2" y="1" width="9" height="11" rx="1"/><line x1="5" y1="5" x2="8" y2="5"/><line x1="5" y1="8" x2="8" y2="8"/></Icon>,
+  "ai-config": <Icon><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/></Icon>,
+  settings:   <Icon><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></Icon>,
+};
 
 export default function AppShell() {
   const navigate = useNavigate();
@@ -18,7 +34,10 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [statusMsg, setStatusMsg] = useState("就绪");
 
-  const activeNav = NAV_ITEMS.find(item => location.pathname.startsWith(item.path));
+  const activeKey = useMemo(
+    () => NAV_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? "devices",
+    [location.pathname]
+  );
 
   useEffect(() => {
     const handler = (e: Event) => setStatusMsg((e as CustomEvent).detail);
@@ -27,87 +46,85 @@ export default function AppShell() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#f0f2f5" }}>
+    <div className="h-screen flex flex-col overflow-hidden bg-[#f5f6f8]">
       <div className="flex flex-1 overflow-hidden">
-        {/* ========== 侧边栏 ========== */}
-        <nav
-          className={`${collapsed ? "w-14" : "w-52"} shrink-0 flex flex-col transition-all duration-200`}
-          style={{
-            background: "linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
-          }}
+        {/* ====== Sidebar ====== */}
+        <aside
+          className={`${collapsed ? "w-[56px]" : "w-[212px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out relative`}
+          style={{ background: "linear-gradient(180deg, #111827 0%, #1f2937 100%)" }}
         >
-          {/* Header */}
-          <div className={`px-4 py-4 ${collapsed ? "text-center" : ""}`}>
-            {collapsed ? (
-              <span className="text-blue-400 font-bold text-sm">IN</span>
-            ) : (
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Navigation</div>
-                <div className="text-xs text-slate-400">巡检管理</div>
-              </div>
-            )}
+          {/* Brand */}
+          <div className={`flex items-center gap-3 px-4 h-12 border-b border-white/[0.06] ${collapsed ? "justify-center" : ""}`}>
+            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/25">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+                <circle cx="4" cy="7" r="2"/><circle cx="10" cy="7" r="2"/><line x1="6" y1="7" x2="8" y2="7"/>
+              </svg>
+            </div>
+            {!collapsed && <span className="text-sm font-semibold text-white tracking-tight">Inspect</span>}
           </div>
 
-          {/* Nav items */}
-          <div className="flex-1 flex flex-col gap-0.5 px-2">
+          {/* Nav */}
+          <nav className="flex-1 py-3 px-2 space-y-0.5">
             {NAV_ITEMS.map(item => {
-              const isActive = activeNav?.key === item.key;
+              const active = activeKey === item.key;
               return (
                 <button
                   key={item.key}
                   onClick={() => navigate(item.path)}
                   title={collapsed ? item.label : undefined}
                   className={`
-                    flex items-center gap-3 px-3 py-2 text-[12px] rounded-lg transition-all duration-150
-                    ${isActive
-                      ? "bg-gradient-to-r from-blue-600/30 to-blue-500/10 text-white shadow-sm shadow-blue-500/10 border border-blue-500/20"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent"
+                    flex items-center gap-3 w-full rounded-md transition-all duration-150 select-none
+                    ${collapsed ? "px-0 justify-center h-9" : "px-3 h-8"}
+                    ${active
+                      ? "bg-white/[0.08] text-white"
+                      : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
                     }
                   `}
                 >
-                  <span className={`text-sm shrink-0 ${isActive ? "text-blue-400" : "text-slate-500"}`}>
-                    {item.icon}
+                  <span className={`shrink-0 ${active ? "text-blue-400" : ""}`}>
+                    {NAV_ICONS[item.key]}
                   </span>
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                  {!collapsed && isActive && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400 shadow-sm shadow-blue-400/50" />
+                  {!collapsed && (
+                    <span className={`text-[13px] truncate ${active ? "font-medium" : ""}`}>
+                      {item.label}
+                    </span>
                   )}
                 </button>
               );
             })}
-          </div>
+          </nav>
 
-          {/* Footer */}
-          <div className={`px-3 py-3 border-t border-slate-800 ${collapsed ? "text-center" : ""}`}>
+          {/* Collapse toggle */}
+          <div className="border-t border-white/[0.06] p-2">
             <button
               onClick={() => setCollapsed(!collapsed)}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-slate-500 hover:text-slate-300 rounded transition-colors ${collapsed ? "justify-center" : ""}`}
+              className={`w-full flex items-center gap-2 text-white/30 hover:text-white/60 hover:bg-white/[0.04] rounded-md transition-colors ${collapsed ? "justify-center h-9" : "px-3 h-8"}`}
             >
-              <span className="text-sm">{collapsed ? "▸" : "◂"}</span>
-              {!collapsed && <span>收起菜单</span>}
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                style={{ transform: collapsed ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>
+                <polyline points="9,2 4,7 9,12"/>
+              </svg>
+              {!collapsed && <span className="text-[12px]">收起菜单</span>}
             </button>
           </div>
-        </nav>
+        </aside>
 
-        {/* ========== 内容区域 ========== */}
-        <main className="flex-1 overflow-auto p-4" style={{ background: "#f0f2f5" }}>
-          <div className="animate-in">
+        {/* ====== Content ====== */}
+        <main className="flex-1 overflow-auto">
+          <div className="animate-in p-5">
             <Outlet />
           </div>
         </main>
       </div>
 
-      {/* ========== 状态栏 ========== */}
-      <footer
-        className="h-7 shrink-0 flex items-center px-4 text-[11px] gap-4 select-none border-t"
-        style={{ background: "#f8fafc", borderColor: "#e2e8f0", color: "#64748b" }}
-      >
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span>{statusMsg}</span>
-        </div>
+      {/* ====== Status bar ====== */}
+      <footer className="h-[26px] shrink-0 flex items-center px-4 text-[11px] gap-3 select-none bg-white border-t border-gray-200 text-gray-400">
+        <span className="flex items-center gap-1.5">
+          <span className="w-[6px] h-[6px] rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+          {statusMsg}
+        </span>
         <span className="flex-1" />
-        <span className="text-slate-400">v3.1.0</span>
+        <span className="text-gray-300">v3.1</span>
       </footer>
     </div>
   );

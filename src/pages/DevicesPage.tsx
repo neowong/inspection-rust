@@ -217,37 +217,49 @@ export default function DevicesPage() {
     ? `确定要删除选中的 ${deleteTarget.batch.length} 个设备吗？此操作不可撤销。`
     : `确定要删除设备「${deleteTarget.single?.name}」吗？此操作不可撤销。`;
 
-  if (loading) return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+  if (loading) return <div className="flex items-center justify-center h-64 text-gray-400 text-sm">加载中...</div>;
 
   return (
-    <div className="flex flex-col gap-2 h-full">
-      <div className="flex items-center justify-between">
-        <Toolbar>
-          <button className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600" onClick={openAdd}>+ 添加设备</button>
-          <button className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100" onClick={handleRefreshAll}>刷新状态</button>
-          {selected.size > 0 && (
-            <>
-              <button className="px-3 py-1 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50" onClick={() => { setDeleteTarget({ batch: [...selected] }); setDeleteOpen(true); }}>
-                批量删除 ({selected.size})
-              </button>
-            </>
-          )}
-        </Toolbar>
-        <SearchInput value={search} onChange={setSearch} placeholder="搜索设备名称或IP..." />
+    <div className="flex flex-col h-full">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">设备管理</h1>
+          <p className="page-desc">管理网络设备的连接信息和巡检配置</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-primary" onClick={openAdd}>+ 添加设备</button>
+          <button className="btn btn-outline" onClick={handleRefreshAll}>刷新状态</button>
+        </div>
       </div>
 
-      <DataTable columns={columns} data={filtered} rowKey={(d) => d.id}
-        onRowDoubleClick={(d) => openEdit(d)} onContextMenu={onContextMenu}
-        emptyText="暂无设备，请点击「添加设备」按钮创建" />
-
-      {filtered.length > 0 && (
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <input type="checkbox" className="w-3.5 h-3.5"
-            checked={filtered.length > 0 && filtered.every((d) => selected.has(d.id))}
-            onChange={toggleSelectAll} />
-          <span>已选 {selected.size} / {filtered.length} 项</span>
+      <div className="card flex-1 flex flex-col min-h-0">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <SearchInput value={search} onChange={setSearch} placeholder="搜索设备名称或IP..." />
+            {selected.size > 0 && (
+              <span className="text-xs text-gray-500">{selected.size} 项已选</span>
+            )}
+          </div>
+          {selected.size > 0 && (
+            <button className="btn btn-danger btn-sm" onClick={() => { setDeleteTarget({ batch: [...selected] }); setDeleteOpen(true); }}>
+              删除选中
+            </button>
+          )}
         </div>
-      )}
+        <div className="flex-1 overflow-auto">
+          <DataTable columns={columns} data={filtered} rowKey={(d) => d.id}
+            onRowDoubleClick={(d) => openEdit(d)} onContextMenu={onContextMenu}
+            emptyText="暂无设备" />
+        </div>
+        {filtered.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-gray-400 border-t border-gray-100">
+            <input type="checkbox" className="w-3.5 h-3.5"
+              checked={filtered.length > 0 && filtered.every((d) => selected.has(d.id))}
+              onChange={toggleSelectAll} />
+            <span>{selected.size} / {filtered.length} 项</span>
+          </div>
+        )}
+      </div>
 
       <ContextMenu items={ctxItems} visible={ctxVisible} x={ctxPos.x} y={ctxPos.y} onClose={() => setCtxVisible(false)} />
 
@@ -255,9 +267,8 @@ export default function DevicesPage() {
         onClose={() => setEditOpen(false)}
         footer={
           <>
-            <button className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100" onClick={() => setEditOpen(false)}>取消</button>
-            <button className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-              disabled={saving || !form.name.trim() || !form.ip.trim()} onClick={handleSave}>
+            <button className="btn btn-outline btn-sm" onClick={() => setEditOpen(false)}>取消</button>
+            <button className="btn btn-primary btn-sm" disabled={saving || !form.name.trim() || !form.ip.trim()} onClick={handleSave}>
               {saving ? "保存中..." : "保存"}
             </button>
           </>
@@ -265,30 +276,30 @@ export default function DevicesPage() {
       >
         <div className="grid grid-cols-2 gap-3">
           <FormField label="设备名称 *">
-            <input className="finput" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如: core-switch-01" />
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如: core-switch-01" />
           </FormField>
           <FormField label="IP地址 *">
-            <input className="finput" value={form.ip} onChange={(e) => setForm({ ...form, ip: e.target.value })} placeholder="例如: 192.168.1.1" />
+            <input className="input" value={form.ip} onChange={(e) => setForm({ ...form, ip: e.target.value })} placeholder="例如: 192.168.1.1" />
           </FormField>
           <FormField label="厂商">
-            <select className="finput" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
+            <select className="select" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
               {VENDORS.map((v) => (<option key={v} value={v}>{v}</option>))}
             </select>
           </FormField>
           <FormField label="型号">
-            <input className="finput" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="例如: S5130-52S-EI" />
+            <input className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="例如: S5130-52S-EI" />
           </FormField>
           <FormField label="SSH用户名">
-            <input className="finput" value={form.ssh_username} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="例如: admin" />
+            <input className="input" value={form.ssh_username} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="例如: admin" />
           </FormField>
           <FormField label="SSH密码">
-            <input className="finput" type="password" value={form.ssh_password} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder="留空则不修改" />
+            <input className="input" type="password" value={form.ssh_password} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder="留空则不修改" />
           </FormField>
           <FormField label="SSH端口">
-            <input className="finput" type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: parseInt(e.target.value) || 22 })} />
+            <input className="input" type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: parseInt(e.target.value) || 22 })} />
           </FormField>
           <FormField label="模板ID">
-            <input className="finput" type="number" value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })} placeholder="可选" />
+            <input className="input" type="number" value={form.template_id} onChange={(e) => setForm({ ...form, template_id: e.target.value })} placeholder="可选" />
           </FormField>
         </div>
       </Modal>
@@ -297,21 +308,13 @@ export default function DevicesPage() {
         onClose={() => { setDeleteOpen(false); setDeleteTarget({}); }}
         footer={
           <>
-            <button className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100" onClick={() => { setDeleteOpen(false); setDeleteTarget({}); }}>取消</button>
-            <button className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600" onClick={handleDelete}>确认删除</button>
+            <button className="btn btn-outline btn-sm" onClick={() => { setDeleteOpen(false); setDeleteTarget({}); }}>取消</button>
+            <button className="btn btn-danger btn-sm" onClick={handleDelete}>确认删除</button>
           </>
         }
       >
         <p className="text-sm text-gray-700">{deleteBody}</p>
       </Modal>
-
-      <style>{`
-        .finput {
-          width: 100%; padding: 4px 8px; font-size: 12px;
-          border: 1px solid #d1d5db; border-radius: 4px; outline: none; background: #fff;
-        }
-        .finput:focus { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
-      `}</style>
     </div>
   );
 }

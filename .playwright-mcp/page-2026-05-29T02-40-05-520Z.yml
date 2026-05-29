@@ -1,0 +1,54 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]: Inspect
+      - navigation [ref=e12]:
+        - button "设备管理" [ref=e13] [cursor=pointer]:
+          - img [ref=e15]
+          - generic [ref=e20]: 设备管理
+        - button "巡检模板" [ref=e21] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e25]: 巡检模板
+        - button "执行巡检" [ref=e26] [cursor=pointer]:
+          - img [ref=e28]
+          - generic [ref=e30]: 执行巡检
+        - button "巡检报告" [ref=e31] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e35]: 巡检报告
+        - button "AI 配置" [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+          - generic [ref=e40]: AI 配置
+        - button "系统设置" [ref=e41] [cursor=pointer]:
+          - img [ref=e43]
+          - generic [ref=e46]: 系统设置
+      - button "收起菜单" [ref=e48] [cursor=pointer]:
+        - img [ref=e49]
+        - generic [ref=e51]: 收起菜单
+    - main [ref=e52]:
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - button "+ 添加设备" [ref=e57] [cursor=pointer]
+            - button "刷新状态" [ref=e58] [cursor=pointer]
+          - generic [ref=e59]:
+            - generic [ref=e60]: 🔍
+            - textbox "搜索设备名称或IP..." [ref=e61]
+        - table [ref=e64]:
+          - rowgroup [ref=e65]:
+            - row "设备名称 IP地址 厂商 型号 状态 最后检测 操作" [ref=e66]:
+              - columnheader [ref=e67]
+              - columnheader "设备名称" [ref=e68]
+              - columnheader "IP地址" [ref=e69]
+              - columnheader "厂商" [ref=e70]
+              - columnheader "型号" [ref=e71]
+              - columnheader "状态" [ref=e72]
+              - columnheader "最后检测" [ref=e73]
+              - columnheader "操作" [ref=e74]
+          - rowgroup [ref=e75]:
+            - row "暂无设备，请点击「添加设备」按钮创建" [ref=e76]:
+              - cell "暂无设备，请点击「添加设备」按钮创建" [ref=e77]
+  - contentinfo [ref=e78]:
+    - generic [ref=e79]: 就绪
+    - generic [ref=e81]: v3.1

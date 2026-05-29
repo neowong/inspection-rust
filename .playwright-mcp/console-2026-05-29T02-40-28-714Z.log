@@ -1,0 +1,34 @@
+[      74ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:21608
+[      94ms] [ERROR] TypeError: Cannot read properties of undefined (reading 'invoke')
+    at invoke (http://localhost:1420/node_modules/.vite/deps/@tauri-apps_api_core.js?v=c18ccd54:111:37)
+    at http://localhost:1420/src/pages/TemplatesPage.tsx:58:11
+    at http://localhost:1420/src/pages/TemplatesPage.tsx:71:5
+    at commitHookEffectListMount (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:16963:34)
+    at commitPassiveMountOnFiber (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18206:19)
+    at commitPassiveMountEffects_complete (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18179:17)
+    at commitPassiveMountEffects_begin (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18169:15)
+    at commitPassiveMountEffects (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18159:11)
+    at flushPassiveEffectsImpl (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19543:11)
+    at flushPassiveEffects (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19500:22) @ http://localhost:1420/src/pages/TemplatesPage.tsx:64
+[      94ms] [ERROR] TypeError: Cannot read properties of undefined (reading 'invoke')
+    at invoke (http://localhost:1420/node_modules/.vite/deps/@tauri-apps_api_core.js?v=c18ccd54:111:37)
+    at http://localhost:1420/src/pages/TemplatesPage.tsx:58:11
+    at http://localhost:1420/src/pages/TemplatesPage.tsx:71:5
+    at commitHookEffectListMount (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:16963:34)
+    at invokePassiveEffectMountInDEV (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18374:19)
+    at invokeEffectsInDev (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19754:19)
+    at commitDoubleInvokeEffectsInDEV (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19739:15)
+    at flushPassiveEffectsImpl (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19556:13)
+    at flushPassiveEffects (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19500:22)
+    at http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19381:17 @ http://localhost:1420/src/pages/TemplatesPage.tsx:64
+[  104155ms] [ERROR] TypeError: Cannot read properties of undefined (reading 'invoke')
+    at invoke (http://localhost:1420/node_modules/.vite/deps/@tauri-apps_api_core.js?v=c18ccd54:111:37)
+    at http://localhost:1420/src/pages/TemplatesPage.tsx?t=1780022532771:58:11
+    at http://localhost:1420/src/pages/TemplatesPage.tsx?t=1780022532771:71:5
+    at commitHookEffectListMount (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:16963:34)
+    at commitPassiveMountOnFiber (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18206:19)
+    at commitPassiveMountEffects_complete (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18179:17)
+    at commitPassiveMountEffects_begin (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18169:15)
+    at commitPassiveMountEffects (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:18159:11)
+    at flushPassiveEffectsImpl (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19543:11)
+    at flushPassiveEffects (http://localhost:1420/node_modules/.vite/deps/chunk-KDCVS43I.js?v=c067e6fd:19500:22) @ http://localhost:1420/src/pages/TemplatesPage.tsx?t=1780022532771:64

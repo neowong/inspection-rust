@@ -1,0 +1,59 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]: Inspect
+      - navigation [ref=e12]:
+        - button "设备管理" [ref=e13] [cursor=pointer]:
+          - img [ref=e15]
+          - generic [ref=e20]: 设备管理
+        - button "巡检模板" [ref=e21] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e25]: 巡检模板
+        - button "执行巡检" [ref=e26] [cursor=pointer]:
+          - img [ref=e28]
+          - generic [ref=e30]: 执行巡检
+        - button "巡检报告" [ref=e31] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e35]: 巡检报告
+        - button "AI 配置" [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+          - generic [ref=e40]: AI 配置
+        - button "系统设置" [ref=e41] [cursor=pointer]:
+          - img [ref=e43]
+          - generic [ref=e46]: 系统设置
+      - button "收起菜单" [ref=e48] [cursor=pointer]:
+        - img [ref=e49]
+        - generic [ref=e51]: 收起菜单
+    - main [ref=e52]:
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - button "+ 新建模板" [ref=e57] [cursor=pointer]
+          - paragraph [ref=e59]: 暂无模板
+        - generic [ref=e61]: 请从左侧选择一个模板，或点击「新建模板」
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - heading "命令库" [level=3] [ref=e64]
+            - combobox [ref=e65]:
+              - option "全部厂商" [selected]
+              - option "H3C"
+              - option "华为"
+              - option "思科"
+              - option "深信服"
+              - option "锐捷"
+              - option "Linux"
+              - option "CentOS"
+              - option "Ubuntu"
+              - option "openEuler"
+              - option "MySQL"
+              - option "PostgreSQL"
+              - option "Oracle"
+              - option "其它"
+            - generic [ref=e66]:
+              - generic [ref=e67]: 🔍
+              - textbox "搜索命令..." [ref=e68]
+          - paragraph [ref=e70]: 无匹配命令
+  - contentinfo [ref=e71]:
+    - generic [ref=e72]: 就绪
+    - generic [ref=e74]: v3.1

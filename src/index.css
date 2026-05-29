@@ -24,12 +24,10 @@
     --radius: 0.5rem;
   }
 
-  * {
-    border-color: hsl(var(--border));
-  }
+  * { border-color: hsl(var(--border)); }
 
   body {
-    background-color: #f1f5f9;
+    background-color: #f5f6f8;
     color: hsl(var(--foreground));
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
     font-size: 13px;
@@ -40,13 +38,73 @@
   }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-/* Fade-in animation */
+/* ---- Shared components ---- */
+@layer components {
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 500;
+    cursor: pointer; transition: all .12s; border: 1px solid transparent; white-space: nowrap;
+  }
+  .btn-primary {
+    background: #2563eb; color: #fff; border-color: #2563eb;
+    box-shadow: 0 1px 2px rgba(37,99,235,.25);
+  }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-outline {
+    background: #fff; color: #374151; border-color: #d1d5db;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .btn-outline:hover { background: #f9fafb; border-color: #9ca3af; }
+  .btn-danger {
+    background: #fff; color: #dc2626; border-color: #fecaca;
+  }
+  .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; }
+  .btn-ghost {
+    background: transparent; color: #6b7280; border-color: transparent;
+  }
+  .btn-ghost:hover { background: #f3f4f6; color: #111827; }
+  .btn-sm { padding: 3px 10px; font-size: 12px; border-radius: 4px; }
+
+  .input {
+    width: 100%; padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
+    border-radius: 6px; outline: none; background: #fff; transition: border-color .12s, box-shadow .12s;
+  }
+  .input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+
+  .select {
+    width: 100%; padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
+    border-radius: 6px; outline: none; background: #fff; cursor: pointer;
+  }
+
+  .card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.03);
+  }
+
+  .page-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+  }
+  .page-title {
+    font-size: 15px; font-weight: 600; color: #111827; letter-spacing: -0.01em;
+  }
+  .page-desc { font-size: 12px; color: #9ca3af; margin-top: 1px; }
+
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 40px 20px; text-align: center; color: #9ca3af;
+  }
+  .empty-state svg { width: 36px; height: 36px; margin-bottom: 10px; opacity: .35; }
+  .empty-state p { font-size: 13px; margin-bottom: 4px; color: #6b7280; }
+  .empty-state span { font-size: 12px; }
+}
+
+/* ---- Animation ---- */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

@@ -1,0 +1,33 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - navigation [ref=e5]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: Navigation
+        - generic [ref=e9]: 巡检管理
+      - generic [ref=e10]:
+        - button "⊞ 设备管理" [ref=e11] [cursor=pointer]:
+          - generic [ref=e12]: ⊞
+          - generic [ref=e13]: 设备管理
+        - button "⊟ 巡检模板" [ref=e15] [cursor=pointer]:
+          - generic [ref=e16]: ⊟
+          - generic [ref=e17]: 巡检模板
+        - button "▶ 执行巡检" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: ▶
+          - generic [ref=e20]: 执行巡检
+        - button "▤ 巡检报告" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: ▤
+          - generic [ref=e23]: 巡检报告
+        - button "◆ AI 配置" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: ◆
+          - generic [ref=e26]: AI 配置
+        - button "⚙ 系统设置" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: ⚙
+          - generic [ref=e29]: 系统设置
+      - button "◂ 收起菜单" [ref=e31] [cursor=pointer]:
+        - generic [ref=e32]: ◂
+        - generic [ref=e33]: 收起菜单
+    - main [ref=e34]:
+      - generic [ref=e36]: 加载中...
+  - contentinfo [ref=e37]:
+    - generic [ref=e40]: 就绪
+    - generic [ref=e41]: v3.1.0

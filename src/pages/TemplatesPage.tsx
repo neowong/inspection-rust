@@ -6,7 +6,7 @@ import Modal from "../components/Modal";
 import ContextMenu, { ContextMenuItem } from "../components/ContextMenu";
 import type { InspectionTemplate, CommandPool } from "../types";
 
-const VENDORS = ["H3C", "华为", "思科", "深信服", "锐捷", "Linux", "CentOS", "Ubuntu", "openEuler", "MySQL", "PostgreSQL", "Oracle", "其它"];
+const VENDORS = ["H3C", "华为", "思科", "锐捷"];
 interface TemplateForm {
   name: string;
   vendor: string;
