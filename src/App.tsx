@@ -13,7 +13,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<Navigate to="/devices" replace />} />
+        <Route path="/" element={<Navigate to="/templates" replace />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/inspection" element={<InspectionPage />} />
