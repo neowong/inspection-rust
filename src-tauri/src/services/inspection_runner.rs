@@ -82,6 +82,23 @@ pub fn run_commands(
     }
 }
 
+/// Find sshpass executable
+fn find_sshpass() -> Option<String> {
+    // Try common paths first
+    for path in &["/usr/bin/sshpass", "/usr/local/bin/sshpass", "/opt/homebrew/bin/sshpass"] {
+        if std::path::Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    // Try PATH lookup
+    std::process::Command::new("which")
+        .arg("sshpass")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
 /// Fallback: use system ssh command (sshpass + openssh)
 /// Enables all legacy algorithms for maximum device compatibility.
 fn run_commands_system_ssh(
@@ -89,15 +106,8 @@ fn run_commands_system_ssh(
     vendor: &str,
     commands: &[String],
 ) -> Result<HashMap<String, String>, String> {
-    use std::process::Command;
-
-    // Check if sshpass is available
-    let sshpass_check = Command::new("which").arg("sshpass").output();
-    let has_sshpass = sshpass_check.map(|o| o.status.success()).unwrap_or(false);
-
-    if !has_sshpass {
-        return Err("sshpass 未安装，无法进行密码认证".to_string());
-    }
+    let sshpass_path = find_sshpass()
+        .ok_or_else(|| "sshpass 未安装，无法进行密码认证。请安装: sudo apt install sshpass".to_string())?;
 
     let ssh_opts = legacy_algorithms::openssh_options();
 
@@ -109,12 +119,12 @@ fn run_commands_system_ssh(
     };
 
     if let Some(pc) = page_cmd {
-        let _ = run_single_ssh_command(source, pc, &ssh_opts, has_sshpass);
+        let _ = run_single_ssh_command(source, pc, &ssh_opts, &sshpass_path);
     }
 
     let mut results = HashMap::new();
     for cmd in commands {
-        let output = run_single_ssh_command(source, cmd, &ssh_opts, has_sshpass)?;
+        let output = run_single_ssh_command(source, cmd, &ssh_opts, &sshpass_path)?;
         results.insert(cmd.clone(), output);
     }
 
@@ -126,18 +136,13 @@ fn run_single_ssh_command(
     source: &SSHSessionSource,
     cmd: &str,
     ssh_opts: &[String],
-    has_sshpass: bool,
+    sshpass_path: &str,
 ) -> Result<String, String> {
     use std::process::{Command, Stdio};
 
-    let mut command = if has_sshpass {
-        let mut c = Command::new("sshpass");
-        c.args(&["-p", &source.password]);
-        c.arg("ssh");
-        c
-    } else {
-        Command::new("ssh")
-    };
+    let mut command = Command::new(sshpass_path);
+    command.args(&["-p", &source.password]);
+    command.arg("ssh");
 
     for opt in ssh_opts {
         command.arg(opt);
