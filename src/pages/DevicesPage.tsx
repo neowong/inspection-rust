@@ -313,7 +313,7 @@ export default function DevicesPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-700">{deleteBody}</p>
+        <p className="text-sm text-[hsl(var(--text-primary))]">{deleteBody}</p>
       </Modal>
     </div>
   );

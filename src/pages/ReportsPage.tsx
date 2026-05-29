@@ -403,7 +403,7 @@ export default function ReportsPage() {
           {previewLoading ? (
             <div className="text-sm text-[hsl(var(--text-secondary))]">加载报告内容...</div>
           ) : previewMd ? (
-            <div className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:px-3 prose-th:py-1.5 prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-1.5">
+            <div className="prose prose-sm max-w-none prose-headings:text-[hsl(var(--text-primary))] prose-table:border-collapse prose-th:border prose-th:border-[hsl(var(--border))] prose-th:bg-[hsl(var(--bg-hover))] prose-th:px-3 prose-th:py-1.5 prose-td:border prose-td:border-[hsl(var(--border))] prose-td:px-3 prose-td:py-1.5 prose-p:text-[hsl(var(--text-primary))] prose-li:text-[hsl(var(--text-primary))] prose-code:text-[hsl(var(--text-primary))]">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {previewMd}
               </ReactMarkdown>

@@ -338,7 +338,7 @@ export default function TemplatesPage() {
     }
   };
 
-  if (loading) return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+  if (loading) return <div className="p-4 text-[hsl(var(--text-secondary))] text-sm">加载中...</div>;
 
   return (
     <div className="flex gap-3 h-full">

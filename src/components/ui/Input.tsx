@@ -1,7 +1,7 @@
 import React from "react";
 import { cn } from "../../lib/utils";
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
   size?: "sm" | "md";
 }
 
@@ -25,7 +25,7 @@ export default function Input({ className, size = "md", ...props }: InputProps) 
   );
 }
 
-export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
   size?: "sm" | "md";
 }
 
