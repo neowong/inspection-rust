@@ -172,14 +172,12 @@ export default function TemplatesPage() {
     if (!newForm.name.trim()) return;
     try {
       await invoke("create_template", {
-        data: {
-          name: newForm.name.trim(),
-          vendor: newForm.vendor,
-          model: newForm.model.trim() || undefined,
-          device_type: newForm.device_type.trim() || undefined,
-          description: newForm.description.trim() || undefined,
-          config: { command_ids: [] },
-        },
+        name: newForm.name.trim(),
+        vendor: newForm.vendor,
+        model: newForm.model.trim() || undefined,
+        device_type: newForm.device_type.trim() || undefined,
+        description: newForm.description.trim() || undefined,
+        config: { command_ids: [] },
       });
       setNewModalOpen(false);
       setNewForm(EMPTY_FORM);
@@ -193,14 +191,12 @@ export default function TemplatesPage() {
   const handleCopy = async (tpl: InspectionTemplate) => {
     try {
       await invoke("create_template", {
-        data: {
-          name: tpl.name + " (副本)",
-          vendor: tpl.vendor,
-          model: tpl.model || undefined,
-          device_type: tpl.device_type || undefined,
-          description: tpl.description || undefined,
-          config: tpl.config || { command_ids: [] },
-        },
+        name: tpl.name + " (副本)",
+        vendor: tpl.vendor,
+        model: tpl.model || undefined,
+        device_type: tpl.device_type || undefined,
+        description: tpl.description || undefined,
+        config: tpl.config || { command_ids: [] },
       });
       await loadData();
     } catch (e) {
@@ -214,7 +210,7 @@ export default function TemplatesPage() {
     try {
       await invoke("update_template", {
         templateId: ctxTemplate.id,
-        data: { name: renameName.trim() },
+        name: renameName.trim(),
       });
       setRenameModalOpen(false);
       await loadData();
@@ -245,13 +241,11 @@ export default function TemplatesPage() {
     try {
       await invoke("update_template", {
         templateId: selected.id,
-        data: {
-          name: form.name.trim(),
-          vendor: form.vendor,
-          model: form.model.trim() || undefined,
-          device_type: form.device_type.trim() || undefined,
-          description: form.description.trim() || undefined,
-        },
+        name: form.name.trim(),
+        vendor: form.vendor,
+        model: form.model.trim() || undefined,
+        device_type: form.device_type.trim() || undefined,
+        description: form.description.trim() || undefined,
       });
       setDirty(false);
       await loadData();
@@ -271,7 +265,7 @@ export default function TemplatesPage() {
     try {
       await invoke("update_template", {
         templateId: selected.id,
-        data: { config: { command_ids: newIds } },
+        config: { command_ids: newIds },
       });
       await loadData();
       // Re-select to refresh
@@ -289,7 +283,7 @@ export default function TemplatesPage() {
     try {
       await invoke("update_template", {
         templateId: selected.id,
-        data: { config: { command_ids: newIds } },
+        config: { command_ids: newIds },
       });
       await loadData();
       setSelectedId(selected.id);
@@ -305,13 +299,13 @@ export default function TemplatesPage() {
     try {
       const result = await invoke<{ config: { command_ids: number[] } }>("auto_generate_template", {
         vendor: selected.vendor,
-        model: selected.model || null,
-        deviceType: selected.device_type || null,
+        model: selected.model || undefined,
+        device_type: selected.device_type || undefined,
       });
       if (result.config?.command_ids) {
         await invoke("update_template", {
           templateId: selected.id,
-          data: { config: result.config },
+          config: result.config,
         });
         await loadData();
         setSelectedId(selected.id);
