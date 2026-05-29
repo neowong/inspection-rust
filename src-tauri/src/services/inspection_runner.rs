@@ -53,36 +53,26 @@ mod legacy_algorithms {
 /// Execute commands on a network device via SSH.
 /// Returns a HashMap mapping each command to its output text.
 ///
-/// Tries libssh2 first (with legacy algorithm support),
-/// falls back to system ssh command for maximum compatibility.
+/// Tries system ssh (sshpass + openssh) first for maximum device compatibility,
+/// falls back to libssh2 only when sshpass is not available.
 pub fn run_commands(
     source: &SSHSessionSource,
     vendor: &str,
     commands: &[String],
 ) -> Result<HashMap<String, String>, String> {
-    // Try libssh2 first
-    let libssh2_error = match run_commands_libssh2(source, vendor, commands) {
+    // Try system ssh first — it supports legacy algorithms and shell-only devices
+    let system_ssh_error = match run_commands_system_ssh(source, vendor, commands) {
         Ok(results) => return Ok(results),
-        Err(e) => {
-            // Known issue: H3C devices reject libssh2 channel creation
-            // Silently fall back to system SSH which works 100% of the time
-            if e.contains("Channel open failure") || e.contains("administratively prohibited") {
-                // Expected on H3C/Huawei devices - no need to log
-            } else {
-                // Unexpected error - log for debugging
-                eprintln!("[SSH] libssh2 failed: {}, trying system ssh", e);
-            }
-            e
-        }
+        Err(e) => e,
     };
 
-    // Fallback to system ssh
-    match run_commands_system_ssh(source, vendor, commands) {
+    // Fallback to libssh2 (only when sshpass is unavailable)
+    match run_commands_libssh2(source, vendor, commands) {
         Ok(results) => return Ok(results),
-        Err(system_ssh_error) => {
+        Err(libssh2_error) => {
             let combined_error = format!(
-                "所有 SSH 连接方式均失败:\n\n[libssh2] {}\n\n[系统SSH] {}",
-                libssh2_error, system_ssh_error
+                "所有 SSH 连接方式均失败:\n\n[系统SSH] {}\n\n[libssh2] {}",
+                system_ssh_error, libssh2_error
             );
             return Err(combined_error);
         }
