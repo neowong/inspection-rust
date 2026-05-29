@@ -175,10 +175,9 @@ export default function TemplatesPage() {
         data: {
           name: newForm.name.trim(),
           vendor: newForm.vendor,
-          model: newForm.model.trim() || null,
-          device_type: newForm.device_type.trim() || null,
-          template_type: "ssh",
-          description: newForm.description.trim() || null,
+          model: newForm.model.trim() || undefined,
+          device_type: newForm.device_type.trim() || undefined,
+          description: newForm.description.trim() || undefined,
           config: { command_ids: [] },
         },
       });
@@ -197,10 +196,9 @@ export default function TemplatesPage() {
         data: {
           name: tpl.name + " (副本)",
           vendor: tpl.vendor,
-          model: tpl.model || null,
-          device_type: tpl.device_type || null,
-          template_type: "ssh",
-          description: tpl.description || null,
+          model: tpl.model || undefined,
+          device_type: tpl.device_type || undefined,
+          description: tpl.description || undefined,
           config: tpl.config || { command_ids: [] },
         },
       });
@@ -250,10 +248,9 @@ export default function TemplatesPage() {
         data: {
           name: form.name.trim(),
           vendor: form.vendor,
-          model: form.model.trim() || null,
-          device_type: form.device_type.trim() || null,
-          template_type: "ssh",
-          description: form.description.trim() || null,
+          model: form.model.trim() || undefined,
+          device_type: form.device_type.trim() || undefined,
+          description: form.description.trim() || undefined,
         },
       });
       setDirty(false);
