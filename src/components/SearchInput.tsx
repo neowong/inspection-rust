@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { Search, X } from "lucide-react";
 
 interface Props {
   value: string;
@@ -23,18 +24,21 @@ export default function SearchInput({ value, onChange, placeholder = "搜索..."
 
   return (
     <div className="relative">
-      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[hsl(var(--text-tertiary))]" />
       <input
         ref={ref}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="pl-6 pr-2 py-1 border border-gray-300 rounded text-xs w-48 focus:outline-none focus:border-blue-400"
+        className="h-7 pl-7 pr-6 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] text-xs text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] w-48 outline-none focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] transition-colors"
       />
       {value && (
-        <button className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs" onClick={() => onChange("")}>
-          ✕
+        <button
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]"
+          onClick={() => onChange("")}
+        >
+          <X size={12} />
         </button>
       )}
     </div>
