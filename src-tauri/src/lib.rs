@@ -137,7 +137,6 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
     let offline_count: i64 = db.query_row("SELECT COUNT(*) FROM devices WHERE status='offline'", [], |r| r.get(0)).unwrap_or(0);
     let template_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_templates", [], |r| r.get(0)).unwrap_or(0);
     let command_count: i64 = db.query_row("SELECT COUNT(*) FROM command_pool", [], |r| r.get(0)).unwrap_or(0);
-    let report_template_count: i64 = db.query_row("SELECT COUNT(*) FROM report_templates", [], |r| r.get(0)).unwrap_or(0);
     let batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches", [], |r| r.get(0)).unwrap_or(0);
     let pending_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='pending'", [], |r| r.get(0)).unwrap_or(0);
     let completed_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='completed'", [], |r| r.get(0)).unwrap_or(0);
@@ -148,7 +147,6 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
         "offline_device_count": offline_count,
         "template_count": template_count,
         "command_count": command_count,
-        "report_template_count": report_template_count,
         "batch_count": batch_count,
         "pending_batch_count": pending_batch_count,
         "completed_batch_count": completed_batch_count,

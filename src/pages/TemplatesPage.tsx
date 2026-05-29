@@ -7,17 +7,11 @@ import ContextMenu, { ContextMenuItem } from "../components/ContextMenu";
 import type { InspectionTemplate, CommandPool } from "../types";
 
 const VENDORS = ["H3C", "华为", "思科", "深信服", "锐捷", "Linux", "CentOS", "Ubuntu", "openEuler", "MySQL", "PostgreSQL", "Oracle", "其它"];
-const TEMPLATE_TYPES = [
-  { value: "ssh", label: "SSH" },
-  { value: "offline", label: "离线" },
-];
-
 interface TemplateForm {
   name: string;
   vendor: string;
   model: string;
   device_type: string;
-  type: string;
   description: string;
 }
 
@@ -26,7 +20,6 @@ const EMPTY_FORM: TemplateForm = {
   vendor: "H3C",
   model: "",
   device_type: "",
-  type: "ssh",
   description: "",
 };
 
@@ -110,7 +103,6 @@ export default function TemplatesPage() {
         vendor: selected.vendor,
         model: selected.model || "",
         device_type: selected.device_type || "",
-        type: selected.type,
         description: selected.description || "",
       });
       setDirty(false);
@@ -182,7 +174,7 @@ export default function TemplatesPage() {
           vendor: newForm.vendor,
           model: newForm.model.trim() || null,
           device_type: newForm.device_type.trim() || null,
-          template_type: newForm.type,
+          template_type: "ssh",
           description: newForm.description.trim() || null,
           config: { command_ids: [] },
         },
@@ -204,7 +196,7 @@ export default function TemplatesPage() {
           vendor: tpl.vendor,
           model: tpl.model || null,
           device_type: tpl.device_type || null,
-          template_type: tpl.type,
+          template_type: "ssh",
           description: tpl.description || null,
           config: tpl.config || { command_ids: [] },
         },
@@ -257,7 +249,7 @@ export default function TemplatesPage() {
           vendor: form.vendor,
           model: form.model.trim() || null,
           device_type: form.device_type.trim() || null,
-          template_type: form.type,
+          template_type: "ssh",
           description: form.description.trim() || null,
         },
       });
@@ -458,17 +450,6 @@ export default function TemplatesPage() {
                   onChange={(e) => updateForm({ device_type: e.target.value })}
                   placeholder="例如: switch / router / server"
                 />
-              </FormField>
-              <FormField label="模板类型">
-                <select
-                  className="form-input"
-                  value={form.type}
-                  onChange={(e) => updateForm({ type: e.target.value })}
-                >
-                  {TEMPLATE_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
               </FormField>
               <FormField label="描述">
                 <input
@@ -675,17 +656,6 @@ export default function TemplatesPage() {
               onChange={(e) => setNewForm({ ...newForm, device_type: e.target.value })}
               placeholder="例如: switch / router"
             />
-          </FormField>
-          <FormField label="模板类型">
-            <select
-              className="form-input"
-              value={newForm.type}
-              onChange={(e) => setNewForm({ ...newForm, type: e.target.value })}
-            >
-              {TEMPLATE_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
           </FormField>
           <FormField label="描述">
             <input

@@ -4,9 +4,9 @@ use crate::db::models::{InspectionBatch, BatchCreate};
 
 fn batch_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionBatch> {
     Ok(InspectionBatch {
-        id: row.get(0)?, name: row.get(1)?, mode: row.get(2)?, status: row.get(3)?,
-        triggered_by: row.get(4)?, scheduled_task_id: row.get(5)?, device_ids: row.get(6)?,
-        started_at: row.get(7)?, completed_at: row.get(8)?, created_at: row.get(9)?, updated_at: row.get(10)?,
+        id: row.get(0)?, name: row.get(1)?, status: row.get(2)?,
+        triggered_by: row.get(3)?, device_ids: row.get(4)?,
+        started_at: row.get(5)?, completed_at: row.get(6)?, created_at: row.get(7)?, updated_at: row.get(8)?,
     })
 }
 
@@ -37,7 +37,7 @@ pub fn list_batches(status: Option<String>, state: State<AppState>) -> Result<Ve
     for b in batches {
         let records: Vec<serde_json::Value> = all_records.iter().filter(|r| r.1 == b.id)
             .map(|r| serde_json::json!({"id": r.0, "batch_id": r.1, "device_id": r.2, "status": r.3, "ai_status": r.4, "report_path": r.5, "error_message": r.6})).collect();
-        result.push(serde_json::json!({"id": b.id, "name": b.name, "mode": b.mode, "status": b.status, "triggered_by": b.triggered_by, "device_ids": b.device_ids, "started_at": b.started_at, "completed_at": b.completed_at, "created_at": b.created_at, "records": records}));
+        result.push(serde_json::json!({"id": b.id, "name": b.name, "status": b.status, "triggered_by": b.triggered_by, "device_ids": b.device_ids, "started_at": b.started_at, "completed_at": b.completed_at, "created_at": b.created_at, "records": records}));
     }
     Ok(result)
 }
@@ -47,8 +47,7 @@ pub fn create_batch(data: BatchCreate, state: State<AppState>) -> Result<serde_j
     let db = state.db.lock();
     let name = data.name.unwrap_or_else(|| chrono::Utc::now().format("巡检_%Y-%m-%d_%H:%M").to_string());
     let device_ids_json = serde_json::to_string(&data.device_ids).unwrap_or_default();
-    let mode = data.mode.unwrap_or_else(|| "ssh".into());
-    db.execute("INSERT INTO inspection_batches (name,mode,device_ids,scheduled_task_id) VALUES (?1,?2,?3,?4)", rusqlite::params![name, mode, device_ids_json, data.scheduled_task_id]).map_err(|e| e.to_string())?;
+    db.execute("INSERT INTO inspection_batches (name,device_ids) VALUES (?1,?2)", rusqlite::params![name, device_ids_json]).map_err(|e| e.to_string())?;
     let batch_id = db.last_insert_rowid();
     let mut offline_names: Vec<String> = Vec::new();
     if data.auto_start.unwrap_or(true) && !data.device_ids.is_empty() {
@@ -69,12 +68,12 @@ pub fn get_batch(batch_id: i64, state: State<AppState>) -> Result<serde_json::Va
     let mut rec_stmt = db.prepare("SELECT * FROM inspection_records WHERE batch_id=?1 ORDER BY id").map_err(|e| e.to_string())?;
     let records: Vec<serde_json::Value> = rec_stmt.query_map(rusqlite::params![batch_id], |r| Ok(serde_json::json!({
         "id": r.get::<_, i64>(0)?, "device_id": r.get::<_, i64>(2)?, "status": r.get::<_, String>(3)?,
-        "error_message": r.get::<_, Option<String>>(5)?, "ai_status": r.get::<_, String>(7)?,
-        "report_path": r.get::<_, Option<String>>(13)?, "command_outputs": r.get::<_, String>(6)?,
-        "ai_result": r.get::<_, Option<String>>(8)?, "command_judgments": r.get::<_, Option<String>>(11)?,
-        "summary_judgment": r.get::<_, Option<String>>(12)?, "upload_source": r.get::<_, String>(4)?,
+        "error_message": r.get::<_, Option<String>>(4)?, "ai_status": r.get::<_, String>(6)?,
+        "report_path": r.get::<_, Option<String>>(12)?, "command_outputs": r.get::<_, String>(5)?,
+        "ai_result": r.get::<_, Option<String>>(7)?, "command_judgments": r.get::<_, Option<String>>(10)?,
+        "summary_judgment": r.get::<_, Option<String>>(11)?,
     }))).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
-    Ok(serde_json::json!({"id": b.id, "name": b.name, "mode": b.mode, "status": b.status, "triggered_by": b.triggered_by, "device_ids": b.device_ids, "started_at": b.started_at, "completed_at": b.completed_at, "records": records}))
+    Ok(serde_json::json!({"id": b.id, "name": b.name, "status": b.status, "triggered_by": b.triggered_by, "device_ids": b.device_ids, "started_at": b.started_at, "completed_at": b.completed_at, "records": records}))
 }
 
 #[tauri::command]

@@ -6,13 +6,11 @@ use crate::services::crypto::CryptoService;
 
 fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
     Ok(Device {
-        id: row.get(0)?, group_name: row.get(1)?, name: row.get(2)?, ip: row.get(3)?,
-        device_type: row.get(4)?, vendor: row.get(5)?, model: row.get(6)?,
-        inspection_mode: row.get(7)?, ssh_username: row.get(8)?, ssh_password_encrypted: row.get(9)?,
-        ssh_port: row.get(10)?, web_url: row.get(11)?, web_port: row.get(12)?,
-        template_id: row.get(13)?, db_type: row.get(14)?, db_port: row.get(15)?,
-        db_username: row.get(16)?, db_password_encrypted: row.get(17)?, db_os_user: row.get(18)?,
-        status: row.get(19)?, last_checked_at: row.get(20)?, created_at: row.get(21)?, updated_at: row.get(22)?,
+        id: row.get(0)?, name: row.get(1)?, ip: row.get(2)?,
+        device_type: row.get(3)?, vendor: row.get(4)?, model: row.get(5)?,
+        ssh_username: row.get(6)?, ssh_password_encrypted: row.get(7)?,
+        ssh_port: row.get(8)?, template_id: row.get(9)?,
+        status: row.get(10)?, last_checked_at: row.get(11)?, created_at: row.get(12)?, updated_at: row.get(13)?,
     })
 }
 
@@ -36,13 +34,12 @@ fn check_unique(db: &rusqlite::Connection, name: &str, ip: &str, exclude_id: Opt
 }
 
 #[tauri::command]
-pub fn list_devices(group: Option<String>, vendor: Option<String>, status: Option<String>, state: State<AppState>) -> Result<Vec<Device>, String> {
+pub fn list_devices(vendor: Option<String>, status: Option<String>, state: State<AppState>) -> Result<Vec<Device>, String> {
     let db = state.db.lock();
     let mut sql = String::from("SELECT * FROM devices WHERE 1=1");
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     if let Some(ref v) = vendor { sql.push_str(" AND vendor = ?"); params.push(Box::new(v.clone())); }
     if let Some(ref s) = status { sql.push_str(" AND status = ?"); params.push(Box::new(s.clone())); }
-    if let Some(ref g) = group { sql.push_str(" AND group_name = ?"); params.push(Box::new(g.clone())); }
     sql.push_str(" ORDER BY created_at DESC");
 
     let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
@@ -66,11 +63,10 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
     check_unique(&db, &data.name, &data.ip, None)?;
 
     let encrypted_pw = data.ssh_password.as_ref().and_then(|p| CryptoService::encrypt(p).ok());
-    let db_encrypted_pw = data.db_password.as_ref().and_then(|p| CryptoService::encrypt(p).ok());
 
     db.execute(
-        "INSERT INTO devices (group_name,name,ip,device_type,vendor,model,inspection_mode,ssh_username,ssh_password_encrypted,ssh_port,template_id,db_type,db_port,db_username,db_password_encrypted,db_os_user,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,datetime('now'),datetime('now'))",
-        rusqlite::params![data.group.as_deref().unwrap_or("network"), data.name, data.ip, data.device_type, data.vendor, data.model, data.inspection_mode.as_deref().unwrap_or("ssh"), data.ssh_username, encrypted_pw, data.ssh_port.unwrap_or(22), data.template_id, data.db_type, data.db_port, data.db_username, db_encrypted_pw, data.db_os_user],
+        "INSERT INTO devices (name,ip,device_type,vendor,model,ssh_username,ssh_password_encrypted,ssh_port,template_id,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,datetime('now'),datetime('now'))",
+        rusqlite::params![data.name, data.ip, data.device_type, data.vendor, data.model, data.ssh_username, encrypted_pw, data.ssh_port.unwrap_or(22), data.template_id],
     ).map_err(|e| format!("添加设备失败: {}", e))?;
     let id = db.last_insert_rowid();
     db.query_row("SELECT * FROM devices WHERE id = ?1", rusqlite::params![id], device_from_row).map_err(|e| e.to_string())
@@ -86,11 +82,10 @@ pub fn update_device(device_id: i64, data: DeviceUpdate, state: State<AppState>)
     if data.name.is_some() || data.ip.is_some() { check_unique(&db, name, ip, Some(device_id))?; }
 
     let encrypted_pw = data.ssh_password.as_ref().and_then(|p| CryptoService::encrypt(p).ok());
-    let db_encrypted_pw = data.db_password.as_ref().and_then(|p| CryptoService::encrypt(p).ok());
 
     db.execute(
-        "UPDATE devices SET group_name=?1,name=?2,ip=?3,device_type=?4,vendor=?5,model=?6,inspection_mode=?7,ssh_username=?8,ssh_password_encrypted=COALESCE(?9,ssh_password_encrypted),ssh_port=?10,template_id=?11,db_type=?12,db_port=?13,db_username=?14,db_password_encrypted=COALESCE(?15,db_password_encrypted),db_os_user=?16,updated_at=datetime('now') WHERE id=?17",
-        rusqlite::params![data.group.as_deref().unwrap_or(&device.group_name), name, ip, data.device_type.as_deref().unwrap_or(&device.device_type), data.vendor.as_deref().unwrap_or(&device.vendor), data.model.as_deref().or(device.model.as_deref()), data.inspection_mode.as_deref().unwrap_or(&device.inspection_mode), data.ssh_username.as_deref().or(device.ssh_username.as_deref()), encrypted_pw, data.ssh_port.unwrap_or(device.ssh_port), data.template_id.or(device.template_id), data.db_type.as_deref().or(device.db_type.as_deref()), data.db_port.or(device.db_port), data.db_username.as_deref().or(device.db_username.as_deref()), db_encrypted_pw, data.db_os_user.as_deref().or(device.db_os_user.as_deref()), device_id],
+        "UPDATE devices SET name=?1,ip=?2,device_type=?3,vendor=?4,model=?5,ssh_username=?6,ssh_password_encrypted=COALESCE(?7,ssh_password_encrypted),ssh_port=?8,template_id=?9,updated_at=datetime('now') WHERE id=?10",
+        rusqlite::params![name, ip, data.device_type.as_deref().unwrap_or(&device.device_type), data.vendor.as_deref().unwrap_or(&device.vendor), data.model.as_deref().or(device.model.as_deref()), data.ssh_username.as_deref().or(device.ssh_username.as_deref()), encrypted_pw, data.ssh_port.unwrap_or(device.ssh_port), data.template_id.or(device.template_id), device_id],
     ).map_err(|e| format!("更新设备失败: {}", e))?;
     db.query_row("SELECT * FROM devices WHERE id = ?1", rusqlite::params![device_id], device_from_row).map_err(|e| e.to_string())
 }

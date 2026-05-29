@@ -1,19 +1,13 @@
 export interface Device {
   id: number;
-  group: string;
   name: string;
   ip: string;
   device_type: string;
   vendor: string;
   model: string | null;
-  inspection_mode: "ssh" | "offline" | "web";
   ssh_username: string | null;
   ssh_port: number;
   template_id: number | null;
-  db_type: string | null;
-  db_port: number | null;
-  db_username: string | null;
-  db_os_user: string | null;
   status: "online" | "offline" | "unknown";
   last_checked_at: string | null;
   created_at: string;
@@ -26,7 +20,6 @@ export interface InspectionTemplate {
   vendor: string;
   model: string | null;
   device_type: string | null;
-  type: string;
   config: { command_ids?: number[] };
   description: string | null;
   report_template_id: number | null;

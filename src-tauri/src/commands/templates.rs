@@ -6,9 +6,9 @@ use rusqlite::types::ToSql;
 fn template_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionTemplate> {
     Ok(InspectionTemplate {
         id: row.get(0)?, name: row.get(1)?, vendor: row.get(2)?, model: row.get(3)?,
-        device_type: row.get(4)?, template_type: row.get(5)?, config: row.get(6)?,
-        description: row.get(7)?, report_template_id: row.get(8)?,
-        created_at: row.get(9)?, updated_at: row.get(10)?,
+        device_type: row.get(4)?, config: row.get(5)?,
+        description: row.get(6)?, report_template_id: row.get(7)?,
+        created_at: row.get(8)?, updated_at: row.get(9)?,
     })
 }
 
@@ -30,7 +30,7 @@ pub fn list_templates(vendor: Option<String>, state: State<AppState>) -> Result<
         let config_val: serde_json::Value = t.config.as_deref().and_then(|c| serde_json::from_str(c).ok()).unwrap_or(serde_json::json!({}));
         result.push(serde_json::json!({
             "id": t.id, "name": t.name, "vendor": t.vendor, "model": t.model, "device_type": t.device_type,
-            "type": t.template_type, "config": config_val, "description": t.description,
+            "type": "ssh", "config": config_val, "description": t.description,
             "report_template_id": t.report_template_id, "created_at": t.created_at, "updated_at": t.updated_at,
             "device_count": device_count,
         }));
@@ -47,7 +47,7 @@ pub fn get_template(template_id: i64, state: State<AppState>) -> Result<serde_js
     let config_val: serde_json::Value = t.config.as_deref().and_then(|c| serde_json::from_str(c).ok()).unwrap_or(serde_json::json!({}));
     Ok(serde_json::json!({
         "id": t.id, "name": t.name, "vendor": t.vendor, "model": t.model, "device_type": t.device_type,
-        "type": t.template_type, "config": config_val, "description": t.description,
+        "type": "ssh", "config": config_val, "description": t.description,
         "report_template_id": t.report_template_id, "created_at": t.created_at, "updated_at": t.updated_at,
         "device_count": device_count,
     }))
@@ -69,8 +69,8 @@ pub fn create_template(data: TemplateCreate, state: State<AppState>) -> Result<s
             }
         }
         db.execute(
-            "INSERT INTO inspection_templates (name,vendor,model,device_type,template_type,config,description,report_template_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            rusqlite::params![data.name, data.vendor, data.model, data.device_type, data.template_type.unwrap_or_else(|| "ssh".into()), config_str, data.description, data.report_template_id],
+            "INSERT INTO inspection_templates (name,vendor,model,device_type,config,description,report_template_id) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            rusqlite::params![data.name, data.vendor, data.model, data.device_type, config_str, data.description, data.report_template_id],
         ).map_err(|e| format!("创建模板失败: {}", e))?;
         db.last_insert_rowid()
     };
@@ -89,8 +89,8 @@ pub fn update_template(template_id: i64, data: TemplateUpdate, state: State<AppS
         }
         let config_str = data.config.as_ref().map(|c| c.to_string()).or(t.config);
         db.execute(
-            "UPDATE inspection_templates SET name=?1,vendor=?2,model=?3,device_type=?4,template_type=?5,config=?6,description=?7,report_template_id=?8,updated_at=datetime('now') WHERE id=?9",
-            rusqlite::params![data.name.unwrap_or(t.name), data.vendor.unwrap_or(t.vendor), data.model.or(t.model), data.device_type.or(t.device_type), data.template_type.unwrap_or(t.template_type), config_str, data.description.or(t.description), data.report_template_id.or(t.report_template_id), template_id],
+            "UPDATE inspection_templates SET name=?1,vendor=?2,model=?3,device_type=?4,config=?5,description=?6,report_template_id=?7,updated_at=datetime('now') WHERE id=?8",
+            rusqlite::params![data.name.unwrap_or(t.name), data.vendor.unwrap_or(t.vendor), data.model.or(t.model), data.device_type.or(t.device_type), config_str, data.description.or(t.description), data.report_template_id.or(t.report_template_id), template_id],
         ).map_err(|e| format!("更新模板失败: {}", e))?;
     }
     get_template(template_id, state)
@@ -167,8 +167,8 @@ pub fn generate_report_template(template_id: i64, state: State<AppState>) -> Res
 fn cmd_from_row(row: &rusqlite::Row) -> rusqlite::Result<CommandPool> {
     Ok(CommandPool {
         id: row.get(0)?, vendor: row.get(1)?, command: row.get(2)?, description: row.get(3)?,
-        category: row.get(4)?, command_type: row.get(5)?, model: row.get(6)?,
-        created_at: row.get(7)?, updated_at: row.get(8)?,
+        category: row.get(4)?, model: row.get(5)?,
+        created_at: row.get(6)?, updated_at: row.get(7)?,
     })
 }
 
@@ -216,12 +216,11 @@ pub fn create_command(data: CommandCreate, state: State<AppState>) -> Result<Com
     if exists { return Err("已存在相同厂商和命令的记录".into()); }
 
     let cat = data.category.clone().unwrap_or_else(|| "general".into());
-    let ctype = data.command_type.clone().unwrap_or_else(|| "ssh".into());
 
     db.execute(
-        "INSERT INTO command_pool (vendor, command, description, category, command_type, model)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![data.vendor, cmd, data.description, cat, ctype, data.model],
+        "INSERT INTO command_pool (vendor, command, description, category, model)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![data.vendor, cmd, data.description, cat, data.model],
     ).map_err(|e| e.to_string())?;
 
     let id = db.last_insert_rowid();
@@ -241,7 +240,6 @@ pub fn update_command(command_id: i64, data: CommandUpdate, state: State<AppStat
     let command = data.command.map(|s| s.trim().to_string()).unwrap_or(c.command);
     let description = data.description.or(c.description);
     let category = data.category.or(c.category);
-    let command_type = data.command_type.unwrap_or(c.command_type);
     let model = data.model.or(c.model);
 
     if has_vendor || has_command {
@@ -253,8 +251,8 @@ pub fn update_command(command_id: i64, data: CommandUpdate, state: State<AppStat
     }
 
     db.execute(
-        "UPDATE command_pool SET vendor=?1, command=?2, description=?3, category=?4, command_type=?5, model=?6, updated_at=datetime('now') WHERE id=?7",
-        rusqlite::params![vendor, command, description, category, command_type, model, command_id],
+        "UPDATE command_pool SET vendor=?1, command=?2, description=?3, category=?4, model=?5, updated_at=datetime('now') WHERE id=?6",
+        rusqlite::params![vendor, command, description, category, model, command_id],
     ).map_err(|e| e.to_string())?;
 
     db.query_row("SELECT * FROM command_pool WHERE id=?1", rusqlite::params![command_id], cmd_from_row)
