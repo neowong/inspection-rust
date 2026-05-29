@@ -272,9 +272,19 @@ pub fn update_device(
 /// 删除设备
 #[tauri::command]
 pub fn delete_device(device_id: i64, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
 
-    let affected = conn
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // 先删除关联的巡检记录
+    tx.execute(
+        "DELETE FROM inspection_records WHERE device_id = ?1",
+        rusqlite::params![device_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // 再删除设备
+    let affected = tx
         .execute(
             "DELETE FROM devices WHERE id = ?1",
             rusqlite::params![device_id],
@@ -284,6 +294,8 @@ pub fn delete_device(device_id: i64, state: State<AppState>) -> Result<(), Strin
     if affected == 0 {
         return Err(format!("设备 ID {} 不存在", device_id));
     }
+
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -300,6 +312,13 @@ pub fn batch_delete_devices(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     for id in &ids {
+        // 先删除关联的巡检记录
+        tx.execute(
+            "DELETE FROM inspection_records WHERE device_id = ?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| e.to_string())?;
+
         tx.execute("DELETE FROM devices WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;
     }

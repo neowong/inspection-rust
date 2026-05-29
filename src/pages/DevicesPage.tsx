@@ -125,8 +125,19 @@ export default function DevicesPage() {
 
   const handleDelete = (id: number) => {
     invoke<void>("delete_device", { deviceId: id })
-      .then(() => { setDeleteConfirm(null); setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; }); loadDevices(); })
-      .catch(console.error);
+      .then(() => {
+        setDeleteConfirm(null);
+        setSelectedIds((prev) => {
+          const n = new Set(prev);
+          n.delete(id);
+          return n;
+        });
+        loadDevices();
+      })
+      .catch((e) => {
+        console.error("删除设备失败:", e);
+        alert(`删除设备失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
+      });
   };
 
   const handleBatchDelete = () => {
@@ -234,10 +245,30 @@ export default function DevicesPage() {
             key: "last_checked_at", header: "最后检测时间", render: (r) =>
               r.last_checked_at ? new Date(r.last_checked_at).toLocaleString("zh-CN") : "-",
           },
+          {
+            key: "actions",
+            header: "操作",
+            width: "120px",
+            render: (r) => (
+              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                  编辑
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setDeleteConfirm(r.id)}
+                >
+                  删除
+                </Button>
+              </div>
+            ),
+          },
         ]}
         data={filteredDevices}
         rowKey={(r) => r.id}
         onRowClick={(r) => setSelectedDevice(r)}
+        onRowDoubleClick={(r) => openEdit(r)}
         onContextMenu={handleContextMenu}
       />
 
