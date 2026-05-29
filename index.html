@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>网络设备巡检系统</title>
+    <style>
+      @media print {
+        header, nav, footer, .no-print { display: none !important; }
+        main { margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+        .h-screen { height: auto !important; }
+        .overflow-hidden { overflow: visible !important; }
+        body { font-size: 12pt; }
+      }
+    </style>
   </head>
   <body class="bg-background text-foreground">
     <div id="root"></div>

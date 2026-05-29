@@ -101,6 +101,26 @@ export interface Stats {
   completed_batch_count: number;
 }
 
+export interface InspectionRecord {
+  id: number;
+  batch_id: number;
+  device_id: number;
+  status: string;
+  command_outputs: string;
+  ai_status: string;
+  ai_result?: string | null;
+  ai_analysis?: string | null;
+  ai_suggestions?: string | null;
+  command_judgments?: string | null;
+  summary_judgment?: string | null;
+  report_path?: string | null;
+  error_message?: string | null;
+  upload_source?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
 export interface Settings {
   report_max_output_lines: number;
 }
