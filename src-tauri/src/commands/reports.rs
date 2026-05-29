@@ -74,7 +74,7 @@ async fn analyze_record_inner(
         // Mark ai_status as "running"
         let now = now_str();
         conn.execute(
-            "UPDATE inspection_records SET ai_status = 'running', updated_at = ?1 WHERE id = ?2",
+            "UPDATE inspection_records SET ai_status = 'processing', updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, record_id],
         )
         .map_err(|e| e.to_string())?;
@@ -298,6 +298,25 @@ pub async fn analyze_batch(
         "failed": failed,
         "errors": errors,
     }))
+}
+
+// ============================================================
+// Record Query
+// ============================================================
+
+/// 获取单条巡检记录的完整详情
+#[tauri::command]
+pub fn get_record(
+    record_id: i64,
+    state: State<AppState>,
+) -> Result<InspectionRecord, String> {
+    let conn = state.db.lock();
+    let sql = format!(
+        "SELECT {} FROM inspection_records WHERE id = ?1",
+        RECORD_COLUMNS
+    );
+    crate::db::query::query_one(&conn, &sql, rusqlite::params![record_id], record_from_row)?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))
 }
 
 // ============================================================

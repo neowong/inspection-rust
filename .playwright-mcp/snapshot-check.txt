@@ -1,0 +1,7 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]
+    - main [ref=e50]
+  - contentinfo [ref=e52]:
+    - generic [ref=e53]: 就绪
+    - generic [ref=e55]: v3.1

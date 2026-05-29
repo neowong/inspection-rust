@@ -1,0 +1,101 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e11]: NetInspect
+      - navigation [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: 巡检工作流
+          - generic [ref=e15]:
+            - button "巡检模板" [ref=e16] [cursor=pointer]:
+              - img [ref=e17]
+              - generic [ref=e22]: 巡检模板
+            - button "设备管理" [ref=e23] [cursor=pointer]:
+              - img [ref=e24]
+              - generic [ref=e27]: 设备管理
+            - button "执行巡检" [ref=e28] [cursor=pointer]:
+              - img [ref=e29]
+              - generic [ref=e31]: 执行巡检
+            - button "巡检报告" [ref=e32] [cursor=pointer]:
+              - img [ref=e33]
+              - generic [ref=e36]: 巡检报告
+        - generic [ref=e37]:
+          - generic [ref=e38]: 系统
+          - generic [ref=e39]:
+            - button "AI 配置" [ref=e40] [cursor=pointer]:
+              - img [ref=e41]
+              - generic [ref=e44]: AI 配置
+            - button "系统设置" [ref=e45] [cursor=pointer]:
+              - img [ref=e46]
+              - generic [ref=e49]: 系统设置
+      - button "收起菜单" [ref=e51] [cursor=pointer]:
+        - img [ref=e52]
+        - generic [ref=e54]: 收起菜单
+    - main [ref=e55]:
+      - generic [ref=e57]:
+        - generic [ref=e58]:
+          - heading "巡检模板" [level=1] [ref=e59]
+          - paragraph [ref=e60]: 管理巡检模板和命令库
+        - generic [ref=e61]:
+          - heading "模板列表" [level=2] [ref=e62]
+          - generic [ref=e63]:
+            - button "添加模板" [ref=e64] [cursor=pointer]
+            - combobox [ref=e65] [cursor=pointer]:
+              - option "全部厂商" [selected]
+              - option "H3C"
+              - option "华为"
+              - option "思科"
+              - option "锐捷"
+            - generic [ref=e66]:
+              - img [ref=e67]
+              - textbox "搜索模板..." [ref=e70]
+          - table [ref=e73]:
+            - rowgroup [ref=e74]:
+              - row "名称 厂商 命令数 描述 更新时间" [ref=e75]:
+                - columnheader "名称" [ref=e76]
+                - columnheader "厂商" [ref=e77]
+                - columnheader "命令数" [ref=e78]
+                - columnheader "描述" [ref=e79]
+                - columnheader "更新时间" [ref=e80]
+            - rowgroup [ref=e81]:
+              - row "暂无模板" [ref=e82]:
+                - cell "暂无模板" [ref=e83]
+        - generic [ref=e84]:
+          - heading "命令库" [level=2] [ref=e85]
+          - generic [ref=e86]:
+            - button "添加命令" [ref=e87] [cursor=pointer]
+            - combobox [ref=e88] [cursor=pointer]:
+              - option "全部厂商" [selected]
+              - option "H3C"
+              - option "华为"
+              - option "思科"
+              - option "锐捷"
+            - combobox [ref=e89] [cursor=pointer]:
+              - option "全部分类" [selected]
+              - option "version"
+              - option "clock"
+              - option "cpu"
+              - option "memory"
+              - option "hardware"
+              - option "interface"
+              - option "vlan"
+              - option "log"
+              - option "protocol"
+              - option "general"
+            - generic [ref=e90]:
+              - img [ref=e91]
+              - textbox "搜索命令..." [ref=e94]
+          - table [ref=e97]:
+            - rowgroup [ref=e98]:
+              - row "厂商 命令 描述 分类" [ref=e99]:
+                - columnheader "厂商" [ref=e100]
+                - columnheader "命令" [ref=e101]
+                - columnheader "描述" [ref=e102]
+                - columnheader "分类" [ref=e103]
+            - rowgroup [ref=e104]:
+              - row "暂无命令" [ref=e105]:
+                - cell "暂无命令" [ref=e106]
+  - contentinfo [ref=e107]:
+    - generic [ref=e108]: 就绪
+    - generic [ref=e110]: v3.1

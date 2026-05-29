@@ -54,7 +54,11 @@ export default function TemplatesPage() {
   const [cmdVendor, setCmdVendor] = useState("");
   const [cmdCategory, setCmdCategory] = useState("");
   const [cmdModal, setCmdModal] = useState(false);
+  const [editingCmd, setEditingCmd] = useState<CommandPool | null>(null);
   const [cmdForm, setCmdForm] = useState<CommandForm>(EMPTY_COMMAND_FORM);
+  const [confirmDeleteCmd, setConfirmDeleteCmd] = useState<number | null>(null);
+  const [cmdCtxMenu, setCmdCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [selectedCmd, setSelectedCmd] = useState<CommandPool | null>(null);
 
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
@@ -116,7 +120,6 @@ export default function TemplatesPage() {
     if (templateForm.device_type) data.device_type = templateForm.device_type;
     if (templateForm.description) data.description = templateForm.description;
 
-    console.log("[TemplatesPage] 保存模板:", { editing: !!editingTemplate, data });
     setSaving(true);
     setSaveError(null);
 
@@ -125,13 +128,11 @@ export default function TemplatesPage() {
       : invoke<InspectionTemplate>("create_template", { data });
 
     promise
-      .then((result) => {
-        console.log("[TemplatesPage] 保存成功:", result);
+      .then(() => {
         setTemplateModal(false);
         loadTemplates();
       })
       .catch((e) => {
-        console.error("[TemplatesPage] 保存失败:", e);
         setSaveError(typeof e === "string" ? e : JSON.stringify(e));
       })
       .finally(() => setSaving(false));
@@ -152,11 +153,52 @@ export default function TemplatesPage() {
   };
 
   // Command handlers
+  const openAddCmd = () => {
+    setEditingCmd(null);
+    setCmdForm(EMPTY_COMMAND_FORM);
+    setCmdModal(true);
+  };
+
+  const openEditCmd = (c: CommandPool) => {
+    setEditingCmd(c);
+    setCmdForm({
+      vendor: c.vendor,
+      command: c.command,
+      description: c.description || "",
+      category: c.category || "general",
+    });
+    setCmdModal(true);
+  };
+
   const handleSaveCommand = () => {
-    invoke<CommandPool>("create_command", { data: { ...cmdForm } })
-      .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); loadCommands(); })
+    if (!cmdForm.command.trim()) return;
+    const promise = editingCmd
+      ? invoke<CommandPool>("update_command", { commandId: editingCmd.id, data: { ...cmdForm } })
+      : invoke<CommandPool>("create_command", { data: { ...cmdForm } });
+    promise
+      .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); setEditingCmd(null); loadCommands(); })
       .catch(console.error);
   };
+
+  const handleDeleteCmd = (id: number) => {
+    invoke<void>("delete_command", { commandId: id })
+      .then(() => { setConfirmDeleteCmd(null); loadCommands(); })
+      .catch(console.error);
+  };
+
+  const handleCmdCtx = (e: React.MouseEvent, c: CommandPool) => {
+    e.preventDefault();
+    setSelectedCmd(c);
+    setCmdCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const cmdCtxItems: ContextMenuItem[] = selectedCmd
+    ? [
+        { label: "编辑", action: () => openEditCmd(selectedCmd) },
+        { label: "", separator: true },
+        { label: "删除", danger: true, action: () => setConfirmDeleteCmd(selectedCmd.id) },
+      ]
+    : [];
 
   const handleTemplateCtx = (e: React.MouseEvent, t: InspectionTemplate) => {
     e.preventDefault();
@@ -220,7 +262,7 @@ export default function TemplatesPage() {
       <div>
         <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-3">命令库</h2>
         <Toolbar>
-          <Button onClick={() => { setCmdForm(EMPTY_COMMAND_FORM); setCmdModal(true); }} size="sm">添加命令</Button>
+          <Button onClick={openAddCmd} size="sm">添加命令</Button>
           <Select className="w-28" value={cmdVendor} onChange={(e) => setCmdVendor(e.target.value)}>
             <option value="">全部厂商</option>
             {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -240,6 +282,8 @@ export default function TemplatesPage() {
           ]}
           data={filteredCommands}
           rowKey={(r) => r.id}
+          onRowDoubleClick={(r) => openEditCmd(r)}
+          onContextMenu={handleCmdCtx}
           emptyText="暂无命令"
         />
       </div>
@@ -250,6 +294,14 @@ export default function TemplatesPage() {
         x={ctxMenu?.x ?? 0}
         y={ctxMenu?.y ?? 0}
         onClose={() => setCtxMenu(null)}
+      />
+
+      <ContextMenu
+        items={cmdCtxItems}
+        visible={cmdCtxMenu !== null}
+        x={cmdCtxMenu?.x ?? 0}
+        y={cmdCtxMenu?.y ?? 0}
+        onClose={() => setCmdCtxMenu(null)}
       />
 
       {/* Template Modal */}
@@ -349,13 +401,13 @@ export default function TemplatesPage() {
       {/* Command Modal */}
       <Modal
         open={cmdModal}
-        title="添加命令"
+        title={editingCmd ? "编辑命令" : "添加命令"}
         width="max-w-md"
-        onClose={() => setCmdModal(false)}
+        onClose={() => { setCmdModal(false); setEditingCmd(null); }}
         footer={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setCmdModal(false)}>取消</Button>
-            <Button onClick={handleSaveCommand}>添加</Button>
+            <Button variant="secondary" onClick={() => { setCmdModal(false); setEditingCmd(null); }}>取消</Button>
+            <Button onClick={handleSaveCommand}>{editingCmd ? "保存" : "添加"}</Button>
           </div>
         }
       >
@@ -381,6 +433,22 @@ export default function TemplatesPage() {
             </Select>
           </div>
         </div>
+      </Modal>
+
+      {/* Delete Command Confirm */}
+      <Modal
+        open={confirmDeleteCmd !== null}
+        title="确认删除"
+        width="max-w-sm"
+        onClose={() => setConfirmDeleteCmd(null)}
+        footer={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setConfirmDeleteCmd(null)}>取消</Button>
+            <Button variant="danger" onClick={() => handleDeleteCmd(confirmDeleteCmd!)}>删除</Button>
+          </div>
+        }
+      >
+        <p>确定要删除此命令吗？此操作不可恢复。</p>
       </Modal>
     </div>
   );

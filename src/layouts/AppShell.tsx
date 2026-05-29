@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { FolderTree, Server, Play, FileText, Settings, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, FolderTree, Server, Play, FileText, Settings, ChevronLeft } from "lucide-react";
 
-type PageKey = "templates" | "devices" | "inspection" | "reports" | "settings";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "settings";
 
 interface NavItem {
   key: PageKey;
@@ -15,6 +15,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   {
     label: "巡检工作流",
     items: [
+      { key: "dashboard",  label: "仪表盘",   path: "/dashboard",  icon: LayoutDashboard },
       { key: "templates",  label: "巡检模板", path: "/templates",  icon: FolderTree },
       { key: "devices",    label: "设备管理", path: "/devices",    icon: Server },
       { key: "inspection", label: "执行巡检", path: "/inspection", icon: Play },

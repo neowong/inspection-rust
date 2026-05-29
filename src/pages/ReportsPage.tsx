@@ -23,21 +23,24 @@ export default function ReportsPage() {
 
   useEffect(() => { loadBatches(); }, [loadBatches]);
 
+  const loadRecord = useCallback((recordId: number) => {
+    invoke<InspectionRecord>("get_record", { recordId })
+      .then(setSelectedRecord)
+      .catch(console.error);
+  }, []);
+
   const selectBatch = useCallback((batch: InspectionBatch) => {
     setSelectedBatch(batch);
     setSelectedRecord(null);
   }, []);
 
-  const selectRecord = useCallback((record: InspectionRecord) => {
-    setSelectedRecord(record);
-  }, []);
-
   const handleAnalyze = (recordId: number) => {
     setAnalyzing(true);
-    invoke<InspectionRecord>("analyze_record", { recordId })
-      .then((rec) => {
-        setSelectedRecord(rec);
+    invoke("analyze_record", { recordId })
+      .then(() => {
+        loadRecord(recordId); // reload full record with AI data
         setAnalyzing(false);
+        loadBatches();
       })
       .catch(() => setAnalyzing(false));
   };
@@ -46,8 +49,9 @@ export default function ReportsPage() {
     setGenerating(true);
     invoke<string>("generate_report", { recordId })
       .then(() => {
-        // Reload record after report generation
         setGenerating(false);
+        loadRecord(recordId); // reload to get updated report_path
+        loadBatches();
       })
       .catch(() => setGenerating(false));
   };
@@ -59,11 +63,19 @@ export default function ReportsPage() {
       .catch(() => setDownloading(false));
   };
 
-  // Parse command outputs if it's a JSON string with per-command output
+  // Parse command outputs (HashMap<string, string> → array of {command, content})
   const parsedOutputs = useMemo(() => {
     if (!selectedRecord?.command_outputs) return [];
     try {
       const parsed = JSON.parse(selectedRecord.command_outputs);
+      // Object form: { "display version": "output...", ... }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return Object.entries(parsed).map(([command, content]) => ({
+          command,
+          content: typeof content === "string" ? content : JSON.stringify(content),
+        }));
+      }
+      // Array form fallback
       if (Array.isArray(parsed)) return parsed;
       return [{ command: "output", content: selectedRecord.command_outputs }];
     } catch {
@@ -128,28 +140,7 @@ export default function ReportsPage() {
             ]}
             data={selectedBatch.records || []}
             rowKey={(r) => r.id}
-            onRowClick={(r) => {
-              // Convert summary to full record
-              const rec: InspectionRecord = {
-                id: r.id,
-                batch_id: r.batch_id,
-                device_id: r.device_id,
-                status: r.status,
-                command_outputs: "",
-                ai_status: r.ai_status,
-                ai_result: null,
-                ai_analysis: null,
-                ai_suggestions: null,
-                command_judgments: null,
-                summary_judgment: null,
-                report_path: r.report_path,
-                error_message: r.error_message,
-                started_at: null,
-                completed_at: null,
-                created_at: "",
-              };
-              selectRecord(rec);
-            }}
+            onRowClick={(r) => loadRecord(r.id)}
             selectedKey={selectedRecord?.id}
             emptyText="暂无记录"
           />
@@ -217,18 +208,15 @@ export default function ReportsPage() {
                       const result = aiResult;
                       if (!result) return "";
                       if (typeof result === "string") return result;
-                      // Try to format structured result
                       const parts: string[] = [];
-                      if (result.summary) parts.push(`## 总结\n\n${result.summary}`);
-                      if (result.details) parts.push(`## 详细分析\n\n${result.details}`);
-                      if (result.suggestions) {
-                        const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [result.suggestions];
-                        parts.push(`## 建议\n\n${suggestions.map((s: string) => `- ${s}`).join("\n")}`);
+                      if (result.summary) {
+                        const overall = result.overall ? ` [${result.overall}]` : "";
+                        parts.push(`## 总结${overall}\n\n${result.summary}`);
                       }
                       if (result.items && Array.isArray(result.items)) {
-                        parts.push(`## 逐项分析\n\n| 项目 | 状态 | 发现 | 建议 |\n|------|------|------|------|\n${
-                          result.items.map((item: { name?: string; status?: string; finding?: string; suggestion?: string }) =>
-                            `| ${item.name || "-"} | ${item.status || "-"} | ${item.finding || "-"} | ${item.suggestion || "-"} |`
+                        parts.push(`## 逐项分析\n\n| 命令 | 状态 | 发现 | 建议 |\n|------|------|------|------|\n${
+                          result.items.map((item: { command?: string; title?: string; status?: string; finding?: string; suggestion?: string }) =>
+                            `| ${item.title || item.command || "-"} | ${item.status || "-"} | ${item.finding || "-"} | ${item.suggestion || "-"} |`
                           ).join("\n")
                         }`);
                       }

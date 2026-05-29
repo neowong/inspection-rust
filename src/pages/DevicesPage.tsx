@@ -105,7 +105,6 @@ export default function DevicesPage() {
     if (form.ssh_password) data.ssh_password_encrypted = form.ssh_password;
     if (form.template_id !== null) data.template_id = form.template_id;
 
-    console.log("[DevicesPage] 保存设备:", { editing: !!editing, data });
     setSaving(true);
     setSaveError(null);
 
@@ -114,13 +113,11 @@ export default function DevicesPage() {
       : invoke<Device>("create_device", { data });
 
     promise
-      .then((result) => {
-        console.log("[DevicesPage] 保存成功:", result);
+      .then(() => {
         setModalOpen(false);
         loadDevices();
       })
       .catch((e) => {
-        console.error("[DevicesPage] 保存失败:", e);
         setSaveError(typeof e === "string" ? e : JSON.stringify(e));
       })
       .finally(() => setSaving(false));

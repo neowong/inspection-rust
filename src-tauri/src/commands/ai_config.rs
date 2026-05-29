@@ -198,17 +198,18 @@ pub fn delete_ai_config(config_id: i64, state: State<AppState>) -> Result<(), St
 /// 激活 AI 模型配置（同时反激活其他所有配置）
 #[tauri::command]
 pub fn activate_ai_config(config_id: i64, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // Deactivate all configs first
-    conn.execute(
+    tx.execute(
         "UPDATE ai_model_configs SET is_active = 0, updated_at = datetime('now')",
         [],
     )
     .map_err(|e| e.to_string())?;
 
     // Activate the target config
-    let affected = conn
+    let affected = tx
         .execute(
             "UPDATE ai_model_configs SET is_active = 1, updated_at = datetime('now') WHERE id = ?1",
             rusqlite::params![config_id],
@@ -219,6 +220,7 @@ pub fn activate_ai_config(config_id: i64, state: State<AppState>) -> Result<(), 
         return Err(format!("AI 配置 ID {} 不存在", config_id));
     }
 
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

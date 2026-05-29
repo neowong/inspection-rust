@@ -49,7 +49,7 @@ export type RecordStatusType =
   | "stopped" | "skipped";
 
 export type AiStatusType =
-  | "none" | "pending" | "running" | "completed" | "failed";
+  | "none" | "pending" | "processing" | "completed" | "failed";
 
 export interface InspectionBatch {
   id: number;

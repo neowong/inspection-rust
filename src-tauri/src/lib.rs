@@ -92,6 +92,7 @@ pub fn run() {
             commands::inspections::delete_record,
             commands::inspections::batch_delete_records,
             // Reports & AI
+            commands::reports::get_record,
             commands::reports::analyze_record,
             commands::reports::analyze_batch,
             commands::reports::generate_report,
