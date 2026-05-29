@@ -43,8 +43,9 @@ mod legacy_algorithms {
             "-o".into(), "ConnectTimeout=10".into(),
             "-o".into(), "ServerAliveInterval=5".into(),
             "-o".into(), "ServerAliveCountMax=3".into(),
-            "-o".into(), "LogLevel=ERROR".into(),
-            "-o".into(), "BatchMode=no".into(),
+            "-o".into(), "LogLevel=INFO".into(),
+            "-o".into(), "NumberOfPasswordPrompts=1".into(),
+            "-o".into(), "PreferredAuthentications=password".into(),
         ]
     }
 }
@@ -60,18 +61,23 @@ pub fn run_commands(
     commands: &[String],
 ) -> Result<HashMap<String, String>, String> {
     // Try libssh2 first
-    match run_commands_libssh2(source, vendor, commands) {
+    let libssh2_error = match run_commands_libssh2(source, vendor, commands) {
         Ok(results) => return Ok(results),
         Err(e) => {
             eprintln!("[SSH] libssh2 failed: {}, trying system ssh", e);
+            e
         }
-    }
+    };
 
     // Fallback to system ssh
     match run_commands_system_ssh(source, vendor, commands) {
         Ok(results) => return Ok(results),
-        Err(e) => {
-            return Err(format!("所有 SSH 连接方式均失败: {}", e));
+        Err(system_ssh_error) => {
+            let combined_error = format!(
+                "所有 SSH 连接方式均失败:\n\n[libssh2] {}\n\n[系统SSH] {}",
+                libssh2_error, system_ssh_error
+            );
+            return Err(combined_error);
         }
     }
 }
@@ -153,7 +159,28 @@ fn run_single_ssh_command(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("SSH命令失败: {}", stderr));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let exit_code = output.status.code().unwrap_or(-1);
+
+        // Build detailed error message
+        let mut error_msg = format!(
+            "SSH命令失败 (exit code: {})\n命令: {}\n目标: {}@{}:{}",
+            exit_code, cmd, source.username, source.host, source.port
+        );
+
+        if !stderr.is_empty() {
+            error_msg.push_str(&format!("\n错误输出: {}", stderr.trim()));
+        }
+
+        if !stdout.is_empty() {
+            error_msg.push_str(&format!("\n标准输出: {}", stdout.trim()));
+        }
+
+        if stderr.is_empty() && stdout.is_empty() {
+            error_msg.push_str("\n(无任何输出，可能是连接超时或网络问题)");
+        }
+
+        return Err(error_msg);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
