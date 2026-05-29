@@ -22,5 +22,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 2")?;
     }
 
+    if version < 3 {
+        conn.execute_batch(include_str!("../../sql/003_add_template_type.sql"))?;
+        conn.execute_batch("PRAGMA user_version = 3")?;
+    }
+
     Ok(())
 }
