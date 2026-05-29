@@ -118,19 +118,6 @@ CREATE INDEX IF NOT EXISTS idx_records_batch ON inspection_records(batch_id);
 CREATE INDEX IF NOT EXISTS idx_records_device ON inspection_records(device_id);
 CREATE INDEX IF NOT EXISTS idx_records_ai_status ON inspection_records(ai_status);
 
--- Scheduled tasks
-CREATE TABLE IF NOT EXISTS scheduled_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    cron_expression TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    device_ids TEXT NOT NULL DEFAULT '[]',
-    next_run_at TEXT,
-    last_run_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 -- AI model configs
 CREATE TABLE IF NOT EXISTS ai_model_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,18 +137,6 @@ CREATE TABLE IF NOT EXISTS report_templates (
     name TEXT NOT NULL,
     vendor TEXT,
     file_path TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Offline log imports
-CREATE TABLE IF NOT EXISTS offline_log_imports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    filename TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    mode TEXT DEFAULT 'upload' CHECK(mode IN ('upload', 'script')),
-    parsed_devices TEXT DEFAULT '[]',
-    batch_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -12,8 +12,11 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 1")?;
     }
 
-    // Add more migrations as needed with version checks
-    // if version < 2 { conn.execute_batch(include_str!("../../sql/002_xxx.sql"))?; PRAGMA user_version = 2; }
+    if version < 2 {
+        conn.execute_batch("DROP TABLE IF EXISTS offline_log_imports;")?;
+        conn.execute_batch("DROP TABLE IF EXISTS scheduled_tasks;")?;
+        conn.execute_batch("PRAGMA user_version = 2;")?;
+    }
 
     Ok(())
 }
