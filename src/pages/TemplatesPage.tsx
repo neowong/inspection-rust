@@ -584,8 +584,8 @@ export default function TemplatesPage() {
       {/* New Template Modal */}
       <Modal
         open={newModalOpen}
-        title="新建模板"
-        width="max-w-lg"
+        title="新建巡检模板"
+        width="max-w-md"
         onClose={() => setNewModalOpen(false)}
         footer={
           <>
@@ -593,50 +593,65 @@ export default function TemplatesPage() {
               取消
             </Button>
             <Button size="sm" disabled={!newForm.name.trim()} onClick={handleCreate}>
-              创建
+              创建模板
             </Button>
           </>
         }
       >
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="模板名称 *">
-            <Input size="sm"
+        <div className="space-y-4">
+          {/* 模板名称 — 必填，突出 */}
+          <div>
+            <label className="block text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5">
+              模板名称 <span className="text-[hsl(var(--danger))]">*</span>
+            </label>
+            <Input
               value={newForm.name}
               onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
-              placeholder="例如: H3C交换机巡检模板"
+              placeholder="例如: H3C 核心交换机巡检模板"
+              autoFocus
             />
-          </FormField>
-          <FormField label="厂商">
-            <Select size="sm"
-              value={newForm.vendor}
-              onChange={(e) => setNewForm({ ...newForm, vendor: e.target.value })}
-            >
-              {VENDORS.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField label="型号">
-            <Input size="sm"
-              value={newForm.model}
-              onChange={(e) => setNewForm({ ...newForm, model: e.target.value })}
-              placeholder="例如: S5130-52S-EI"
-            />
-          </FormField>
-          <FormField label="设备类型">
-            <Input size="sm"
-              value={newForm.device_type}
-              onChange={(e) => setNewForm({ ...newForm, device_type: e.target.value })}
-              placeholder="例如: switch / router"
-            />
-          </FormField>
-          <FormField label="描述">
-            <Input size="sm"
-              value={newForm.description}
-              onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
-              placeholder="模板用途说明"
-            />
-          </FormField>
+            {!newForm.name.trim() && (
+              <p className="text-[11px] text-[hsl(var(--text-tertiary))] mt-1">输入模板名称后即可创建</p>
+            )}
+          </div>
+
+          {/* 选填信息 — 收起，用分割线隔开 */}
+          <div className="pt-3 border-t border-[hsl(var(--border-light))]">
+            <p className="text-[11px] text-[hsl(var(--text-tertiary))] mb-3">以下为选填信息，可稍后在模板详情中修改</p>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="厂商">
+                <Select size="sm"
+                  value={newForm.vendor}
+                  onChange={(e) => setNewForm({ ...newForm, vendor: e.target.value })}
+                >
+                  {VENDORS.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </Select>
+              </FormField>
+              <FormField label="设备类型">
+                <Input size="sm"
+                  value={newForm.device_type}
+                  onChange={(e) => setNewForm({ ...newForm, device_type: e.target.value })}
+                  placeholder="switch / router / firewall"
+                />
+              </FormField>
+              <FormField label="型号">
+                <Input size="sm"
+                  value={newForm.model}
+                  onChange={(e) => setNewForm({ ...newForm, model: e.target.value })}
+                  placeholder="例如: S5130-52S-EI"
+                />
+              </FormField>
+              <FormField label="描述">
+                <Input size="sm"
+                  value={newForm.description}
+                  onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
+                  placeholder="简要说明模板用途"
+                />
+              </FormField>
+            </div>
+          </div>
         </div>
       </Modal>
 
