@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
+import Button from "../components/ui/Button";
+import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
 import type { Device } from "../types";
 
@@ -283,8 +285,8 @@ export default function InspectionPage() {
       if (typeof obj === "object" && obj !== null) {
         return Object.entries(obj).map(([cmd, out]) => (
           <div key={cmd} className="mb-2">
-            <div className="text-gray-500 mb-1">$ {cmd}</div>
-            <pre className="bg-gray-900 text-green-400 p-2 rounded overflow-auto max-h-48 text-[11px] whitespace-pre-wrap">
+            <div className="text-[hsl(var(--text-secondary))] mb-1">$ {cmd}</div>
+            <pre className="bg-[hsl(var(--bg-app))] text-emerald-400 p-2 rounded overflow-auto max-h-48 text-[11px] whitespace-pre-wrap">
               {String(out)}
             </pre>
           </div>
@@ -294,7 +296,7 @@ export default function InspectionPage() {
       // not valid JSON, show as plain text
     }
     return (
-      <pre className="bg-gray-900 text-green-400 p-2 rounded overflow-auto max-h-48 text-[11px] whitespace-pre-wrap">
+      <pre className="bg-[hsl(var(--bg-app))] text-emerald-400 p-2 rounded overflow-auto max-h-48 text-[11px] whitespace-pre-wrap">
         {raw}
       </pre>
     );
@@ -310,8 +312,8 @@ export default function InspectionPage() {
     }
     return (
       <div>
-        <span className="font-medium text-gray-600">{label}:</span>
-        <pre className="mt-1 bg-white border p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap text-[11px]">
+        <span className="font-medium text-[hsl(var(--text-secondary))]">{label}:</span>
+        <pre className="mt-1 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] p-2 rounded max-h-40 overflow-auto whitespace-pre-wrap text-[11px]">
           {text}
         </pre>
       </div>
@@ -320,27 +322,27 @@ export default function InspectionPage() {
 
   // --------------- loading ---------------
 
-  if (loading) return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+  if (loading) return <div className="p-4 text-[hsl(var(--text-secondary))] text-sm">加载中...</div>;
 
   // --------------- render ---------------
 
   return (
     <div className="flex gap-3 h-full">
       {/* ===== Left: Device selector ===== */}
-      <div className="w-56 shrink-0 bg-white rounded border border-gray-200 flex flex-col">
-        <div className="p-2 border-b border-gray-100">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+      <div className="w-56 shrink-0 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg flex flex-col">
+        <div className="p-2 border-b border-[hsl(var(--border-light))]">
+          <h3 className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wide">
             选择设备
           </h3>
         </div>
         <div className="flex-1 overflow-auto p-1">
           {devices.length === 0 ? (
-            <p className="text-xs text-gray-400 p-2">暂无设备</p>
+            <p className="text-xs text-[hsl(var(--text-tertiary))] p-2">暂无设备</p>
           ) : (
             devices.map((d) => (
               <label
                 key={d.id}
-                className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
+                className="flex items-center gap-2 px-2 py-1 hover:bg-[hsl(var(--bg-hover))] rounded cursor-pointer text-xs"
               >
                 <input
                   type="checkbox"
@@ -349,19 +351,19 @@ export default function InspectionPage() {
                   onChange={() => toggleDevice(d.id)}
                 />
                 <span className="truncate">{d.name}</span>
-                <span className="text-gray-400 ml-auto text-[10px] hidden">{d.ip}</span>
+                <span className="text-[hsl(var(--text-tertiary))] ml-auto text-[10px] hidden">{d.ip}</span>
               </label>
             ))
           )}
         </div>
-        <div className="p-2 border-t border-gray-100 flex items-center gap-1">
+        <div className="p-2 border-t border-[hsl(var(--border-light))] flex items-center gap-1">
           <input
             type="checkbox"
             className="w-3.5 h-3.5"
             checked={devices.length > 0 && devices.every((d) => selectedIds.has(d.id))}
             onChange={toggleSelectAll}
           />
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[hsl(var(--text-secondary))]">
             全选 ({selectedIds.size}/{devices.length})
           </span>
         </div>
@@ -370,36 +372,23 @@ export default function InspectionPage() {
       {/* ===== Right: Main content ===== */}
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         {/* Create batch bar */}
-        <div className="bg-white rounded border border-gray-200 p-3">
+        <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-3">
           <h2 className="text-sm font-semibold mb-2">创建巡检批次</h2>
           <div className="flex items-center gap-2">
-            <input
-              className="text-xs border border-gray-300 rounded px-2 py-1 w-48 placeholder:text-gray-400"
-              placeholder="批次名称（可选）"
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-            />
-            <select
-              className="text-xs border border-gray-300 rounded px-2 py-1"
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-            >
+            <Input size="sm" className="w-48" placeholder="批次名称（可选）" value={batchName} onChange={(e) => setBatchName(e.target.value)} />
+            <Select size="sm" value={mode} onChange={(e) => setMode(e.target.value)}>
               {MODE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
               ))}
-            </select>
-            <button
-              className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-              disabled={selectedIds.size === 0 || creating}
-              onClick={handleCreateBatch}
-            >
-              {creating ? "创建中..." : "创建批次"}
-            </button>
+            </Select>
+            <Button size="sm" disabled={selectedIds.size === 0 || creating} loading={creating} onClick={handleCreateBatch}>
+              创建批次
+            </Button>
           </div>
           {selectedIds.size > 0 && (
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-[hsl(var(--text-secondary))] mt-2">
               已选择 {selectedIds.size} 个设备
             </p>
           )}
@@ -409,7 +398,7 @@ export default function InspectionPage() {
         {activeBatch ? (
           <>
             {/* Header + controls + progress */}
-            <div className="bg-white rounded border border-gray-200 p-3">
+            <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-3">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold">
@@ -419,69 +408,48 @@ export default function InspectionPage() {
                 </div>
                 <div className="flex items-center gap-1">
                   {canStart && (
-                    <button
-                      className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
-                      onClick={handleStartBatch}
-                    >
+                    <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={handleStartBatch}>
                       开始巡检
-                    </button>
+                    </Button>
                   )}
                   {canPauseStop && (
                     <>
-                      <button
-                        className="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                        onClick={handlePauseBatch}
-                      >
+                      <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white" onClick={handlePauseBatch}>
                         暂停
-                      </button>
-                      <button
-                        className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                        onClick={handleStopBatch}
-                      >
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={handleStopBatch}>
                         停止
-                      </button>
+                      </Button>
                     </>
                   )}
                   {canRestart && (
-                    <button
-                      className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-                      onClick={handleRestartBatch}
-                    >
+                    <Button variant="secondary" size="sm" onClick={handleRestartBatch}>
                       重新开始
-                    </button>
+                    </Button>
                   )}
                   {hasReport && (
-                    <button
-                      className="px-3 py-1 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50"
-                      onClick={() => navigate("/reports")}
-                    >
+                    <Button variant="secondary" size="sm" onClick={() => navigate("/reports")}>
                       查看报告
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-                    onClick={() => {
-                      setActiveBatch(null);
-                      stopPolling();
-                    }}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => { setActiveBatch(null); stopPolling(); }}>
                     返回列表
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Progress bar */}
               <div className="mb-2">
-                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <div className="flex items-center justify-between text-xs text-[hsl(var(--text-secondary))] mb-1">
                   <span>巡检进度</span>
                   <span>
                     {completedRecords} / {totalDevices} 设备
                   </span>
                 </div>
-                <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                <div className="w-full h-2.5 bg-[hsl(var(--bg-hover))] rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${
-                      isCompleted ? "bg-green-500" : isRunning ? "bg-blue-500 animate-pulse" : "bg-gray-400"
+                      isCompleted ? "bg-emerald-500" : isRunning ? "bg-[hsl(var(--accent))] animate-pulse" : "bg-[hsl(var(--text-tertiary))]"
                     }`}
                     style={{ width: `${progressPercent}%` }}
                   />
@@ -489,7 +457,7 @@ export default function InspectionPage() {
               </div>
 
               {/* Meta */}
-              <div className="flex gap-4 text-xs text-gray-500">
+              <div className="flex gap-4 text-xs text-[hsl(var(--text-secondary))]">
                 <span>模式: {activeBatch.mode}</span>
                 <span>
                   触发: {activeBatch.triggered_by === "manual" ? "手动" : "定时"}
@@ -502,32 +470,32 @@ export default function InspectionPage() {
             </div>
 
             {/* Device execution status table */}
-            <div className="bg-white rounded border border-gray-200 flex-1 flex flex-col min-h-0">
-              <div className="p-2 border-b border-gray-100">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg flex-1 flex flex-col min-h-0">
+              <div className="p-2 border-b border-[hsl(var(--border-light))]">
+                <h3 className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wide">
                   设备执行状态
                 </h3>
               </div>
               <div className="overflow-auto flex-1">
                 <table className="w-full text-xs">
-                  <thead className="bg-gray-50 sticky top-0 z-10">
+                  <thead className="bg-[hsl(var(--bg-hover))] sticky top-0 z-10">
                     <tr>
-                      <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600 w-8">
+                      <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))] w-8">
                         #
                       </th>
-                      <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                      <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                         设备
                       </th>
-                      <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                      <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                         IP
                       </th>
-                      <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                      <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                         状态
                       </th>
-                      <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                      <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                         AI 分析
                       </th>
-                      <th className="text-right px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600 w-16">
+                      <th className="text-right px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))] w-16">
                         操作
                       </th>
                     </tr>
@@ -535,7 +503,7 @@ export default function InspectionPage() {
                   <tbody>
                     {activeBatch.records.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center py-8 text-gray-400">
+                        <td colSpan={6} className="text-center py-8 text-[hsl(var(--text-tertiary))]">
                           {isPending ? "等待开始巡检..." : "暂无执行记录"}
                         </td>
                       </tr>
@@ -546,16 +514,16 @@ export default function InspectionPage() {
                         return (
                           <Fragment key={rec.id}>
                             <tr
-                              className="border-b border-gray-100 hover:bg-blue-50/50 cursor-pointer"
+                              className="border-b border-[hsl(var(--border-light))] hover:bg-[hsl(var(--bg-hover))] cursor-pointer"
                               onClick={() =>
                                 setExpandedDeviceId(isExpanded ? null : rec.id)
                               }
                             >
-                              <td className="px-3 py-1.5 text-gray-400">{idx + 1}</td>
+                              <td className="px-3 py-1.5 text-[hsl(var(--text-tertiary))]">{idx + 1}</td>
                               <td className="px-3 py-1.5 font-medium">
                                 {dev?.name || `设备 #${rec.device_id}`}
                               </td>
-                              <td className="px-3 py-1.5 text-gray-500">
+                              <td className="px-3 py-1.5 text-[hsl(var(--text-secondary))]">
                                 {dev?.ip || "-"}
                               </td>
                               <td className="px-3 py-1.5">
@@ -566,21 +534,15 @@ export default function InspectionPage() {
                               </td>
                               <td className="px-3 py-1.5 text-right">
                                 {rec.status === "failed" && (
-                                  <button
-                                    className="px-2 py-0.5 text-[11px] border border-orange-300 text-orange-700 rounded hover:bg-orange-50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRetryDevice(rec.device_id);
-                                    }}
-                                  >
+                                  <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); handleRetryDevice(rec.device_id); }}>
                                     重试
-                                  </button>
+                                  </Button>
                                 )}
                               </td>
                             </tr>
                             {isExpanded && (
                               <tr>
-                                <td colSpan={6} className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                                <td colSpan={6} className="bg-[hsl(var(--bg-app))] px-4 py-2 border-b border-[hsl(var(--border))]">
                                   <DeviceDetail rec={rec} renderCmd={renderCommandOutputs} renderJson={renderJsonBlock} />
                                 </td>
                               </tr>
@@ -596,35 +558,35 @@ export default function InspectionPage() {
           </>
         ) : (
           /* ===== Recent batches list (no active batch) ===== */
-          <div className="bg-white rounded border border-gray-200 flex-1 flex flex-col min-h-0">
-            <div className="p-2 border-b border-gray-100">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg flex-1 flex flex-col min-h-0">
+            <div className="p-2 border-b border-[hsl(var(--border-light))]">
+              <h3 className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wide">
                 最近批次
               </h3>
             </div>
             <div className="overflow-auto flex-1">
               <table className="w-full text-xs">
-                <thead className="bg-gray-50 sticky top-0 z-10">
+                <thead className="bg-[hsl(var(--bg-hover))] sticky top-0 z-10">
                   <tr>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       ID
                     </th>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       名称
                     </th>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       状态
                     </th>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       设备数
                     </th>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       模式
                     </th>
-                    <th className="text-left px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600">
+                    <th className="text-left px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))]">
                       创建时间
                     </th>
-                    <th className="text-right px-3 py-1.5 border-b border-gray-200 font-medium text-gray-600 w-16">
+                    <th className="text-right px-3 py-1.5 border-b border-[hsl(var(--border))] font-medium text-[hsl(var(--text-secondary))] w-16">
                       操作
                     </th>
                   </tr>
@@ -632,7 +594,7 @@ export default function InspectionPage() {
                 <tbody>
                   {batches.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-gray-400">
+                      <td colSpan={7} className="text-center py-8 text-[hsl(var(--text-tertiary))]">
                         暂无批次，请选择设备后创建
                       </td>
                     </tr>
@@ -640,9 +602,9 @@ export default function InspectionPage() {
                     batches.map((b) => (
                       <tr
                         key={b.id}
-                        className="border-b border-gray-100 hover:bg-blue-50/50"
+                        className="border-b border-[hsl(var(--border-light))] hover:bg-[hsl(var(--bg-hover))]"
                       >
-                        <td className="px-3 py-1.5 font-mono text-gray-500">#{b.id}</td>
+                        <td className="px-3 py-1.5 font-mono text-[hsl(var(--text-secondary))]">#{b.id}</td>
                         <td className="px-3 py-1.5 font-medium">
                           {b.name || "-"}
                         </td>
@@ -651,16 +613,13 @@ export default function InspectionPage() {
                         </td>
                         <td className="px-3 py-1.5">{parseDeviceIds(b.device_ids).length}</td>
                         <td className="px-3 py-1.5">{b.mode}</td>
-                        <td className="px-3 py-1.5 text-gray-500">
+                        <td className="px-3 py-1.5 text-[hsl(var(--text-secondary))]">
                           {formatTs(b.created_at)}
                         </td>
                         <td className="px-3 py-1.5 text-right">
-                          <button
-                            className="px-2 py-0.5 text-[11px] bg-blue-500 text-white rounded hover:bg-blue-600"
-                            onClick={() => viewBatch(b.id)}
-                          >
+                          <Button size="sm" onClick={() => viewBatch(b.id)}>
                             查看
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))
@@ -672,22 +631,6 @@ export default function InspectionPage() {
         )}
       </div>
 
-      {/* Form input style */}
-      <style>{`
-        .form-input {
-          width: 100%;
-          padding: 4px 8px;
-          font-size: 12px;
-          border: 1px solid #d1d5db;
-          border-radius: 4px;
-          outline: none;
-          background: #fff;
-        }
-        .form-input:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 1px #3b82f6;
-        }
-      `}</style>
     </div>
   );
 }
@@ -696,12 +639,12 @@ export default function InspectionPage() {
 
 function AiStatusLabel({ status }: { status: string }) {
   const map: Record<string, { cls: string; text: string }> = {
-    completed: { cls: "text-green-600", text: "已完成" },
-    running: { cls: "text-blue-600", text: "分析中..." },
-    failed: { cls: "text-red-600", text: "失败" },
-    pending: { cls: "text-gray-400", text: "等待中" },
+    completed: { cls: "text-emerald-400", text: "已完成" },
+    running: { cls: "text-blue-400", text: "分析中..." },
+    failed: { cls: "text-red-400", text: "失败" },
+    pending: { cls: "text-[hsl(var(--text-tertiary))]", text: "等待中" },
   };
-  const m = map[status] || { cls: "text-gray-400", text: status || "-" };
+  const m = map[status] || { cls: "text-[hsl(var(--text-tertiary))]", text: status || "-" };
   return <span className={`text-[11px] ${m.cls}`}>{m.text}</span>;
 }
 
@@ -717,22 +660,22 @@ function DeviceDetail({
   const hasData = rec.error_message || rec.command_outputs || rec.ai_result || rec.command_judgments || rec.summary_judgment;
 
   if (!hasData) {
-    return <span className="text-xs text-gray-400">暂无详细数据</span>;
+    return <span className="text-xs text-[hsl(var(--text-tertiary))]">暂无详细数据</span>;
   }
 
   return (
     <div className="text-xs space-y-2">
       {rec.error_message && (
-        <div className="bg-red-50 border border-red-200 rounded p-2">
-          <span className="font-medium text-red-700">错误信息:</span>
-          <pre className="mt-1 text-red-600 whitespace-pre-wrap text-[11px]">
+        <div className="bg-[hsl(var(--danger)/0.1)] border border-[hsl(var(--danger)/0.3)] rounded p-2">
+          <span className="font-medium text-[hsl(var(--danger))]">错误信息:</span>
+          <pre className="mt-1 text-red-400 whitespace-pre-wrap text-[11px]">
             {rec.error_message}
           </pre>
         </div>
       )}
       {rec.command_outputs && (
         <div>
-          <span className="font-medium text-gray-600">命令输出:</span>
+          <span className="font-medium text-[hsl(var(--text-secondary))]">命令输出:</span>
           <div className="mt-1">{renderCmd(rec.command_outputs)}</div>
         </div>
       )}
