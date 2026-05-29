@@ -20,3 +20,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Compiled JS from TypeScript
+src/**/*.js
