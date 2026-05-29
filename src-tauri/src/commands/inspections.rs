@@ -130,19 +130,11 @@ fn now_str() -> String {
         .to_string()
 }
 
-/// Execute inspection commands on a single device via SSH synchronously.
-///
-/// 1. Looks up the device and decrypts its SSH password.
-/// 2. Looks up the associated template and parses command IDs from its config.
-/// 3. Fetches each command from the command pool.
-/// 4. Creates or updates the inspection record to "running".
-/// 5. Calls `inspection_runner::run_commands` to execute SSH commands.
-/// 6. Updates the record with outputs (status = "completed") or error (status = "failed").
-fn execute_device_inspection(
+/// 从数据库读取设备巡检所需的全部信息（在锁内调用）
+fn read_device_inspection_data(
     conn: &rusqlite::Connection,
     device_id: i64,
-    batch_id: i64,
-) -> Result<(), String> {
+) -> Result<(Device, String, String, Vec<String>), String> {
     // 1. Look up device
     let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
     let device = crate::db::query::query_one(
@@ -211,7 +203,15 @@ fn execute_device_inspection(
         ));
     }
 
-    // 6. Create or update inspection record to "running"
+    Ok((device, username, password, commands))
+}
+
+/// 将巡检记录创建或更新为 running 状态（在锁内调用）
+fn create_or_reset_record(
+    conn: &rusqlite::Connection,
+    batch_id: i64,
+    device_id: i64,
+) -> Result<i64, String> {
     let now = now_str();
     let existing: Result<i64, _> = conn.query_row(
         "SELECT id FROM inspection_records WHERE batch_id = ?1 AND device_id = ?2",
@@ -239,39 +239,54 @@ fn execute_device_inspection(
             conn.last_insert_rowid()
         }
     };
+    Ok(record_id)
+}
 
-    // 7. Execute SSH commands
+/// 更新巡检记录结果（在锁内调用）
+fn update_record_result(
+    conn: &rusqlite::Connection,
+    record_id: i64,
+    status: &str,
+    outputs_json: Option<&str>,
+    error: Option<&str>,
+) -> Result<(), String> {
+    let completed_at = now_str();
+    match (outputs_json, error) {
+        (Some(json), _) => {
+            conn.execute(
+                "UPDATE inspection_records SET status = ?1, command_outputs = ?2, \
+                 completed_at = ?3, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![status, json, completed_at, record_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        (_, Some(err)) => {
+            conn.execute(
+                "UPDATE inspection_records SET status = ?1, error_message = ?2, \
+                 completed_at = ?3, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![status, err, completed_at, record_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// 执行单台设备的 SSH 巡检（锁外调用，包含耗时的 SSH 操作）
+fn execute_device_ssh(
+    device: &Device,
+    username: &str,
+    password: &str,
+    commands: &[String],
+) -> Result<std::collections::HashMap<String, String>, String> {
     let source = SSHSessionSource {
         host: device.ip.clone(),
         port: device.ssh_port as u16,
-        username,
-        password,
+        username: username.to_string(),
+        password: password.to_string(),
     };
-
-    match inspection_runner::run_commands(&source, &device.vendor, &commands) {
-        Ok(outputs) => {
-            let outputs_json = serde_json::to_string(&outputs)
-                .map_err(|e| format!("序列化命令输出失败: {}", e))?;
-            let completed_at = now_str();
-            conn.execute(
-                "UPDATE inspection_records SET status = 'completed', command_outputs = ?1, \
-                 completed_at = ?2, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![outputs_json, completed_at, record_id],
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        Err(err) => {
-            let completed_at = now_str();
-            conn.execute(
-                "UPDATE inspection_records SET status = 'failed', error_message = ?1, \
-                 completed_at = ?2, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![&err, completed_at, record_id],
-            )
-            .map_err(|e| e.to_string())?;
-            Err(err)
-        }
-    }
+    inspection_runner::run_commands(&source, &device.vendor, commands)
 }
 
 // ============================================================
@@ -399,36 +414,38 @@ pub fn get_batch(
 
 /// 创建巡检批次。若 auto_start = true，则为每台设备创建记录并立即执行 SSH 巡检。
 #[tauri::command]
-pub fn create_batch(
+pub async fn create_batch(
     data: BatchCreate,
     auto_start: Option<bool>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let conn = state.db.lock();
-
     let device_ids = data.device_ids.clone().unwrap_or_else(|| "[]".to_string());
 
-    conn.execute(
-        "INSERT INTO inspection_batches (name, status, triggered_by, device_ids, started_at, completed_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            data.name,
-            data.status.as_deref().unwrap_or("pending"),
-            data.triggered_by.as_deref().unwrap_or("manual"),
-            device_ids,
-            data.started_at,
-            data.completed_at,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let batch_id = conn.last_insert_rowid();
+    // 插入批次记录（短暂获锁）
+    let batch_id = {
+        let conn = state.db.lock();
+        conn.execute(
+            "INSERT INTO inspection_batches (name, status, triggered_by, device_ids, started_at, completed_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                data.name,
+                data.status.as_deref().unwrap_or("pending"),
+                data.triggered_by.as_deref().unwrap_or("manual"),
+                device_ids,
+                data.started_at,
+                data.completed_at,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.last_insert_rowid()
+    };
 
     if auto_start.unwrap_or(false) {
         let parsed_ids: Vec<i64> = serde_json::from_str(&device_ids)
             .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
 
         if parsed_ids.is_empty() {
+            let conn = state.db.lock();
             let now = now_str();
             conn.execute(
                 "UPDATE inspection_batches SET status = 'completed', started_at = ?1, \
@@ -437,30 +454,91 @@ pub fn create_batch(
             )
             .map_err(|e| e.to_string())?;
         } else {
-            let now = now_str();
-            conn.execute(
-                "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
-                 updated_at = ?1 WHERE id = ?2",
-                rusqlite::params![now, batch_id],
-            )
-            .map_err(|e| e.to_string())?;
-
-            let mut completed_count = 0;
-            let mut failed_count = 0;
-
-            for device_id in &parsed_ids {
+            // 更新为 running
+            {
+                let conn = state.db.lock();
+                let now = now_str();
                 conn.execute(
-                    "INSERT INTO inspection_records (batch_id, device_id, status) \
-                     VALUES (?1, ?2, 'pending')",
-                    rusqlite::params![batch_id, device_id],
+                    "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
+                     updated_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, batch_id],
                 )
                 .map_err(|e| e.to_string())?;
+            }
 
-                match execute_device_inspection(&conn, *device_id, batch_id) {
-                    Ok(_) => completed_count += 1,
-                    Err(e) => {
-                        failed_count += 1;
-                        eprintln!("设备 {} 巡检失败: {}", device_id, e);
+            let mut completed_count = 0u32;
+            let mut failed_count = 0u32;
+
+            for device_id in &parsed_ids {
+                let (device, username, password, commands, record_id) = {
+                    let conn = state.db.lock();
+                    // 创建 pending 记录
+                    conn.execute(
+                        "INSERT INTO inspection_records (batch_id, device_id, status) \
+                         VALUES (?1, ?2, 'pending')",
+                        rusqlite::params![batch_id, device_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                    let rid = conn.last_insert_rowid();
+                    let (device, username, password, commands) =
+                        read_device_inspection_data(&conn, *device_id)?;
+
+                    // 更新为 running
+                    let now = now_str();
+                    conn.execute(
+                        "UPDATE inspection_records SET status = 'running', started_at = ?1, updated_at = ?1 WHERE id = ?2",
+                        rusqlite::params![now, rid],
+                    ).map_err(|e| e.to_string())?;
+
+                    (device, username, password, commands, rid)
+                }; // 锁释放
+
+                // SSH 执行（锁外）
+                let ssh_result = {
+                    let device_clone = device.clone();
+                    let username_clone = username.clone();
+                    let password_clone = password.clone();
+                    let commands_clone = commands.clone();
+                    tokio::task::spawn_blocking(move || {
+                        execute_device_ssh(
+                            &device_clone,
+                            &username_clone,
+                            &password_clone,
+                            &commands_clone,
+                        )
+                    })
+                    .await
+                    .map_err(|e| format!("SSH 任务调度失败: {}", e))?
+                };
+
+                // 写入结果（短暂获锁）
+                {
+                    let conn = state.db.lock();
+                    match ssh_result {
+                        Ok(outputs) => {
+                            let outputs_json = serde_json::to_string(&outputs)
+                                .map_err(|e| format!("序列化命令输出失败: {}", e))?;
+                            update_record_result(
+                                &conn,
+                                record_id,
+                                "completed",
+                                Some(&outputs_json),
+                                None,
+                            )?;
+                            completed_count += 1;
+                        }
+                        Err(err) => {
+                            update_record_result(
+                                &conn,
+                                record_id,
+                                "failed",
+                                None,
+                                Some(&err),
+                            )?;
+                            failed_count += 1;
+                            eprintln!("设备 {} 巡检失败: {}", device_id, err);
+                        }
                     }
                 }
             }
@@ -473,17 +551,21 @@ pub fn create_batch(
                 "partially_completed"
             };
 
-            let now = now_str();
-            conn.execute(
-                "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
-                 WHERE id = ?3",
-                rusqlite::params![final_status, now, batch_id],
-            )
-            .map_err(|e| e.to_string())?;
+            {
+                let conn = state.db.lock();
+                let now = now_str();
+                conn.execute(
+                    "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
+                     WHERE id = ?3",
+                    rusqlite::params![final_status, now, batch_id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
         }
     }
 
     // Return the created batch
+    let conn = state.db.lock();
     let query_sql = format!(
         "SELECT {} FROM inspection_batches WHERE id = ?1",
         BATCH_COLUMNS
@@ -500,63 +582,101 @@ pub fn create_batch(
 }
 
 /// 运行指定批次，对批次内的每台设备执行 SSH 巡检命令。
-/// 同步执行（顺序处理每台设备），前端可通过定时查询获取中间状态。
+/// 异步执行，SSH 操作在锁外进行，不阻塞 tokio 工作线程。
 #[tauri::command]
-pub fn run_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
-    let conn = state.db.lock();
+pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    // 1. 读取批次信息和设备列表（短暂获锁）
+    let device_ids = {
+        let conn = state.db.lock();
+        let sql = format!(
+            "SELECT {} FROM inspection_batches WHERE id = ?1",
+            BATCH_COLUMNS
+        );
+        let batch = crate::db::query::query_one(
+            &conn,
+            &sql,
+            rusqlite::params![batch_id],
+            batch_from_row,
+        )?
+        .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
 
-    // 1. Get batch
-    let sql = format!(
-        "SELECT {} FROM inspection_batches WHERE id = ?1",
-        BATCH_COLUMNS
-    );
-    let batch = crate::db::query::query_one(
-        &conn,
-        &sql,
-        rusqlite::params![batch_id],
-        batch_from_row,
-    )?
-    .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+        let device_ids_str = batch.device_ids.unwrap_or_else(|| "[]".to_string());
+        let ids: Vec<i64> = serde_json::from_str(&device_ids_str)
+            .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
 
-    let device_ids_str = batch.device_ids.unwrap_or_else(|| "[]".to_string());
-    let device_ids: Vec<i64> = serde_json::from_str(&device_ids_str)
-        .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
+        if ids.is_empty() {
+            let now = now_str();
+            conn.execute(
+                "UPDATE inspection_batches SET status = 'completed', started_at = ?1, \
+                 completed_at = ?1, updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, batch_id],
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
 
-    if device_ids.is_empty() {
+        // 更新批次状态为 running
         let now = now_str();
         conn.execute(
-            "UPDATE inspection_batches SET status = 'completed', started_at = ?1, \
-             completed_at = ?1, updated_at = ?1 WHERE id = ?2",
+            "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
+             updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, batch_id],
         )
         .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
 
-    // 2. Update batch status to "running"
-    let now = now_str();
-    conn.execute(
-        "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
-         updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, batch_id],
-    )
-    .map_err(|e| e.to_string())?;
+        ids
+    }; // 锁释放
 
-    // 3. Execute for each device sequentially
-    let mut completed_count = 0;
-    let mut failed_count = 0;
+    // 2. 逐台设备执行（锁外 SSH）
+    let mut completed_count = 0u32;
+    let mut failed_count = 0u32;
 
     for device_id in &device_ids {
-        match execute_device_inspection(&conn, *device_id, batch_id) {
-            Ok(_) => completed_count += 1,
-            Err(e) => {
-                failed_count += 1;
-                eprintln!("设备 {} 巡检失败: {}", device_id, e);
+        // 读取数据（短暂获锁）
+        let (device, username, password, commands) = {
+            let conn = state.db.lock();
+            read_device_inspection_data(&conn, *device_id)?
+        }; // 锁释放
+
+        // 创建记录（短暂获锁）
+        let record_id = {
+            let conn = state.db.lock();
+            create_or_reset_record(&conn, batch_id, *device_id)?
+        }; // 锁释放
+
+        // SSH 执行（锁外，spawn_blocking 避免阻塞 tokio）
+        let ssh_result = {
+            let device_clone = device.clone();
+            let username_clone = username.clone();
+            let password_clone = password.clone();
+            let commands_clone = commands.clone();
+            tokio::task::spawn_blocking(move || {
+                execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone)
+            })
+            .await
+            .map_err(|e| format!("SSH 任务调度失败: {}", e))?
+        };
+
+        // 写入结果（短暂获锁）
+        {
+            let conn = state.db.lock();
+            match ssh_result {
+                Ok(outputs) => {
+                    let outputs_json = serde_json::to_string(&outputs)
+                        .map_err(|e| format!("序列化命令输出失败: {}", e))?;
+                    update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)?;
+                    completed_count += 1;
+                }
+                Err(err) => {
+                    update_record_result(&conn, record_id, "failed", None, Some(&err))?;
+                    failed_count += 1;
+                    eprintln!("设备 {} 巡检失败: {}", device_id, err);
+                }
             }
-        }
+        } // 锁释放
     }
 
-    // 4. Update batch final status
+    // 3. 更新批次最终状态（短暂获锁）
     let final_status = if failed_count == 0 {
         "completed"
     } else if completed_count == 0 {
@@ -565,13 +685,16 @@ pub fn run_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
         "partially_completed"
     };
 
-    let now = now_str();
-    conn.execute(
-        "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
-         WHERE id = ?3",
-        rusqlite::params![final_status, now, batch_id],
-    )
-    .map_err(|e| e.to_string())?;
+    {
+        let conn = state.db.lock();
+        let now = now_str();
+        conn.execute(
+            "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
+             WHERE id = ?3",
+            rusqlite::params![final_status, now, batch_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }
@@ -670,43 +793,74 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
 
 /// 重试单条巡检记录，重置为 pending 后立即重新执行 SSH 巡检。
 #[tauri::command]
-pub fn retry_device(record_id: i64, state: State<AppState>) -> Result<(), String> {
+pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    // 读取记录信息并重置状态（短暂获锁）
+    let (record_id, device, username, password, commands) = {
+        let conn = state.db.lock();
+
+        let record_sql = format!(
+            "SELECT {} FROM inspection_records WHERE id = ?1",
+            RECORD_COLUMNS
+        );
+        let record = crate::db::query::query_one(
+            &conn,
+            &record_sql,
+            rusqlite::params![record_id],
+            record_from_row,
+        )?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+        let batch_id = record.batch_id;
+        let device_id = record.device_id;
+
+        // Reset record to running
+        let now = now_str();
+        conn.execute(
+            "UPDATE inspection_records SET status = 'running', error_message = NULL, \
+             command_outputs = '{}', started_at = ?1, updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, record_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Set batch to running
+        conn.execute(
+            "UPDATE inspection_batches SET status = 'running', updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, batch_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let (device, username, password, commands) =
+            read_device_inspection_data(&conn, device_id)?;
+        (record_id, device, username, password, commands)
+    }; // 锁释放
+
+    // SSH 执行（锁外）
+    let ssh_result = {
+        let device_clone = device.clone();
+        let username_clone = username.clone();
+        let password_clone = password.clone();
+        let commands_clone = commands.clone();
+        tokio::task::spawn_blocking(move || {
+            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone)
+        })
+        .await
+        .map_err(|e| format!("SSH 任务调度失败: {}", e))?
+    };
+
+    // 写入结果（短暂获锁）
     let conn = state.db.lock();
+    match ssh_result {
+        Ok(outputs) => {
+            let outputs_json = serde_json::to_string(&outputs)
+                .map_err(|e| format!("序列化命令输出失败: {}", e))?;
+            update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)?;
+        }
+        Err(err) => {
+            update_record_result(&conn, record_id, "failed", None, Some(&err))?;
+        }
+    }
 
-    // Get the record
-    let record_sql = format!(
-        "SELECT {} FROM inspection_records WHERE id = ?1",
-        RECORD_COLUMNS
-    );
-    let record = crate::db::query::query_one(
-        &conn,
-        &record_sql,
-        rusqlite::params![record_id],
-        record_from_row,
-    )?
-    .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
-
-    let batch_id = record.batch_id;
-    let device_id = record.device_id;
-
-    // Reset record to pending
-    let now = now_str();
-    conn.execute(
-        "UPDATE inspection_records SET status = 'pending', error_message = NULL, \
-         command_outputs = '{}', completed_at = NULL, updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, record_id],
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Set batch to running
-    conn.execute(
-        "UPDATE inspection_batches SET status = 'running', updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, batch_id],
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Re-execute
-    execute_device_inspection(&conn, device_id, batch_id)
+    Ok(())
 }
 
 /// 删除指定批次及其关联的所有记录。
