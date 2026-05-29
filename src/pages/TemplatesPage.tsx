@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
@@ -61,6 +61,8 @@ export default function TemplatesPage() {
   const [renameName, setRenameName] = useState("");
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  const newNameRef = useRef<HTMLInputElement>(null);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -169,10 +171,11 @@ export default function TemplatesPage() {
 
   // --- Actions ---
   const handleCreate = async () => {
-    if (!newForm.name.trim()) return;
+    const name = newNameRef.current?.value.trim();
+    if (!name) return;
     try {
       await invoke("create_template", {
-        name: newForm.name.trim(),
+        name,
         vendor: newForm.vendor,
         model: newForm.model.trim() || undefined,
         device_type: newForm.device_type.trim() || undefined,
@@ -579,14 +582,22 @@ export default function TemplatesPage() {
         width="max-w-md"
         onClose={() => setNewModalOpen(false)}
         footer={
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setNewModalOpen(false)}>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              className="h-8 px-3.5 rounded-md text-sm font-medium border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))] transition-colors"
+              onClick={() => setNewModalOpen(false)}
+            >
               取消
-            </Button>
-            <Button size="sm" disabled={!newForm.name.trim()} onClick={handleCreate}>
+            </button>
+            <button
+              type="button"
+              className="h-8 px-3.5 rounded-md text-sm font-medium bg-[hsl(var(--accent))] text-white hover:bg-[hsl(var(--accent)/0.9)] transition-colors"
+              onClick={handleCreate}
+            >
               创建模板
-            </Button>
-          </>
+            </button>
+          </div>
         }
       >
         <div className="space-y-4">
@@ -595,15 +606,14 @@ export default function TemplatesPage() {
             <label className="block text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5">
               模板名称 <span className="text-[hsl(var(--danger))]">*</span>
             </label>
-            <Input
-              value={newForm.name}
-              onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
+            <input
+              ref={newNameRef}
+              type="text"
+              className="w-full h-8 px-2.5 rounded-md text-sm bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] outline-none focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] transition-colors"
               placeholder="例如: H3C 核心交换机巡检模板"
               autoFocus
             />
-            {!newForm.name.trim() && (
-              <p className="text-[11px] text-[hsl(var(--text-tertiary))] mt-1">输入模板名称后即可创建</p>
-            )}
+            <p className="text-[11px] text-[hsl(var(--text-tertiary))] mt-1">输入模板名称后即可创建</p>
           </div>
 
           {/* 选填信息 — 收起，用分割线隔开 */}
