@@ -231,12 +231,19 @@ pub fn list_batches(
             })
             .collect();
 
+        // Parse device_ids from JSON string to array
+        let device_ids_value = batch
+            .device_ids
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .unwrap_or(serde_json::json!([]));
+
         results.push(serde_json::json!({
             "id": batch.id,
             "name": batch.name,
             "status": batch.status,
             "triggered_by": batch.triggered_by,
-            "device_ids": batch.device_ids,
+            "device_ids": device_ids_value,
             "started_at": batch.started_at,
             "completed_at": batch.completed_at,
             "created_at": batch.created_at,
@@ -279,12 +286,19 @@ pub fn get_batch(
         record_from_row,
     )?;
 
+    // Parse device_ids from JSON string to array
+    let device_ids_value = batch
+        .device_ids
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .unwrap_or(serde_json::json!([]));
+
     Ok(serde_json::json!({
         "id": batch.id,
         "name": batch.name,
         "status": batch.status,
         "triggered_by": batch.triggered_by,
-        "device_ids": batch.device_ids,
+        "device_ids": device_ids_value,
         "started_at": batch.started_at,
         "completed_at": batch.completed_at,
         "created_at": batch.created_at,
