@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { X } from "lucide-react";
 
 interface Props {
@@ -11,25 +11,24 @@ interface Props {
 }
 
 export default function Modal({ open, title, width = "max-w-lg", children, footer, onClose }: Props) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    if (open) { document.addEventListener("keydown", handler); return () => document.removeEventListener("keydown", handler); }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center">
-      <div
-        ref={overlayRef}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in"
-        onClick={e => { if (e.target === overlayRef.current) onClose(); }}
-      />
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 animate-in"
+      onClick={onClose}
+    >
       <div
         className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl ${width} w-full mx-4 max-h-[80vh] flex flex-col animate-in`}
         style={{ animationDuration: "150ms" }}
+        onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-[hsl(var(--border-light))]">
           <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))]">{title}</h2>
