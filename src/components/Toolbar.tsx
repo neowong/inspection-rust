@@ -4,7 +4,7 @@ interface Props {
 
 export default function Toolbar({ children }: Props) {
   return (
-    <div className="flex items-center gap-2 mb-2 flex-wrap">
+    <div className="flex items-center gap-2 flex-wrap">
       {children}
     </div>
   );
