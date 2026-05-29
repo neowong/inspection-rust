@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import StatusBadge from "../components/StatusBadge";
+import Button from "../components/ui/Button";
 import type { Device, InspectionRecord } from "../types";
 
 // --------------- local types ---------------
@@ -367,7 +368,7 @@ export default function ReportsPage() {
   // --------------- loading ---------------
 
   if (loading) {
-    return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+    return <div className="p-4 text-[hsl(var(--text-secondary))] text-sm">加载中...</div>;
   }
 
   // --------------- preview view ---------------
@@ -376,48 +377,31 @@ export default function ReportsPage() {
     return (
       <div className="flex flex-col h-full">
         {/* Toolbar */}
-        <div className="no-print flex items-center gap-2 mb-3 p-2 bg-white rounded border border-gray-200">
-          <button
-            className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            onClick={closePreview}
-          >
+        <div className="no-print flex items-center gap-2 mb-3 p-2 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg">
+          <Button variant="secondary" size="sm" onClick={closePreview}>
             ← 返回列表
-          </button>
+          </Button>
           <span className="flex-1" />
-          <button
-            className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-            onClick={handlePrint}
-          >
+          <Button size="sm" onClick={handlePrint}>
             导出 PDF
-          </button>
-          <button
-            className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            onClick={handlePrint}
-          >
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handlePrint}>
             打印
-          </button>
-          <button
-            className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            onClick={handleExportMarkdown}
-          >
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportMarkdown}>
             导出 Markdown
-          </button>
+          </Button>
           {previewRecord && (
-            <button
-              className="px-3 py-1 text-xs border border-green-300 text-green-700 rounded hover:bg-green-50"
-              onClick={() => {
-                handleGenerateReport(previewRecord.id);
-              }}
-            >
+            <Button variant="secondary" size="sm" onClick={() => { handleGenerateReport(previewRecord.id); }}>
               生成报告
-            </button>
+            </Button>
           )}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto bg-white rounded border border-gray-200 p-6">
+        <div className="flex-1 overflow-auto bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-6">
           {previewLoading ? (
-            <div className="text-sm text-gray-500">加载报告内容...</div>
+            <div className="text-sm text-[hsl(var(--text-secondary))]">加载报告内容...</div>
           ) : previewMd ? (
             <div className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-50 prose-th:px-3 prose-th:py-1.5 prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-1.5">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -425,7 +409,7 @@ export default function ReportsPage() {
               </ReactMarkdown>
             </div>
           ) : (
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[hsl(var(--text-tertiary))]">
               无法加载报告内容，记录数据为空或已被删除。
             </div>
           )}
@@ -439,16 +423,13 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col h-full gap-3">
       {/* Header with bulk actions */}
-      <div className="no-print flex items-center justify-between bg-white rounded border border-gray-200 px-3 py-2">
+      <div className="no-print flex items-center justify-between bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg px-3 py-2">
         <h2 className="text-sm font-semibold">巡检报告</h2>
         <div className="flex items-center gap-2">
           {selectedRecordIds.size > 0 && (
-            <button
-              className="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-              onClick={handleBatchDelete}
-            >
+            <Button variant="danger" size="sm" onClick={handleBatchDelete}>
               删除选中 ({selectedRecordIds.size})
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -456,7 +437,7 @@ export default function ReportsPage() {
       {/* Batch list */}
       <div className="flex-1 overflow-auto">
         {batches.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">
+          <div className="text-center py-12 text-[hsl(var(--text-tertiary))] text-sm">
             暂无巡检批次，请先在「执行巡检」页面创建并执行巡检。
           </div>
         ) : (
@@ -472,46 +453,40 @@ export default function ReportsPage() {
               return (
                 <div
                   key={batch.id}
-                  className="bg-white rounded border border-gray-200"
+                  className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg"
                 >
                   {/* Batch header */}
                   <div
-                    className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50"
+                    className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))]"
                     onClick={() =>
                       setExpandedBatchId(isExpanded ? null : batch.id)
                     }
                   >
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-[hsl(var(--text-tertiary))]">
                       {isExpanded ? "▼" : "▶"}
                     </span>
                     <span className="text-sm font-medium">
                       {batch.name || `批次 #${batch.id}`}
                     </span>
                     <StatusBadge status={batch.status as any} />
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[hsl(var(--text-secondary))]">
                       {batchRecords.length} 条记录
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-[hsl(var(--text-tertiary))]">
                       {formatTs(batch.created_at)}
                     </span>
                     <span className="flex-1" />
                     {/* Batch header actions */}
-                    <button
-                      className="px-2 py-0.5 text-[11px] border border-gray-300 rounded hover:bg-gray-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBatchGenerateReports(batch.id);
-                      }}
-                    >
+                    <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); handleBatchGenerateReports(batch.id); }}>
                       批量生成报告
-                    </button>
+                    </Button>
                     <label
-                      className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer"
+                      className="flex items-center gap-1 text-xs text-[hsl(var(--text-secondary))] cursor-pointer"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <input
                         type="checkbox"
-                        className="w-3.5 h-3.5"
+                        className="w-3.5 h-3.5 rounded accent-[hsl(var(--accent))]"
                         checked={allSelected}
                         onChange={() => toggleBatchSelectAll(batch.id)}
                       />
@@ -521,37 +496,37 @@ export default function ReportsPage() {
 
                   {/* Batch records table */}
                   {isExpanded && (
-                    <div className="border-t border-gray-200">
+                    <div className="border-t border-[hsl(var(--border))]">
                       {batchRecords.length === 0 ? (
-                        <div className="p-4 text-center text-xs text-gray-400">
+                        <div className="p-4 text-center text-xs text-[hsl(var(--text-tertiary))]">
                           该批次暂无巡检记录
                         </div>
                       ) : (
                         <table className="w-full text-xs">
-                          <thead className="bg-gray-50">
+                          <thead className="bg-[hsl(var(--bg-hover))]">
                             <tr>
-                              <th className="w-8 px-2 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="w-8 px-2 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 #
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 设备
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 IP
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 巡检状态
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 AI 评判
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 报告
                               </th>
-                              <th className="px-3 py-1.5 text-left text-gray-500 font-medium">
+                              <th className="px-3 py-1.5 text-left text-[hsl(var(--text-secondary))] font-medium">
                                 时间
                               </th>
-                              <th className="w-16 px-2 py-1.5 text-right text-gray-500 font-medium">
+                              <th className="w-16 px-2 py-1.5 text-right text-[hsl(var(--text-secondary))] font-medium">
                                 选择
                               </th>
                             </tr>
@@ -562,7 +537,7 @@ export default function ReportsPage() {
                               return (
                                 <tr
                                   key={rec.id}
-                                  className="border-t border-gray-100 hover:bg-blue-50/50 cursor-pointer"
+                                  className="border-t border-[hsl(var(--border-light))] hover:bg-[hsl(var(--bg-hover))] cursor-pointer"
                                   onClick={() =>
                                     openPreview(batch.id, rec.id)
                                   }
@@ -576,13 +551,13 @@ export default function ReportsPage() {
                                     });
                                   }}
                                 >
-                                  <td className="px-2 py-1.5 text-gray-400">
+                                  <td className="px-2 py-1.5 text-[hsl(var(--text-tertiary))]">
                                     {idx + 1}
                                   </td>
                                   <td className="px-3 py-1.5 font-medium">
                                     {dev?.name ?? `设备 #${rec.device_id}`}
                                   </td>
-                                  <td className="px-3 py-1.5 text-gray-500">
+                                  <td className="px-3 py-1.5 text-[hsl(var(--text-secondary))]">
                                     {dev?.ip ?? "-"}
                                   </td>
                                   <td className="px-3 py-1.5">
@@ -598,16 +573,16 @@ export default function ReportsPage() {
                                   </td>
                                   <td className="px-3 py-1.5">
                                     {rec.report_path ? (
-                                      <span className="text-green-600">
+                                      <span className="text-emerald-400">
                                         已生成
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400">
+                                      <span className="text-[hsl(var(--text-tertiary))]">
                                         -
                                       </span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-1.5 text-gray-500">
+                                  <td className="px-3 py-1.5 text-[hsl(var(--text-secondary))]">
                                     {formatTs(
                                       (rec as any).created_at ??
                                         (rec as any).completed_at,
@@ -619,7 +594,7 @@ export default function ReportsPage() {
                                   >
                                     <input
                                       type="checkbox"
-                                      className="w-3.5 h-3.5"
+                                      className="w-3.5 h-3.5 rounded accent-[hsl(var(--accent))]"
                                       checked={selectedRecordIds.has(
                                         rec.id,
                                       )}
@@ -646,12 +621,12 @@ export default function ReportsPage() {
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 bg-white border border-gray-300 rounded shadow-lg py-1 w-44"
+          className="fixed z-50 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-2xl py-1 w-44"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50"
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-[hsl(var(--bg-hover))]"
             onClick={() => {
               const batchId = ctxMenu.batchId;
               const recordId = ctxMenu.recordId;
@@ -662,7 +637,7 @@ export default function ReportsPage() {
             查看报告
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50"
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-[hsl(var(--bg-hover))]"
             onClick={() => {
               const rid = ctxMenu.recordId;
               setCtxMenu(null);
@@ -671,11 +646,12 @@ export default function ReportsPage() {
           >
             生成报告
           </button>
-          <hr className="my-1 border-gray-200" />
+          <hr className="my-1 border-[hsl(var(--border-light))]" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+            className="w-full text-left px-3 py-1.5 text-xs text-[hsl(var(--danger))] hover:bg-[hsl(var(--danger)/0.1)]"
             onClick={() => {
               const rid = ctxMenu.recordId;
+              setCtxMenu(null);
               handleDeleteRecord(rid);
             }}
           >
@@ -703,43 +679,43 @@ function AiJudgmentBadge({
       const isCrit = summaryJudgment.includes("[CRITICAL]");
       if (isCrit)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-100 text-red-700 border-red-300">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
             严重
           </span>
         );
       if (isWarn)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-yellow-100 text-yellow-700 border-yellow-300">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
             警告
           </span>
         );
       if (isOk)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-green-100 text-green-700 border-green-300">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
             正常
           </span>
         );
     }
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-green-100 text-green-700 border-green-300">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
         已完成
       </span>
     );
   }
   if (aiStatus === "running" || aiStatus === "processing")
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-blue-100 text-blue-700 border-blue-300">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-blue-500/15 text-blue-400 border-blue-500/30">
         分析中
       </span>
     );
   if (aiStatus === "failed")
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-100 text-red-700 border-red-300">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
         失败
       </span>
     );
   return (
-    <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-gray-100 text-gray-500 border-gray-300">
+    <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-gray-500/15 text-[hsl(var(--text-tertiary))] border-gray-500/30">
       等待中
     </span>
   );
