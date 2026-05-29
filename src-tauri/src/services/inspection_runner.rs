@@ -64,7 +64,9 @@ pub fn run_commands(
     let libssh2_error = match run_commands_libssh2(source, vendor, commands) {
         Ok(results) => return Ok(results),
         Err(e) => {
-            eprintln!("[SSH] libssh2 failed: {}, trying system ssh", e);
+            // Only log in debug mode - libssh2 failure is expected on some devices
+            #[cfg(debug_assertions)]
+            eprintln!("[SSH][DEBUG] libssh2 failed: {}, trying system ssh", e);
             e
         }
     };
