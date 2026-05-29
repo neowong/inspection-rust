@@ -305,9 +305,28 @@ fn test_full_pipeline_with_deepseek() {
         }).unwrap();
 
         let analysis_json = serde_json::to_string(&analysis).unwrap();
+
+        // Transform AI result into command_judgments and summary
+        let summary = analysis.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+        let mut judgments = serde_json::Map::new();
+        if let Some(items) = analysis.get("items").and_then(|v| v.as_array()) {
+            for item in items {
+                if let Some(command) = item.get("command").and_then(|v| v.as_str()) {
+                    let judgment = serde_json::json!({
+                        "status": item.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                        "finding": item.get("finding").and_then(|v| v.as_str()).unwrap_or(""),
+                        "suggestion": item.get("suggestion").and_then(|v| v.as_str()).unwrap_or(""),
+                    });
+                    judgments.insert(command.to_string(), judgment);
+                }
+            }
+        }
+        let judgments_json = serde_json::to_string(&serde_json::Value::Object(judgments)).unwrap();
+
         conn.execute(
-            "UPDATE inspection_records SET ai_status = 'completed', ai_result = ?1 WHERE id = ?2",
-            params![analysis_json, record_id],
+            "UPDATE inspection_records SET ai_status = 'completed', ai_result = ?1, command_judgments = ?2, summary_judgment = ?3 WHERE id = ?4",
+            params![analysis_json, judgments_json, summary, record_id],
         ).unwrap();
 
         println!("✅ AI 分析完成");
@@ -366,7 +385,26 @@ fn test_full_pipeline_with_deepseek() {
 
         if let Some(ai_result) = &record.ai_result {
             if let Ok(ai_val) = serde_json::from_str::<serde_json::Value>(ai_result) {
-                context.insert("ai_analysis".to_string(), ai_val);
+                // Extract summary
+                if let Some(summary) = ai_val.get("summary").and_then(|v| v.as_str()) {
+                    context.insert("summary".to_string(), serde_json::Value::String(summary.to_string()));
+                }
+
+                // Transform items array into command_judgments map
+                if let Some(items) = ai_val.get("items").and_then(|v| v.as_array()) {
+                    let mut judgments = serde_json::Map::new();
+                    for item in items {
+                        if let Some(command) = item.get("command").and_then(|v| v.as_str()) {
+                            let judgment = serde_json::json!({
+                                "status": item.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                                "finding": item.get("finding").and_then(|v| v.as_str()).unwrap_or(""),
+                                "suggestion": item.get("suggestion").and_then(|v| v.as_str()).unwrap_or(""),
+                            });
+                            judgments.insert(command.to_string(), judgment);
+                        }
+                    }
+                    context.insert("command_judgments".to_string(), serde_json::Value::Object(judgments));
+                }
             }
         }
 
