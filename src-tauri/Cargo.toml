@@ -30,9 +30,7 @@ uuid = { version = "1", features = ["v4"] }
 fernet = "0.2"
 ssh2 = "0.9"
 log = "0.4"
-docx-rs = "0.4"
-cron = "0.13"
-tokio-cron-scheduler = "0.13"
+
 async-trait = "0.1"
 thiserror = "2"
 anyhow = "1"

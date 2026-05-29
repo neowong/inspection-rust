@@ -101,22 +101,7 @@ pub fn run() {
             commands::inspection_records::download_batch_report,
             commands::inspection_records::preview_template_context,
             commands::inspection_records::get_active_ai_config,
-            // Offline
-            commands::offline::export_scripts,
-            commands::offline::parse_upload_file,
-            commands::offline::import_with_mapping,
-            commands::offline::upload_result,
-            commands::offline::list_imports,
-            commands::offline::delete_import,
-            // Scheduled Tasks
-            commands::scheduled_tasks::list_tasks,
-            commands::scheduled_tasks::create_task,
-            commands::scheduled_tasks::get_task,
-            commands::scheduled_tasks::update_task,
-            commands::scheduled_tasks::delete_task,
-            commands::scheduled_tasks::batch_delete_tasks,
-            commands::scheduled_tasks::pause_task,
-            commands::scheduled_tasks::resume_task,
+
             // AI Config
             commands::ai_config::list_ai_configs,
             commands::ai_config::create_ai_config,
@@ -136,8 +121,6 @@ pub fn run() {
             commands::settings::update_settings,
             commands::settings::get_report_info_fields,
             commands::settings::update_report_info_fields,
-            // Chat
-            commands::chat::chat_stream,
             // Stats & Health (defined in lib.rs)
             get_stats,
             health_check,
