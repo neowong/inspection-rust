@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod db;
 pub mod services;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
