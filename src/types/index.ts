@@ -40,10 +40,21 @@ export interface CommandPool {
   updated_at: string;
 }
 
+export type BatchStatusType =
+  | "pending" | "running" | "completed" | "failed"
+  | "stopped" | "paused" | "waiting" | "in_progress" | "partially_completed";
+
+export type RecordStatusType =
+  | "pending" | "running" | "completed" | "failed"
+  | "stopped" | "skipped";
+
+export type AiStatusType =
+  | "none" | "pending" | "running" | "completed" | "failed";
+
 export interface InspectionBatch {
   id: number;
   name: string | null;
-  status: string;
+  status: BatchStatusType;
   triggered_by: string;
   device_ids: number[];
   started_at: string | null;
@@ -56,8 +67,8 @@ export interface InspectionRecordSummary {
   id: number;
   batch_id: number;
   device_id: number;
-  status: string;
-  ai_status: string;
+  status: RecordStatusType;
+  ai_status: AiStatusType;
   report_path: string | null;
   error_message: string | null;
 }
@@ -66,18 +77,18 @@ export interface InspectionRecord {
   id: number;
   batch_id: number;
   device_id: number;
-  status: string;
-  command_outputs: string;
-  ai_status: string;
-  ai_result?: string | null;
-  ai_analysis?: string | null;
-  ai_suggestions?: string | null;
-  command_judgments?: string | null;
-  summary_judgment?: string | null;
-  report_path?: string | null;
-  error_message?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
+  status: RecordStatusType;
+  command_outputs: string | null;
+  ai_status: AiStatusType;
+  ai_result: string | null;
+  ai_analysis: string | null;
+  ai_suggestions: string | null;
+  command_judgments: string | null;
+  summary_judgment: string | null;
+  report_path: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Device, InspectionTemplate } from "../types";
 import Toolbar from "../components/Toolbar";
@@ -9,6 +9,7 @@ import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
+import { VENDORS } from "../lib/constants";
 
 interface DeviceForm {
   name: string;
@@ -25,8 +26,6 @@ const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
 };
-
-const VENDORS = ["H3C", "华为", "思科", "锐捷"];
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -59,9 +58,9 @@ export default function DevicesPage() {
   useEffect(() => { loadDevices(); }, [loadDevices]);
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
-  const filteredDevices = devices.filter((d) =>
+  const filteredDevices = useMemo(() => devices.filter((d) =>
     !searchText || d.name.toLowerCase().includes(searchText.toLowerCase()) || d.ip.includes(searchText)
-  );
+  ), [devices, searchText]);
 
   const openAdd = () => {
     setEditing(null);

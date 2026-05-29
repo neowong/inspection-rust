@@ -7,6 +7,7 @@ import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
+import { batchStatusColor } from "../lib/status";
 
 interface BatchForm {
   name: string;
@@ -101,15 +102,6 @@ export default function InspectionPage() {
         loadBatches();
       })
       .catch(console.error);
-  };
-
-  const batchStatusColor = (status: string): "pending" | "running" | "completed" | "failed" | "stopped" => {
-    if (status === "pending" || status === "waiting") return "pending";
-    if (status === "running" || status === "in_progress") return "running";
-    if (status === "completed") return "completed";
-    if (status === "failed") return "failed";
-    if (status === "stopped" || status === "paused") return "stopped";
-    return "pending";
   };
 
   return (

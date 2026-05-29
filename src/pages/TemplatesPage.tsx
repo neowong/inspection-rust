@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InspectionTemplate, CommandPool } from "../types";
 import Toolbar from "../components/Toolbar";
@@ -8,9 +8,7 @@ import Modal from "../components/Modal";
 import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
-
-const VENDORS = ["H3C", "华为", "思科", "锐捷"];
-const CATEGORIES = ["version", "clock", "cpu", "memory", "hardware", "interface", "vlan", "log", "protocol", "general"];
+import { VENDORS, CATEGORIES } from "../lib/constants";
 
 interface TemplateForm {
   name: string;
@@ -74,14 +72,14 @@ export default function TemplatesPage() {
   useEffect(() => { loadCommands(); }, [cmdVendor, cmdCategory]);
 
   // Filter templates
-  const filteredTemplates = templates.filter((t) =>
+  const filteredTemplates = useMemo(() => templates.filter((t) =>
     !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase())
-  );
+  ), [templates, templateSearch]);
 
   // Filter commands
-  const filteredCommands = commands.filter((c) =>
+  const filteredCommands = useMemo(() => commands.filter((c) =>
     !cmdSearch || c.command.toLowerCase().includes(cmdSearch.toLowerCase()) || (c.description && c.description.toLowerCase().includes(cmdSearch.toLowerCase()))
-  );
+  ), [commands, cmdSearch]);
 
   // Template handlers
   const openAddTemplate = () => {

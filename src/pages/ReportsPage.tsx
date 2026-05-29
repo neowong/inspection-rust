@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InspectionBatch, InspectionRecord } from "../types";
 import DataTable from "../components/DataTable";
@@ -7,15 +7,7 @@ import Card from "../components/ui/Card";
 import StatusBadge from "../components/StatusBadge";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-const batchStatusColor = (status: string): "pending" | "running" | "completed" | "failed" | "stopped" => {
-  if (status === "pending" || status === "waiting") return "pending";
-  if (status === "running" || status === "in_progress") return "running";
-  if (status === "completed") return "completed";
-  if (status === "failed") return "failed";
-  if (status === "stopped" || status === "paused") return "stopped";
-  return "pending";
-};
+import { batchStatusColor } from "../lib/status";
 
 export default function ReportsPage() {
   const [batches, setBatches] = useState<InspectionBatch[]>([]);
@@ -68,7 +60,7 @@ export default function ReportsPage() {
   };
 
   // Parse command outputs if it's a JSON string with per-command output
-  const parsedOutputs = useCallback(() => {
+  const parsedOutputs = useMemo(() => {
     if (!selectedRecord?.command_outputs) return [];
     try {
       const parsed = JSON.parse(selectedRecord.command_outputs);
@@ -80,7 +72,7 @@ export default function ReportsPage() {
   }, [selectedRecord?.command_outputs]);
 
   // Parse AI result
-  const aiResult = useCallback(() => {
+  const aiResult = useMemo(() => {
     if (!selectedRecord?.ai_result) return null;
     try {
       return JSON.parse(selectedRecord.ai_result);
@@ -146,8 +138,14 @@ export default function ReportsPage() {
                 command_outputs: "",
                 ai_status: r.ai_status,
                 ai_result: null,
+                ai_analysis: null,
+                ai_suggestions: null,
+                command_judgments: null,
+                summary_judgment: null,
                 report_path: r.report_path,
                 error_message: r.error_message,
+                started_at: null,
+                completed_at: null,
                 created_at: "",
               };
               selectRecord(rec);
@@ -190,11 +188,11 @@ export default function ReportsPage() {
           </div>
 
           {/* Command outputs */}
-          {parsedOutputs().length > 0 && (
+          {parsedOutputs.length > 0 && (
             <div className="mb-4">
               <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] mb-2">命令输出</h3>
               <div className="space-y-2">
-                {parsedOutputs().map((item: { command?: string; content?: string }, i: number) => (
+                {parsedOutputs.map((item: { command?: string; content?: string }, i: number) => (
                   <details key={i} className="border border-[hsl(var(--border))] rounded-md overflow-hidden">
                     <summary className="px-3 py-1.5 bg-[hsl(var(--bg-hover))] cursor-pointer text-xs font-mono text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]">
                       {item.command || `输出 #${i + 1}`}
@@ -209,14 +207,14 @@ export default function ReportsPage() {
           )}
 
           {/* AI Analysis Result */}
-          {aiResult() && (
+          {aiResult && (
             <div className="mb-4">
               <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] mb-2">AI 分析结果</h3>
               <div className="border border-[hsl(var(--border))] rounded-md p-4 bg-[hsl(var(--bg-app))]">
                 <div className="prose prose-sm max-w-none text-[hsl(var(--text-primary))] [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-2 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_code]:text-xs [&_code]:bg-[hsl(var(--bg-hover))] [&_code]:px-1 [&_code]:rounded [&_pre]:bg-[hsl(var(--bg-card))] [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-auto [&_pre]:max-h-60 [&_pre]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:text-left [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[hsl(var(--bg-hover))] [&_td]:px-2 [&_td]:py-1 [&_td]:border-b [&_td]:border-[hsl(var(--border-light))]]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {(() => {
-                      const result = aiResult();
+                      const result = aiResult;
                       if (!result) return "";
                       if (typeof result === "string") return result;
                       // Try to format structured result
