@@ -85,6 +85,11 @@ export default function TemplatesPage() {
     !cmdSearch || c.command.toLowerCase().includes(cmdSearch.toLowerCase()) || (c.description && c.description.toLowerCase().includes(cmdSearch.toLowerCase()))
   ), [commands, cmdSearch]);
 
+  // Filter commands by template vendor in modal
+  const vendorFilteredCommands = useMemo(() => commands.filter((c) =>
+    c.vendor === templateForm.vendor
+  ), [commands, templateForm.vendor]);
+
   // Template handlers
   const openAddTemplate = () => {
     setEditingTemplate(null);
@@ -330,7 +335,15 @@ export default function TemplatesPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={templateForm.vendor} onChange={(e) => setTemplateForm({ ...templateForm, vendor: e.target.value })}>
+              <Select value={templateForm.vendor} onChange={(e) => {
+                const newVendor = e.target.value;
+                // 切换厂商时清空已选命令（不同厂商的命令 ID 不同）
+                setTemplateForm({
+                  ...templateForm,
+                  vendor: newVendor,
+                  command_ids: [],
+                });
+              }}>
                 {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
               </Select>
             </div>
@@ -350,10 +363,10 @@ export default function TemplatesPage() {
             <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">选择命令</label>
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">选择命令 ({templateForm.vendor})</label>
             <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
-              {commands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无命令，请先在命令库中添加</p>}
-              {commands.map((cmd) => {
+              {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
+              {vendorFilteredCommands.map((cmd) => {
                 const checked = templateForm.command_ids.includes(cmd.id);
                 return (
                   <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
