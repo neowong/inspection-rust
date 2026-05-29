@@ -47,6 +47,7 @@ export default function Button({
 }: ButtonProps) {
   return (
     <button
+      type="button"
       className={cn(buttonVariants({ variant, size, className }))}
       disabled={disabled || loading}
       {...props}
