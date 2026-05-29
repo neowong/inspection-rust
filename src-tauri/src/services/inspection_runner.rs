@@ -87,25 +87,29 @@ fn exec_command_on_session(session: &Session, cmd: &str, password: &str) -> Resu
     let mut output = String::new();
     let mut buf = [0u8; 1024];
     let mut total = 0usize;
+    let mut password_sent = false;
 
     loop {
         match channel.read(&mut buf) {
             Ok(0) => break, // EOF
             Ok(n) => {
+                if total + n > 4096 {
+                    let remaining = 4096 - total;
+                    let text = std::str::from_utf8(&buf[..remaining])
+                        .map_err(|_| "输出编码错误(非UTF-8)".to_string())?;
+                    output.push_str(text);
+                    break;
+                }
                 total += n;
                 let text = std::str::from_utf8(&buf[..n])
                     .map_err(|_| "输出编码错误(非UTF-8)".to_string())?;
                 output.push_str(text);
 
-                // 6. Handle sudo/super user enable password prompts
-                if text.contains("assword:") && !password.is_empty() {
+                // Handle sudo/super user enable password prompts (only once per command)
+                if !password_sent && text.contains("assword:") && !password.is_empty() {
                     let _ = channel.write_all(password.as_bytes());
                     let _ = channel.write_all(b"\n");
-                }
-
-                if total >= 4096 {
-                    output.truncate(4096);
-                    break;
+                    password_sent = true;
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
@@ -132,6 +136,6 @@ fn exec_command_on_session(session: &Session, cmd: &str, password: &str) -> Resu
 pub fn is_network_vendor(vendor: &str) -> bool {
     matches!(
         vendor.to_lowercase().as_str(),
-        "huawei" | "cisco" | "思科" | "h3c" | "华三" | "ruijie" | "锐捷" | "sharp"
+        "huawei" | "cisco" | "思科" | "h3c" | "华三" | "ruijie" | "锐捷"
     )
 }

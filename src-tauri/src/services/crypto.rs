@@ -6,7 +6,7 @@ impl CryptoService {
     pub fn encrypt(plaintext: &str) -> Result<String, String> {
         let fernet = fernet::Fernet::new(MASTER_PASSWORD)
             .ok_or_else(|| "Invalid Fernet key".to_string())?;
-        Ok(fernet.encrypt(plaintext.as_bytes()).to_string())
+        Ok(fernet.encrypt(plaintext.as_bytes()))
     }
 
     pub fn decrypt(encrypted: &str) -> Result<String, String> {
