@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import AppShell from "./layouts/AppShell";
+import { useGlobalShortcuts } from "./hooks/useKeyboardShortcut";
 import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import TemplatesPage from "./pages/TemplatesPage";
@@ -9,6 +10,7 @@ import AiConfigPage from "./pages/AiConfigPage";
 import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
+  useGlobalShortcuts();
   return (
     <Routes>
       <Route element={<AppShell />}>
