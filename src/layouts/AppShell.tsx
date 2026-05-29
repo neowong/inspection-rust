@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
-type PageKey = "dashboard" | "devices" | "templates" | "inspection" | "reports" | "ai-config" | "settings";
+type PageKey = "devices" | "templates" | "inspection" | "reports" | "ai-config" | "settings";
 
 const NAV_ITEMS: { key: PageKey; label: string; icon: string; path: string }[] = [
-  { key: "dashboard",   label: "仪表盘",   icon: "◫", path: "/" },
   { key: "devices",     label: "设备管理", icon: "⊞", path: "/devices" },
   { key: "templates",   label: "巡检模板", icon: "⊟", path: "/templates" },
   { key: "inspection",  label: "执行巡检", icon: "▶", path: "/inspection" },
@@ -19,10 +17,8 @@ export default function AppShell() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [statusMsg, setStatusMsg] = useState("就绪");
-  const appWindow = getCurrentWindow();
 
-  const pathSegments = location.pathname.split("/").filter(Boolean);
-  const activeNav = NAV_ITEMS.find(item => item.path === location.pathname);
+  const activeNav = NAV_ITEMS.find(item => location.pathname.startsWith(item.path));
 
   useEffect(() => {
     const handler = (e: Event) => setStatusMsg((e as CustomEvent).detail);
@@ -32,56 +28,6 @@ export default function AppShell() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#f0f2f5" }}>
-      {/* ========== 自定义标题栏 ========== */}
-      <header
-        className="titlebar-drag h-9 shrink-0 flex items-center px-3 gap-2 select-none"
-        style={{
-          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-          color: "#e2e8f0",
-        }}
-      >
-        {/* App icon + name */}
-        <div className="flex items-center gap-2 titlebar-no-drag">
-          <span className="text-sm font-bold tracking-wide text-blue-400">INSPECT</span>
-          <span className="text-[11px] text-slate-400">|</span>
-          <span className="text-[11px] text-slate-300">网络设备巡检系统</span>
-        </div>
-
-        {/* Menu area */}
-        <div className="flex-1 flex items-center gap-0.5 ml-6 titlebar-no-drag">
-          {["设备", "巡检", "报告", "帮助"].map(label => (
-            <button
-              key={label}
-              className="px-3 py-1 text-[11px] text-slate-400 hover:text-white hover:bg-white/10 rounded transition-colors"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Window controls */}
-        <div className="flex items-center titlebar-no-drag">
-          <button
-            onClick={() => appWindow.minimize()}
-            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <svg width="10" height="1"><line x1="0" y1="0.5" x2="10" y2="0.5" stroke="currentColor" strokeWidth="1.2"/></svg>
-          </button>
-          <button
-            onClick={() => appWindow.toggleMaximize()}
-            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <svg width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1.2"/></svg>
-          </button>
-          <button
-            onClick={() => appWindow.close()}
-            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500/80 transition-colors"
-          >
-            <svg width="10" height="10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2"/></svg>
-          </button>
-        </div>
-      </header>
-
       <div className="flex flex-1 overflow-hidden">
         {/* ========== 侧边栏 ========== */}
         <nav
@@ -90,7 +36,7 @@ export default function AppShell() {
             background: "linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
           }}
         >
-          {/* Nav header */}
+          {/* Header */}
           <div className={`px-4 py-4 ${collapsed ? "text-center" : ""}`}>
             {collapsed ? (
               <span className="text-blue-400 font-bold text-sm">IN</span>
@@ -131,7 +77,7 @@ export default function AppShell() {
             })}
           </div>
 
-          {/* Sidebar footer */}
+          {/* Footer */}
           <div className={`px-3 py-3 border-t border-slate-800 ${collapsed ? "text-center" : ""}`}>
             <button
               onClick={() => setCollapsed(!collapsed)}
@@ -145,20 +91,6 @@ export default function AppShell() {
 
         {/* ========== 内容区域 ========== */}
         <main className="flex-1 overflow-auto p-4" style={{ background: "#f0f2f5" }}>
-          {/* Breadcrumb */}
-          {activeNav && (
-            <div className="flex items-center gap-1.5 mb-3 text-[11px] text-slate-400">
-              <span className="text-slate-300">◫</span>
-              <span>/</span>
-              <span className="text-slate-600 font-medium">{activeNav.label}</span>
-              {pathSegments.length > 1 && (
-                <>
-                  <span>/</span>
-                  <span className="text-slate-500">{pathSegments[pathSegments.length - 1]}</span>
-                </>
-              )}
-            </div>
-          )}
           <div className="animate-in">
             <Outlet />
           </div>

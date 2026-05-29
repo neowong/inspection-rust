@@ -1,7 +1,6 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "./layouts/AppShell";
 import { useGlobalShortcuts } from "./hooks/useKeyboardShortcut";
-import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import InspectionPage from "./pages/InspectionPage";
@@ -14,7 +13,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<Navigate to="/devices" replace />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/inspection" element={<InspectionPage />} />
