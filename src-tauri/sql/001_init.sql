@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS ai_model_configs (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     name               TEXT NOT NULL,                          -- 配置名称
     provider           TEXT NOT NULL                           -- 提供商
-                       CHECK(provider IN ('openai','anthropic')),
+                       CHECK(provider IN ('openai','anthropic','deepseek')),
     model_id           TEXT NOT NULL,                          -- 模型 ID
     api_key_encrypted  TEXT NOT NULL,                          -- API 密钥（加密存储）
     base_url           TEXT,                                   -- 自定义 API 地址

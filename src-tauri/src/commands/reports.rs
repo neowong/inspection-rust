@@ -133,6 +133,16 @@ async fn analyze_record_inner(
             )
             .await?
         }
+        "deepseek" => {
+            // DeepSeek uses OpenAI-compatible API format
+            let deepseek_base = if base_url.is_empty() {
+                "https://api.deepseek.com".to_string()
+            } else {
+                base_url.clone()
+            };
+            ai_inspection::analyze_with_openai(&api_key, &model, &deepseek_base, &command_outputs_map)
+                .await?
+        }
         _ => return Err(format!("不支持的 AI 提供商: {}", provider)),
     };
 

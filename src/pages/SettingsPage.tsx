@@ -20,8 +20,13 @@ interface ConfigForm {
   base_url: string;
 }
 
-const EMPTY_FORM: ConfigForm = { name: "", provider: "openai", model_id: "", api_key: "", base_url: "" };
-const PROVIDERS = ["openai", "anthropic"];
+const EMPTY_FORM: ConfigForm = { name: "", provider: "deepseek", model_id: "deepseek-chat", api_key: "", base_url: "" };
+const PROVIDERS = ["deepseek", "openai", "anthropic"];
+const PROVIDER_LABELS: Record<string, string> = {
+  deepseek: "DeepSeek",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+};
 
 export default function SettingsPage() {
   // System settings state
@@ -243,12 +248,12 @@ export default function SettingsPage() {
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Provider</label>
             <Select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
-              {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
+              {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] || p}</option>)}
             </Select>
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Model ID</label>
-            <Input value={form.model_id} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o" />
+            <Input value={form.model_id} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder={form.provider === "deepseek" ? "deepseek-chat" : form.provider === "openai" ? "gpt-4o" : "claude-sonnet-4-20250514"} />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>

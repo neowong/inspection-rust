@@ -17,5 +17,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 1")?;
     }
 
+    if version < 2 {
+        conn.execute_batch(include_str!("../../sql/002_add_deepseek_provider.sql"))?;
+        conn.execute_batch("PRAGMA user_version = 2")?;
+    }
+
     Ok(())
 }
