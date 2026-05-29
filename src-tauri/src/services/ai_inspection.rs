@@ -1,6 +1,13 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use tracing::{info, warn};
+
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn get_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+}
 
 pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程师，负责分析设备巡检命令输出，判断设备运行状态是否正常。
 
@@ -81,7 +88,7 @@ pub async fn analyze_with_openai(
         command_outputs.len()
     );
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -156,7 +163,7 @@ pub async fn analyze_with_anthropic(
         command_outputs.len()
     );
 
-    let client = reqwest::Client::new();
+    let client = get_client();
     let response = client
         .post(&url)
         .header("x-api-key", api_key)
