@@ -25,6 +25,8 @@ export default function AiConfigPage() {
   const [editing, setEditing] = useState<AiModelConfig | null>(null);
   const [form, setForm] = useState<ConfigForm>(EMPTY_FORM);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadConfigs = () => {
     invoke<AiModelConfig[]>("list_ai_configs").then(setConfigs).catch(console.error);
@@ -51,19 +53,46 @@ export default function AiConfigPage() {
   };
 
   const handleSave = () => {
+    if (!form.name.trim()) {
+      setSaveError("请输入配置名称");
+      return;
+    }
+    if (!form.model_id.trim()) {
+      setSaveError("请输入 Model ID");
+      return;
+    }
+    if (!editing && !form.api_key.trim()) {
+      setSaveError("请输入 API Key");
+      return;
+    }
+
     const data: Record<string, unknown> = {
       name: form.name,
       provider: form.provider,
       model_id: form.model_id,
     };
-    if (form.api_key) data.api_key = form.api_key;
+    if (form.api_key) data.api_key_encrypted = form.api_key;
     if (form.base_url) data.base_url = form.base_url;
+
+    console.log("[AiConfigPage] 保存配置:", { editing: !!editing, data });
+    setSaving(true);
+    setSaveError(null);
 
     const promise = editing
       ? invoke<AiModelConfig>("update_ai_config", { configId: editing.id, data })
       : invoke<AiModelConfig>("create_ai_config", { data });
 
-    promise.then(() => { setModalOpen(false); loadConfigs(); }).catch(console.error);
+    promise
+      .then((result) => {
+        console.log("[AiConfigPage] 保存成功:", result);
+        setModalOpen(false);
+        loadConfigs();
+      })
+      .catch((e) => {
+        console.error("[AiConfigPage] 保存失败:", e);
+        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
+      })
+      .finally(() => setSaving(false));
   };
 
   const handleDelete = (id: number) => {
@@ -128,11 +157,16 @@ export default function AiConfigPage() {
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button onClick={handleSave}>{editing ? "保存" : "添加"}</Button>
+            <Button onClick={handleSave} loading={saving}>{editing ? "保存" : "添加"}</Button>
           </div>
         }
       >
         <div className="space-y-3">
+          {saveError && (
+            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+              {saveError}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如: OpenAI GPT-4" />

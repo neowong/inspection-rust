@@ -83,6 +83,7 @@ pub struct InspectionTemplate {
     pub config: Option<String>,
     pub description: Option<String>,
     pub report_template_id: Option<i64>,
+    pub template_type: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -96,6 +97,7 @@ pub struct TemplateCreate {
     pub config: Option<String>,
     pub description: Option<String>,
     pub report_template_id: Option<i64>,
+    pub template_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +109,7 @@ pub struct TemplateUpdate {
     pub config: Option<String>,
     pub description: Option<String>,
     pub report_template_id: Option<i64>,
+    pub template_type: Option<String>,
 }
 
 // ============================

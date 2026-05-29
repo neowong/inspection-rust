@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { FolderTree, Server, Play, FileText, Bot, Settings, ChevronLeft, Gauge } from "lucide-react";
+import { FolderTree, Server, Play, FileText, Settings, ChevronLeft } from "lucide-react";
 
-type PageKey = "templates" | "devices" | "inspection" | "reports" | "ai-config" | "settings";
+type PageKey = "templates" | "devices" | "inspection" | "reports" | "settings";
 
 interface NavItem {
   key: PageKey;
@@ -24,7 +24,6 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   {
     label: "系统",
     items: [
-      { key: "ai-config", label: "AI 配置",  path: "/ai-config", icon: Bot },
       { key: "settings",  label: "系统设置", path: "/settings",  icon: Settings },
     ],
   },
@@ -58,8 +57,8 @@ export default function AppShell() {
 
           {/* Brand */}
           <div className={`flex items-center gap-3 h-12 border-b border-[hsl(var(--border-light))] ${collapsed ? "px-0 justify-center" : "px-4"}`}>
-            <div className="w-7 h-7 rounded-lg bg-[hsl(var(--accent))] flex items-center justify-center shrink-0 shadow-sm">
-              <Gauge size={16} className="text-white" />
+            <div className="w-8 h-8 rounded-lg bg-[hsl(var(--accent))] flex items-center justify-center shrink-0 shadow-sm">
+              <img src="/network-internet-web-svgrepo-com.svg" alt="" className="w-5 h-5" style={{ filter: "brightness(0) invert(1)" }} />
             </div>
             {!collapsed && <span className="text-[15px] font-semibold text-[hsl(var(--text-primary))] tracking-tight">NetInspect</span>}
           </div>

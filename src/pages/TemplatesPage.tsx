@@ -47,6 +47,8 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(EMPTY_TEMPLATE_FORM);
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Command pool state
   const [commands, setCommands] = useState<CommandPool[]>([]);
@@ -102,20 +104,39 @@ export default function TemplatesPage() {
   };
 
   const handleSaveTemplate = () => {
+    if (!templateForm.name.trim()) {
+      setSaveError("请输入模板名称");
+      return;
+    }
+
     const data: Record<string, unknown> = {
       name: templateForm.name,
       vendor: templateForm.vendor,
-      config: { command_ids: templateForm.command_ids },
+      config: JSON.stringify({ command_ids: templateForm.command_ids }),
     };
     if (templateForm.model) data.model = templateForm.model;
     if (templateForm.device_type) data.device_type = templateForm.device_type;
     if (templateForm.description) data.description = templateForm.description;
 
+    console.log("[TemplatesPage] 保存模板:", { editing: !!editingTemplate, data });
+    setSaving(true);
+    setSaveError(null);
+
     const promise = editingTemplate
       ? invoke<InspectionTemplate>("update_template", { templateId: editingTemplate.id, data })
       : invoke<InspectionTemplate>("create_template", { data });
 
-    promise.then(() => { setTemplateModal(false); loadTemplates(); }).catch(console.error);
+    promise
+      .then((result) => {
+        console.log("[TemplatesPage] 保存成功:", result);
+        setTemplateModal(false);
+        loadTemplates();
+      })
+      .catch((e) => {
+        console.error("[TemplatesPage] 保存失败:", e);
+        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
+      })
+      .finally(() => setSaving(false));
   };
 
   const handleDeleteTemplate = (id: number) => {
@@ -189,7 +210,10 @@ export default function TemplatesPage() {
           ]}
           data={filteredTemplates}
           rowKey={(r) => r.id}
+          onRowClick={(r) => setSelectedTemplate(r)}
+          onRowDoubleClick={(r) => openEditTemplate(r)}
           onContextMenu={handleTemplateCtx}
+          selectedKey={selectedTemplate?.id}
           emptyText="暂无模板"
         />
       </div>
@@ -239,15 +263,20 @@ export default function TemplatesPage() {
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setTemplateModal(false)}>取消</Button>
-            <Button onClick={handleSaveTemplate}>{editingTemplate ? "保存" : "添加"}</Button>
+            <Button onClick={handleSaveTemplate} loading={saving}>{editingTemplate ? "保存" : "添加"}</Button>
           </div>
         }
       >
         <div className="space-y-3">
+          {saveError && (
+            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+              {saveError}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={templateForm.name} onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })} />
+              <Input value={templateForm.name} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>

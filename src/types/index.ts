@@ -23,6 +23,7 @@ export interface InspectionTemplate {
   config: { command_ids?: number[] };
   description: string | null;
   report_template_id: number | null;
+  template_type: string | null;
   device_count: number;
   created_at: string;
   updated_at: string;

@@ -41,6 +41,8 @@ export default function DevicesPage() {
   const [editing, setEditing] = useState<Device | null>(null);
   const [form, setForm] = useState<DeviceForm>(EMPTY_FORM);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadDevices = useCallback(() => {
     invoke<Device[]>("list_devices", {
@@ -83,22 +85,46 @@ export default function DevicesPage() {
   };
 
   const handleSave = () => {
+    if (!form.name.trim()) {
+      setSaveError("请输入设备名称");
+      return;
+    }
+    if (!form.ip.trim()) {
+      setSaveError("请输入 IP 地址");
+      return;
+    }
+
     const data: Record<string, unknown> = {
       name: form.name,
       ip: form.ip,
+      device_type: form.model ? "switch" : "router",
       vendor: form.vendor,
       ssh_port: form.ssh_port,
     };
     if (form.model) data.model = form.model;
     if (form.ssh_username) data.ssh_username = form.ssh_username;
-    if (form.ssh_password) data.ssh_password = form.ssh_password;
+    if (form.ssh_password) data.ssh_password_encrypted = form.ssh_password;
     if (form.template_id !== null) data.template_id = form.template_id;
+
+    console.log("[DevicesPage] 保存设备:", { editing: !!editing, data });
+    setSaving(true);
+    setSaveError(null);
 
     const promise = editing
       ? invoke<Device>("update_device", { deviceId: editing.id, data })
       : invoke<Device>("create_device", { data });
 
-    promise.then(() => { setModalOpen(false); loadDevices(); }).catch(console.error);
+    promise
+      .then((result) => {
+        console.log("[DevicesPage] 保存成功:", result);
+        setModalOpen(false);
+        loadDevices();
+      })
+      .catch((e) => {
+        console.error("[DevicesPage] 保存失败:", e);
+        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
+      })
+      .finally(() => setSaving(false));
   };
 
   const handleDelete = (id: number) => {
@@ -235,19 +261,24 @@ export default function DevicesPage() {
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>取消</Button>
-            <Button onClick={handleSave}>{editing ? "保存" : "添加"}</Button>
+            <Button onClick={handleSave} loading={saving}>{editing ? "保存" : "添加"}</Button>
           </div>
         }
       >
         <div className="space-y-3">
+          {saveError && (
+            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+              {saveError}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="设备名称" />
+              <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP</label>
-              <Input value={form.ip} onChange={(e) => setForm({ ...form, ip: e.target.value })} placeholder="192.168.1.1" />
+              <Input value={form.ip} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

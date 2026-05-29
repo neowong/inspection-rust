@@ -12,7 +12,7 @@ use crate::services::template_generator;
 // ============================================================
 
 const TEMPLATE_COLUMNS: &str =
-    "id, name, vendor, model, device_type, config, description, report_template_id, created_at, updated_at";
+    "id, name, vendor, model, device_type, config, description, report_template_id, template_type, created_at, updated_at";
 const COMMAND_COLUMNS: &str = "id, vendor, command, description, category, model, created_at, updated_at";
 
 // ============================================================
@@ -29,8 +29,9 @@ fn template_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionTemplate
         config: row.get(5)?,
         description: row.get(6)?,
         report_template_id: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        template_type: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -89,13 +90,16 @@ pub fn list_templates(
             let created_at: String = row.get(8)?;
             let updated_at: String = row.get(9)?;
             let device_count: i64 = row.get(10)?;
+            let parsed_config: Option<serde_json::Value> = config
+                .as_deref()
+                .and_then(|c| serde_json::from_str(c).ok());
             Ok(serde_json::json!({
                 "id": id,
                 "name": name,
                 "vendor": vendor,
                 "model": model,
                 "device_type": device_type,
-                "config": config,
+                "config": parsed_config,
                 "description": description,
                 "report_template_id": report_template_id,
                 "created_at": created_at,
@@ -133,9 +137,11 @@ pub fn create_template(
 ) -> Result<InspectionTemplate, String> {
     let conn = state.db.lock();
 
+    let template_type = data.template_type.as_deref().unwrap_or("ssh");
+
     conn.execute(
         "INSERT INTO inspection_templates (name, vendor, model, device_type, config, description, \
-         report_template_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         report_template_id, template_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params![
             data.name,
             data.vendor,
@@ -144,6 +150,7 @@ pub fn create_template(
             data.config,
             data.description,
             data.report_template_id,
+            template_type,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -196,6 +203,7 @@ pub fn update_template(
     push_field!(config, "config");
     push_field!(description, "description");
     push_field!(report_template_id, "report_template_id");
+    push_field!(template_type, "template_type");
 
     if set_parts.is_empty() {
         return Ok(existing);

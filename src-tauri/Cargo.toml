@@ -9,7 +9,7 @@ name = "inspection_rust_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-tauri = "2"
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -34,7 +34,7 @@ serde_yaml = "0.9"
 log = "0.4"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [features]
 default = ["custom-protocol"]

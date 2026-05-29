@@ -25,7 +25,7 @@ const DEVICE_COLUMNS: &str =
      ssh_port, template_id, status, last_checked_at, created_at, updated_at";
 
 const TEMPLATE_COLUMNS: &str =
-    "id, name, vendor, model, device_type, config, description, report_template_id, \
+    "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
      created_at, updated_at";
 
 const COMMAND_COLUMNS: &str =
@@ -100,8 +100,9 @@ fn template_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionTemplate
         config: row.get(5)?,
         description: row.get(6)?,
         report_template_id: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        template_type: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 

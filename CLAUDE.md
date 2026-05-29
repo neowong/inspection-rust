@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 inspection-rust/
 ├── src/                          # React frontend (flat structure)
 │   ├── main.tsx                  # Entry: BrowserRouter + App
-│   ├── App.tsx                   # Routes (7 pages), global shortcuts
+│   ├── App.tsx                   # Routes (6 pages: templates/devices/inspection/reports/settings, AI config merged into settings)
 │   ├── index.css                 # CSS variables (HSL theming), scrollbar, animations
 │   ├── types/index.ts            # Shared TypeScript interfaces
 │   ├── lib/utils.ts              # cn() - tailwind-merge + clsx helper
@@ -30,7 +30,7 @@ inspection-rust/
 │   ├── layouts/AppShell.tsx      # Shell: sidebar nav + status bar + <Outlet/>
 │   ├── components/
 │   │   ├── DataTable.tsx         # Generic typed table (Column<T> pattern)
-│   │   ├── Modal.tsx             # Overlay modal with Escape close
+│   │   ├── Modal.tsx             # Overlay modal with Escape close (props: open, title, width, onClose, footer, children)
 │   │   ├── StatusBadge.tsx       # Status → color dot + Chinese label
 │   │   ├── SearchInput.tsx       # Search input with Ctrl+F focus
 │   │   ├── ContextMenu.tsx       # Right-click context menu
@@ -45,8 +45,8 @@ inspection-rust/
 │       ├── TemplatesPage.tsx     # Inspection templates + command pool CRUD
 │       ├── InspectionPage.tsx    # Batch creation, running, monitoring
 │       ├── ReportsPage.tsx       # AI analysis, reports, report templates
-│       ├── AiConfigPage.tsx      # AI model config (OpenAI/Anthropic)
-│       └── SettingsPage.tsx      # System settings
+│       ├── AiConfigPage.tsx      # (legacy, deprecated — AI config merged into SettingsPage)
+│       └── SettingsPage.tsx      # System settings + AI model config CRUD (integrated)
 ├── src-tauri/                    # Rust backend
 │   ├── Cargo.toml
 │   ├── tauri.conf.json           # App config (1400x900, no devUrl)
@@ -83,6 +83,12 @@ inspection-rust/
 - **Custom UI components, no shadcn/ui**: Button uses `class-variance-authority` for variants; Modal, DataTable, etc. are hand-rolled
 - **DataTable generic pattern**: `DataTable<T>` with typed `Column<T>[]` config for rendering
 - **Chinese-first**: All labels, messages, and prompts in Chinese. AI inspection prompts are Chinese.
+- **Form standard pattern**: Pages with modal forms use `saving` + `saveError` states, `<Button loading={saving}>`, and error alert box `.bg-[hsl(var(--danger)_/_0.1)]` for validation
+- **DataTable**: Supports `onRowClick`, `onRowDoubleClick`, `selectedKey` props. TemplatesPage is reference implementation
+- **Config field encoding**: Template `config` is stored as JSON string in SQLite, `JSON.stringify()` on frontend, `serde_json::from_str()` on list. Frontend types declare `config: {...}` object, invoke params must send string
+- **API key/password fields**: Rust models use `api_key_encrypted` / `ssh_password_encrypted`. Frontend send `api_key_encrypted` / `ssh_password_encrypted` (NOT `api_key` / `ssh_password`)
+- **tsconfig `noEmit: true` is REQUIRED**: Without it, `tsc` generates stale `.js` files in `src/` that Vite loads instead of `.tsx` — causing "changes not reflected" bugs
+- **Branding**: `public/network-internet-web-svgrepo-com.svg` (network globe icon) used as app logo in sidebar
 
 ## Dev Commands
 

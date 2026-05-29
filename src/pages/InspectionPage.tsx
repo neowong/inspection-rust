@@ -58,10 +58,9 @@ export default function InspectionPage() {
   const handleCreateBatch = () => {
     const data: Record<string, unknown> = {
       name: batchForm.name,
-      device_ids: batchForm.device_ids,
-      auto_start: batchForm.auto_start,
+      device_ids: JSON.stringify(batchForm.device_ids),
     };
-    invoke<InspectionBatch>("create_batch", { data })
+    invoke<InspectionBatch>("create_batch", { data, autoStart: batchForm.auto_start })
       .then(() => {
         setModalOpen(false);
         setBatchForm(EMPTY_BATCH_FORM);
