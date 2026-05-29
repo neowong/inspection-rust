@@ -4,33 +4,34 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --bg-app: 215 28% 7%;
+    --bg-content: 217 19% 11%;
+    --bg-card: 217 19% 14%;
+    --bg-hover: 217 19% 18%;
+    --bg-active: 217 19% 22%;
+    --text-primary: 210 20% 95%;
+    --text-secondary: 215 12% 65%;
+    --text-tertiary: 215 12% 45%;
+    --accent: 217 91% 60%;
+    --accent-subtle: 217 91% 60% / 0.12;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --danger: 0 72% 51%;
+    --info: 217 91% 60%;
+    --border: 217 15% 20%;
+    --border-light: 217 15% 15%;
     --radius: 0.5rem;
   }
 
   * { border-color: hsl(var(--border)); }
 
   body {
-    background-color: #f5f6f8;
-    color: hsl(var(--foreground));
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-    font-size: 13px;
+    background-color: hsl(var(--bg-content));
+    color: hsl(var(--text-primary));
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
+      "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 14px;
     line-height: 1.5;
     overflow: hidden;
     user-select: none;
@@ -41,68 +42,8 @@
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-
-/* ---- Shared components ---- */
-@layer components {
-  .btn {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 5px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 500;
-    cursor: pointer; transition: all .12s; border: 1px solid transparent; white-space: nowrap;
-  }
-  .btn-primary {
-    background: #2563eb; color: #fff; border-color: #2563eb;
-    box-shadow: 0 1px 2px rgba(37,99,235,.25);
-  }
-  .btn-primary:hover { background: #1d4ed8; }
-  .btn-outline {
-    background: #fff; color: #374151; border-color: #d1d5db;
-    box-shadow: 0 1px 2px rgba(0,0,0,.04);
-  }
-  .btn-outline:hover { background: #f9fafb; border-color: #9ca3af; }
-  .btn-danger {
-    background: #fff; color: #dc2626; border-color: #fecaca;
-  }
-  .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; }
-  .btn-ghost {
-    background: transparent; color: #6b7280; border-color: transparent;
-  }
-  .btn-ghost:hover { background: #f3f4f6; color: #111827; }
-  .btn-sm { padding: 3px 10px; font-size: 12px; border-radius: 4px; }
-
-  .input {
-    width: 100%; padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
-    border-radius: 6px; outline: none; background: #fff; transition: border-color .12s, box-shadow .12s;
-  }
-  .input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
-
-  .select {
-    width: 100%; padding: 6px 10px; font-size: 13px; border: 1px solid #d1d5db;
-    border-radius: 6px; outline: none; background: #fff; cursor: pointer;
-  }
-
-  .card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.03);
-  }
-
-  .page-header {
-    display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
-  }
-  .page-title {
-    font-size: 15px; font-weight: 600; color: #111827; letter-spacing: -0.01em;
-  }
-  .page-desc { font-size: 12px; color: #9ca3af; margin-top: 1px; }
-
-  .empty-state {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 40px 20px; text-align: center; color: #9ca3af;
-  }
-  .empty-state svg { width: 36px; height: 36px; margin-bottom: 10px; opacity: .35; }
-  .empty-state p { font-size: 13px; margin-bottom: 4px; color: #6b7280; }
-  .empty-state span { font-size: 12px; }
-}
+::-webkit-scrollbar-thumb { background: hsl(var(--text-tertiary) / 0.4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--text-secondary) / 0.6); }
 
 /* ---- Animation ---- */
 @keyframes fadeIn {
