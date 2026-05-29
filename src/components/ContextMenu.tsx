@@ -34,18 +34,20 @@ export default function ContextMenu({ items, visible, x, y, onClose }: Props) {
   return (
     <div
       ref={ref}
-      className="fixed z-50 bg-white border border-gray-300 rounded shadow-lg py-1 min-w-[140px] text-xs"
+      className="fixed z-50 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-2xl py-1 min-w-[150px] text-sm"
       style={{ left: x, top: y }}
     >
       {items.map((item, i) =>
         item.separator ? (
-          <div key={i} className="border-t border-gray-200 my-1" />
+          <div key={i} className="border-t border-[hsl(var(--border-light))] my-1" />
         ) : (
           <button
             key={i}
             disabled={item.disabled}
-            className={`w-full text-left px-3 py-1.5 hover:bg-blue-50 disabled:text-gray-400 disabled:hover:bg-white ${
-              item.danger ? "text-red-600 hover:bg-red-50" : ""
+            className={`w-full text-left px-3 py-1.5 transition-colors disabled:text-[hsl(var(--text-tertiary))] disabled:cursor-not-allowed ${
+              item.danger
+                ? "text-[hsl(var(--danger))] hover:bg-[hsl(var(--danger)/0.1)]"
+                : "text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))]"
             }`}
             onClick={() => { item.action?.(); onClose(); }}
           >
