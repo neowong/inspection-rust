@@ -27,10 +27,15 @@ pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程�
 /// Format command outputs into a readable text block for the LLM.
 fn format_command_outputs(command_outputs: &HashMap<String, String>) -> String {
     let mut parts = Vec::new();
-    for (cmd, output) in command_outputs {
+    // Sort keys for deterministic ordering
+    let mut keys: Vec<&String> = command_outputs.keys().collect();
+    keys.sort();
+    for cmd in keys {
+        let output = &command_outputs[cmd];
         // Truncate output to 2000 chars to avoid overly large prompts
         let truncated = if output.len() > 2000 {
-            format!("{}...\n[输出已截断，共 {} 字节]", &output[..2000], output.len())
+            let end = output.char_indices().nth(2000).map(|(i, _)| i).unwrap_or(output.len());
+            format!("{}...\n[输出已截断，共 {} 字节]", &output[..end], output.len())
         } else {
             output.clone()
         };
@@ -155,7 +160,7 @@ pub async fn analyze_with_anthropic(
     let response = client
         .post(&url)
         .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", "2025-01-25")
         .header("Content-Type", "application/json")
         .json(&body)
         .send()

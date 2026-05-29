@@ -24,7 +24,7 @@ pub fn generate_template(
     db: &rusqlite::Connection,
     vendor: &str,
     model: Option<&str>,
-    device_type: Option<&str>,
+    _device_type: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     // Build base query
     let mut sql = String::from(
@@ -32,10 +32,10 @@ pub fn generate_template(
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(vendor.to_string())];
 
-    if let Some(dt) = device_type {
-        if !dt.is_empty() {
-            sql.push_str(" AND (device_type = ?2 OR device_type IS NULL)");
-            params.push(Box::new(dt.to_string()));
+    if let Some(m) = model {
+        if !m.is_empty() {
+            sql.push_str(" AND (model = ?2 OR model IS NULL)");
+            params.push(Box::new(m.to_string()));
         }
     }
 
@@ -43,7 +43,7 @@ pub fn generate_template(
 
     info!(
         "Generating template for vendor={}, model={:?}, device_type={:?}",
-        vendor, model, device_type
+        vendor, model, _device_type
     );
 
     // Prepare and execute query
