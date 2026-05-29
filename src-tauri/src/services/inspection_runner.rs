@@ -125,6 +125,15 @@ fn run_commands_system_ssh(
     let mut results = HashMap::new();
     for cmd in commands {
         let output = run_single_ssh_command(source, cmd, &ssh_opts, &sshpass_path)?;
+
+        // Check if command is unrecognized by the device
+        if let Some(error_msg) = check_unrecognized_command(&output) {
+            eprintln!("[SSH] Skipping unrecognized command '{}': {}", cmd, error_msg);
+            // Optionally store the error message instead of skipping
+            results.insert(format!("{} [不支持]", cmd), error_msg);
+            continue;
+        }
+
         results.insert(cmd.clone(), output);
     }
 
@@ -259,6 +268,15 @@ fn run_commands_libssh2(
     let mut results = HashMap::new();
     for cmd in commands {
         let output = exec_command_on_session(&session, cmd, source.password.as_str())?;
+
+        // Check if command is unrecognized by the device
+        if let Some(error_msg) = check_unrecognized_command(&output) {
+            eprintln!("[SSH] Skipping unrecognized command '{}': {}", cmd, error_msg);
+            // Optionally store the error message instead of skipping
+            results.insert(format!("{} [不支持]", cmd), error_msg);
+            continue;
+        }
+
         results.insert(cmd.clone(), output);
     }
 
@@ -368,6 +386,36 @@ fn clean_command_output(raw: &str) -> String {
     cleaned.trim().to_string()
 }
 
+/// Check if command output indicates the command is not recognized by the device.
+/// Returns Some(error_message) if unrecognized, None otherwise.
+fn check_unrecognized_command(output: &str) -> Option<String> {
+    let output_lower = output.to_lowercase();
+
+    // Common patterns for unrecognized commands across vendors
+    let patterns = [
+        "unrecognized command",
+        "invalid input detected",
+        "unknown command",
+        "command not found",
+        "% invalid",
+        "% unrecognized",
+        "syntax error",
+        "incomplete command",
+    ];
+
+    for pattern in patterns {
+        if output_lower.contains(pattern) {
+            // Extract the error line for better reporting
+            let error_line = output.lines()
+                .find(|line| line.to_lowercase().contains(pattern))
+                .unwrap_or(output);
+            return Some(format!("设备不支持此命令: {}", error_line.trim()));
+        }
+    }
+
+    None
+}
+
 /// Returns true if the given vendor string corresponds to a known network device vendor.
 pub fn is_network_vendor(vendor: &str) -> bool {
     matches!(
@@ -390,5 +438,29 @@ mod tests {
         let raw = "<H3C>display version\nH3C Comware V7.1.070\n<H3C>";
         let result = clean_command_output(raw);
         assert!(result.contains("H3C Comware V7.1.070"));
+    }
+
+    #[test]
+    fn test_check_unrecognized_command() {
+        // H3C style error
+        let output = "<aHope_WLAN_AC>display ntp-status\n                       ^\n % Unrecognized command found at '^' position.";
+        let result = check_unrecognized_command(output);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("设备不支持此命令"));
+
+        // Cisco style error
+        let output = "Router#show ntp\n% Invalid input detected at '^' marker.";
+        let result = check_unrecognized_command(output);
+        assert!(result.is_some());
+
+        // Normal command output
+        let output = "<H3C>display version\nH3C Comware V7.1.070\n<H3C>";
+        let result = check_unrecognized_command(output);
+        assert!(result.is_none());
+
+        // Huawei style error
+        let output = "<Huawei>display abc\nError: Unrecognized command";
+        let result = check_unrecognized_command(output);
+        assert!(result.is_some());
     }
 }
