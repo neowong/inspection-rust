@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
 
 interface SystemSettings {
   id: number;
@@ -111,21 +113,21 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) return <div className="p-4 text-gray-500 text-sm">加载中...</div>;
+  if (loading) return <div className="p-4 text-[hsl(var(--text-tertiary))] text-sm">加载中...</div>;
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-auto">
-      <h1 className="text-lg font-bold">系统设置</h1>
+      <h1 className="text-xl font-semibold text-[hsl(var(--text-primary))]">系统设置</h1>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 gap-0">
+      <div className="flex border-b border-[hsl(var(--border))] gap-0">
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.key
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                ? "border-[hsl(var(--accent))] text-[hsl(var(--accent))]"
+                : "border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:border-[hsl(var(--border))]"
             }`}
             onClick={() => setActiveTab(tab.key)}
           >
@@ -136,120 +138,104 @@ export default function SettingsPage() {
 
       {/* Tab: Report Settings */}
       {activeTab === "report" && (
-        <div className="bg-white rounded border border-gray-200 p-4 max-w-xl">
-          <h2 className="text-sm font-semibold mb-4">报告设置</h2>
+        <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-4 max-w-xl">
+          <h2 className="text-sm font-semibold mb-4 text-[hsl(var(--text-primary))]">报告设置</h2>
           <div className="space-y-4">
             <FormField label="每条命令最大输出行数">
-              <input
-                className="form-input"
+              <Input
+                size="sm"
                 type="number"
                 min={10}
                 max={100000}
                 value={maxOutputLines}
                 onChange={(e) => setMaxOutputLines(parseInt(e.target.value) || 1000)}
               />
-              <span className="text-[11px] text-gray-400 mt-0.5">
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] mt-0.5">
                 超过此行数的命令输出将被截断，默认 1000 行
               </span>
             </FormField>
             <FormField label="报告保存路径">
               <div className="flex gap-2">
-                <input
-                  className="form-input flex-1"
+                <Input
+                  size="sm"
+                  className="flex-1"
                   value={reportSavePath}
                   readOnly
                 />
-                <button
-                  className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 shrink-0"
-                  onClick={handleBrowsePath}
-                >
-                  浏览
-                </button>
+                <Button variant="secondary" size="sm" onClick={handleBrowsePath}>浏览</Button>
               </div>
-              <span className="text-[11px] text-gray-400 mt-0.5">
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] mt-0.5">
                 巡检报告 PDF/Markdown 的默认保存目录
               </span>
             </FormField>
           </div>
           <div className="mt-4 flex items-center gap-2">
-            <button
-              className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-              disabled={saving}
-              onClick={handleSaveReport}
-            >
-              {saving ? "保存中..." : "保存设置"}
-            </button>
-            {saved && <span className="text-xs text-green-600">已保存</span>}
+            <Button size="sm" disabled={saving} loading={saving} onClick={handleSaveReport}>保存设置</Button>
+            {saved && <span className="text-xs text-[hsl(var(--success))]">已保存</span>}
           </div>
         </div>
       )}
 
       {/* Tab: Network Settings */}
       {activeTab === "network" && (
-        <div className="bg-white rounded border border-gray-200 p-4 max-w-xl">
-          <h2 className="text-sm font-semibold mb-4">网络设置</h2>
+        <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-4 max-w-xl">
+          <h2 className="text-sm font-semibold mb-4 text-[hsl(var(--text-primary))]">网络设置</h2>
           <div className="space-y-4">
             <FormField label="SSH 连接超时 (秒)">
-              <input
-                className="form-input"
+              <Input
+                size="sm"
                 type="number"
                 min={1}
                 max={120}
                 value={sshTimeout}
                 onChange={(e) => setSshTimeout(parseInt(e.target.value) || 10)}
               />
-              <span className="text-[11px] text-gray-400 mt-0.5">
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] mt-0.5">
                 单次 SSH 连接的超时时间，默认 10 秒
               </span>
             </FormField>
             <FormField label="最大并发巡检数">
-              <input
-                className="form-input"
+              <Input
+                size="sm"
                 type="number"
                 min={1}
                 max={50}
                 value={maxConcurrent}
                 onChange={(e) => setMaxConcurrent(parseInt(e.target.value) || 5)}
               />
-              <span className="text-[11px] text-gray-400 mt-0.5">
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] mt-0.5">
                 同时执行巡检的最大设备数，默认 5 台
               </span>
             </FormField>
           </div>
           <div className="mt-4 flex items-center gap-2">
-            <button
-              className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-              disabled={saving}
-              onClick={handleSaveNetwork}
-            >
-              {saving ? "保存中..." : "保存设置"}
-            </button>
-            {saved && <span className="text-xs text-green-600">已保存</span>}
+            <Button size="sm" disabled={saving} loading={saving} onClick={handleSaveNetwork}>保存设置</Button>
+            {saved && <span className="text-xs text-[hsl(var(--success))]">已保存</span>}
           </div>
         </div>
       )}
 
       {/* Tab: About */}
       {activeTab === "about" && (
-        <div className="bg-white rounded border border-gray-200 p-4 max-w-xl">
-          <h2 className="text-sm font-semibold mb-4">关于</h2>
+        <div className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg p-4 max-w-xl">
+          <h2 className="text-sm font-semibold mb-4 text-[hsl(var(--text-primary))]">关于</h2>
           <div className="space-y-3 text-sm">
             <div className="flex items-center gap-3">
-              <span className="text-gray-500 w-20 shrink-0">应用名称</span>
-              <span className="text-gray-800 font-medium">网络设备巡检系统</span>
+              <span className="text-[hsl(var(--text-secondary))] w-20 shrink-0">应用名称</span>
+              <span className="text-[hsl(var(--text-primary))] font-medium">网络设备巡检系统</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-gray-500 w-20 shrink-0">版本</span>
-              <code className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px]">v3.1.0</code>
+              <span className="text-[hsl(var(--text-secondary))] w-20 shrink-0">版本</span>
+              <code className="px-1.5 py-0.5 bg-[hsl(var(--bg-hover))] rounded text-[11px]">v3.1.0</code>
             </div>
             <div className="flex items-start gap-3">
-              <span className="text-gray-500 w-20 shrink-0">描述</span>
-              <span className="text-gray-800">
+              <span className="text-[hsl(var(--text-secondary))] w-20 shrink-0">描述</span>
+              <span className="text-[hsl(var(--text-primary))]">
                 基于 Rust + Tauri v2 的桌面版网络设备巡检系统，支持 SSH 远程执行巡检命令、AI 智能分析输出结果并生成 Markdown 报告。
               </span>
             </div>
             <div className="flex items-start gap-3">
-              <span className="text-gray-500 w-20 shrink-0">技术栈</span>
+              <span className="text-[hsl(var(--text-secondary))] w-20 shrink-0">技术栈</span>
               <div className="flex flex-wrap gap-1.5">
                 {[
                   "Rust", "Tauri v2", "React 18", "TypeScript",
@@ -258,7 +244,7 @@ export default function SettingsPage() {
                 ].map((tech) => (
                   <span
                     key={tech}
-                    className="inline-block px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[11px] text-gray-600"
+                    className="inline-block px-1.5 py-0.5 bg-[hsl(var(--bg-hover))] border border-[hsl(var(--border))] rounded text-[11px] text-[hsl(var(--text-secondary))]"
                   >
                     {tech}
                   </span>
@@ -268,23 +254,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-
-      {/* Form input style */}
-      <style>{`
-        .form-input {
-          width: 100%;
-          padding: 4px 8px;
-          font-size: 12px;
-          border: 1px solid #d1d5db;
-          border-radius: 4px;
-          outline: none;
-          background: #fff;
-        }
-        .form-input:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 1px #3b82f6;
-        }
-      `}</style>
     </div>
   );
 }
@@ -292,7 +261,7 @@ export default function SettingsPage() {
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-gray-600">{label}</span>
+      <span className="text-xs text-[hsl(var(--text-secondary))]">{label}</span>
       {children}
     </label>
   );
