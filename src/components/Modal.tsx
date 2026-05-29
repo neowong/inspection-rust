@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -20,14 +21,31 @@ export default function Modal({ open, title, width = "max-w-lg", children, foote
   if (!open) return null;
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-40 flex items-center justify-center bg-black/30" onClick={e => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className={`bg-white rounded shadow-xl ${width} w-full mx-4 max-h-[80vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-4 py-2 border-b">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+    <div className="fixed inset-0 z-40 flex items-center justify-center">
+      <div
+        ref={overlayRef}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in"
+        onClick={e => { if (e.target === overlayRef.current) onClose(); }}
+      />
+      <div
+        className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl ${width} w-full mx-4 max-h-[80vh] flex flex-col animate-in`}
+        style={{ animationDuration: "150ms" }}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[hsl(var(--border-light))]">
+          <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))]">{title}</h2>
+          <button
+            onClick={onClose}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))] transition-colors"
+          >
+            <X size={16} />
+          </button>
         </div>
-        <div className="flex-1 overflow-auto p-4 text-sm">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-4 py-2 border-t bg-gray-50">{footer}</div>}
+        <div className="flex-1 overflow-auto p-5 text-sm text-[hsl(var(--text-primary))]">{children}</div>
+        {footer && (
+          <div className="flex justify-end gap-2 px-5 py-3 border-t border-[hsl(var(--border-light))] bg-[hsl(var(--bg-app))]">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
