@@ -2,26 +2,6 @@ use tauri::State;
 use crate::AppState;
 
 #[tauri::command]
-pub fn delete_record(record_id: i64, state: State<AppState>) -> Result<(), String> {
-    let db = state.db.lock();
-    let report_path: Option<String> = db.query_row("SELECT report_path FROM inspection_records WHERE id=?1", rusqlite::params![record_id], |r| r.get(0)).ok().flatten();
-    if let Some(ref path) = report_path { std::fs::remove_file(path).ok(); }
-    db.execute("DELETE FROM inspection_records WHERE id=?1", rusqlite::params![record_id]).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn batch_delete_records(ids: Vec<i64>, state: State<AppState>) -> Result<serde_json::Value, String> {
-    let db = state.db.lock();
-    for rid in &ids {
-        let report_path: Option<String> = db.query_row("SELECT report_path FROM inspection_records WHERE id=?1", rusqlite::params![rid], |r| r.get(0)).ok().flatten();
-        if let Some(ref path) = report_path { std::fs::remove_file(path).ok(); }
-        db.execute("DELETE FROM inspection_records WHERE id=?1", rusqlite::params![rid]).ok();
-    }
-    Ok(serde_json::json!({"success": true, "deleted": ids.len()}))
-}
-
-#[tauri::command]
 pub fn analyze_record(record_id: i64, state: State<AppState>) -> Result<serde_json::Value, String> {
     let db = state.db.lock();
     let exists: bool = db.query_row("SELECT COUNT(*)>0 FROM inspection_records WHERE id=?1", rusqlite::params![record_id], |r| r.get(0)).unwrap_or(false);
