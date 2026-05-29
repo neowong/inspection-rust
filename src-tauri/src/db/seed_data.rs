@@ -4,7 +4,7 @@ use rusqlite::{params, Connection};
 ///
 /// 仅当 `command_pool` 表为空时执行插入。
 /// 返回插入的行数，若表非空则返回 `Ok(0)`。
-pub fn seed_command_pool(conn: &Connection) -> Result<usize, String> {
+pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
     // 检查命令池是否为空
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM command_pool", [], |row| row.get(0))
@@ -125,16 +125,17 @@ pub fn seed_command_pool(conn: &Connection) -> Result<usize, String> {
         ("锐捷", "show interface", "查看接口详细信息", "interface"),
     ];
 
-    let mut inserted = 0usize;
-    for (vendor, command, description, category) in &commands {
-        let result = conn.execute(
-            "INSERT INTO command_pool (vendor, command, description, category) VALUES (?1, ?2, ?3, ?4)",
-            params![vendor, command, description, category],
-        );
-        if let Ok(count) = result {
-            inserted += count;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("INSERT INTO command_pool (vendor, command, description, category) VALUES (?1, ?2, ?3, ?4)")
+            .map_err(|e| e.to_string())?;
+        for (vendor, command, description, category) in &commands {
+            stmt.execute(params![vendor, command, description, category])
+                .map_err(|e| format!("插入种子命令失败 ({}): {}", command, e))?;
         }
     }
+    tx.commit().map_err(|e| e.to_string())?;
 
-    Ok(inserted)
+    Ok(commands.len())
 }
