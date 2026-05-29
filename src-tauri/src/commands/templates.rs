@@ -4,49 +4,9 @@ use rusqlite::types::ToSql;
 use crate::AppState;
 use crate::db::models::{
     CommandCreate, CommandPool, CommandUpdate, InspectionTemplate, TemplateCreate, TemplateUpdate,
+    TEMPLATE_COLUMNS, COMMAND_COLUMNS, template_from_row, command_from_row,
 };
 use crate::services::template_generator;
-
-// ============================================================
-// Constants
-// ============================================================
-
-const TEMPLATE_COLUMNS: &str =
-    "id, name, vendor, model, device_type, config, description, report_template_id, template_type, created_at, updated_at";
-const COMMAND_COLUMNS: &str = "id, vendor, command, description, category, model, created_at, updated_at";
-
-// ============================================================
-// Helpers
-// ============================================================
-
-fn template_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionTemplate> {
-    Ok(InspectionTemplate {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        vendor: row.get(2)?,
-        model: row.get(3)?,
-        device_type: row.get(4)?,
-        config: row.get(5)?,
-        description: row.get(6)?,
-        report_template_id: row.get(7)?,
-        template_type: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
-    })
-}
-
-fn command_from_row(row: &rusqlite::Row) -> rusqlite::Result<CommandPool> {
-    Ok(CommandPool {
-        id: row.get(0)?,
-        vendor: row.get(1)?,
-        command: row.get(2)?,
-        description: row.get(3)?,
-        category: row.get(4)?,
-        model: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
-    })
-}
 
 // ============================================================
 // Template Query Commands

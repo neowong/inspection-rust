@@ -2,7 +2,10 @@ use tauri::State;
 use rusqlite::types::ToSql;
 
 use crate::AppState;
-use crate::db::models::{Device, DeviceCreate, DeviceUpdate, DeviceStatusLog};
+use crate::db::models::{
+    Device, DeviceCreate, DeviceUpdate, DeviceStatusLog,
+    DEVICE_COLUMNS, device_from_row, status_log_from_row,
+};
 use crate::services::crypto::CryptoService;
 
 use std::net::{TcpStream, IpAddr, SocketAddr};
@@ -10,43 +13,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 // ============================================================
-// Constants
-// ============================================================
-
-const DEVICE_COLUMNS: &str = "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, created_at, updated_at";
-
-// ============================================================
 // Helpers
 // ============================================================
-
-fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
-    Ok(Device {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        ip: row.get(2)?,
-        device_type: row.get(3)?,
-        vendor: row.get(4)?,
-        model: row.get(5)?,
-        ssh_username: row.get(6)?,
-        ssh_password_encrypted: row.get(7)?,
-        ssh_port: row.get(8)?,
-        template_id: row.get(9)?,
-        status: row.get(10)?,
-        last_checked_at: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
-    })
-}
-
-fn status_log_from_row(row: &rusqlite::Row) -> rusqlite::Result<DeviceStatusLog> {
-    Ok(DeviceStatusLog {
-        id: row.get(0)?,
-        device_id: row.get(1)?,
-        old_status: row.get(2)?,
-        new_status: row.get(3)?,
-        checked_at: row.get(4)?,
-    })
-}
 
 /// 验证 IP 地址格式（IPv4，4 段，每段 0-255）
 fn validate_ip(ip: &str) -> Result<(), String> {
@@ -345,23 +313,26 @@ pub fn batch_delete_devices(ids: Vec<i64>, state: State<AppState>) -> Result<(),
 // Status Check Commands
 // ============================================================
 
-/// 检查单个设备连通状态（内部实现，接受 &AppState 避免所有权问题）
+/// 检查单个设备连通状态（内部实现）
+/// 拆分为：读取设备信息 → TCP 检测（锁外）→ 写入结果
 fn check_device_status_inner(
     app_state: &AppState,
     device_id: i64,
 ) -> Result<serde_json::Value, String> {
-    let conn = app_state.db.lock();
+    // 1. 读取设备信息（短暂获锁）
+    let device = {
+        let conn = app_state.db.lock();
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        crate::db::query::query_one(
+            &conn,
+            &sql,
+            rusqlite::params![device_id],
+            device_from_row,
+        )?
+        .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?
+    }; // 锁释放
 
-    let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    let device = crate::db::query::query_one(
-        &conn,
-        &sql,
-        rusqlite::params![device_id],
-        device_from_row,
-    )?
-    .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
-
-    // TCP 连接检测（5 秒超时）
+    // 2. TCP 连接检测（锁外，5 秒超时）
     let ip_addr = IpAddr::from_str(&device.ip)
         .map_err(|_| format!("无法解析设备 IP 地址: {}", device.ip))?;
     let socket_addr = SocketAddr::new(ip_addr, device.ssh_port as u16);
@@ -375,19 +346,22 @@ fn check_device_status_inner(
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
-    // 记录状态变更日志
-    conn.execute(
-        "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![device_id, device.status, new_status, now],
-    )
-    .map_err(|e| e.to_string())?;
+    // 3. 写入结果（短暂获锁）
+    {
+        let conn = app_state.db.lock();
 
-    // 更新设备状态
-    conn.execute(
-        "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
-        rusqlite::params![new_status, now, now, device_id],
-    )
-    .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![device_id, device.status, new_status, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
+            rusqlite::params![new_status, now, now, device_id],
+        )
+        .map_err(|e| e.to_string())?;
+    } // 锁释放
 
     Ok(serde_json::json!({
         "device_id": device_id,

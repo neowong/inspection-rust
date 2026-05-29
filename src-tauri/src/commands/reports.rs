@@ -3,80 +3,13 @@ use std::collections::HashMap;
 use tauri::State;
 
 use crate::AppState;
-use crate::db::models::{AiModelConfig, Device, InspectionRecord, ReportTemplate};
+use crate::db::models::{
+    AiModelConfig, InspectionRecord, ReportTemplate,
+    RECORD_COLUMNS, DEVICE_COLUMNS, REPORT_TEMPLATE_COLUMNS,
+    record_from_row, device_from_row, report_template_from_row, now_str,
+};
 use crate::services::crypto::CryptoService;
 use crate::services::{ai_inspection, report_generator};
-
-// ============================================================
-// Constants
-// ============================================================
-
-const RECORD_COLUMNS: &str =
-    "id, batch_id, device_id, status, error_message, command_outputs, ai_status, ai_result, \
-     ai_analysis, ai_suggestions, command_judgments, summary_judgment, report_path, \
-     started_at, completed_at, created_at, updated_at";
-
-const DEVICE_COLUMNS: &str =
-    "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
-     ssh_port, template_id, status, last_checked_at, created_at, updated_at";
-
-const REPORT_TEMPLATE_COLUMNS: &str = "id, name, vendor, file_path, created_at, updated_at";
-
-// ============================================================
-// Row Mappers
-// ============================================================
-
-fn record_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionRecord> {
-    Ok(InspectionRecord {
-        id: row.get(0)?,
-        batch_id: row.get(1)?,
-        device_id: row.get(2)?,
-        status: row.get(3)?,
-        error_message: row.get(4)?,
-        command_outputs: row.get(5)?,
-        ai_status: row.get(6)?,
-        ai_result: row.get(7)?,
-        ai_analysis: row.get(8)?,
-        ai_suggestions: row.get(9)?,
-        command_judgments: row.get(10)?,
-        summary_judgment: row.get(11)?,
-        report_path: row.get(12)?,
-        started_at: row.get(13)?,
-        completed_at: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
-    })
-}
-
-fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
-    Ok(Device {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        ip: row.get(2)?,
-        device_type: row.get(3)?,
-        vendor: row.get(4)?,
-        model: row.get(5)?,
-        ssh_username: row.get(6)?,
-        ssh_password_encrypted: row.get(7)?,
-        ssh_port: row.get(8)?,
-        template_id: row.get(9)?,
-        status: row.get(10)?,
-        last_checked_at: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
-    })
-}
-
-fn report_template_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportTemplate> {
-    Ok(ReportTemplate {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        vendor: row.get(2)?,
-        file_path: row.get(3)?,
-        created_at: row.get(4)?,
-        updated_at: row.get(5)?,
-    })
-}
 
 // ============================================================
 // Helpers
@@ -114,12 +47,6 @@ fn parse_command_outputs(json_str: &Option<String>) -> Result<HashMap<String, St
         map.insert(k.clone(), s);
     }
     Ok(map)
-}
-
-fn now_str() -> String {
-    chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string()
 }
 
 // ============================================================

@@ -259,3 +259,149 @@ pub struct SystemSettings {
     pub id: i64,
     pub report_max_output_lines: i64,
 }
+
+// ============================
+// 公共工具函数
+// ============================
+
+/// 返回当前时间戳字符串
+pub fn now_str() -> String {
+    chrono::Local::now()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+// ============================
+// SQL 列定义常量
+// ============================
+
+pub const DEVICE_COLUMNS: &str =
+    "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
+     ssh_port, template_id, status, last_checked_at, created_at, updated_at";
+
+pub const TEMPLATE_COLUMNS: &str =
+    "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
+     created_at, updated_at";
+
+pub const COMMAND_COLUMNS: &str =
+    "id, vendor, command, description, category, model, created_at, updated_at";
+
+pub const BATCH_COLUMNS: &str =
+    "id, name, status, triggered_by, device_ids, started_at, completed_at, created_at, updated_at";
+
+pub const RECORD_COLUMNS: &str =
+    "id, batch_id, device_id, status, error_message, command_outputs, ai_status, ai_result, \
+     ai_analysis, ai_suggestions, command_judgments, summary_judgment, report_path, \
+     started_at, completed_at, created_at, updated_at";
+
+pub const REPORT_TEMPLATE_COLUMNS: &str =
+    "id, name, vendor, file_path, created_at, updated_at";
+
+// ============================
+// 行映射函数（统一去重）
+// ============================
+
+pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
+    Ok(Device {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        ip: row.get(2)?,
+        device_type: row.get(3)?,
+        vendor: row.get(4)?,
+        model: row.get(5)?,
+        ssh_username: row.get(6)?,
+        ssh_password_encrypted: row.get(7)?,
+        ssh_port: row.get(8)?,
+        template_id: row.get(9)?,
+        status: row.get(10)?,
+        last_checked_at: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
+    })
+}
+
+pub fn status_log_from_row(row: &rusqlite::Row) -> rusqlite::Result<DeviceStatusLog> {
+    Ok(DeviceStatusLog {
+        id: row.get(0)?,
+        device_id: row.get(1)?,
+        old_status: row.get(2)?,
+        new_status: row.get(3)?,
+        checked_at: row.get(4)?,
+    })
+}
+
+pub fn template_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionTemplate> {
+    Ok(InspectionTemplate {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        vendor: row.get(2)?,
+        model: row.get(3)?,
+        device_type: row.get(4)?,
+        config: row.get(5)?,
+        description: row.get(6)?,
+        report_template_id: row.get(7)?,
+        template_type: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
+pub fn command_from_row(row: &rusqlite::Row) -> rusqlite::Result<CommandPool> {
+    Ok(CommandPool {
+        id: row.get(0)?,
+        vendor: row.get(1)?,
+        command: row.get(2)?,
+        description: row.get(3)?,
+        category: row.get(4)?,
+        model: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
+pub fn batch_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionBatch> {
+    Ok(InspectionBatch {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        status: row.get(2)?,
+        triggered_by: row.get(3)?,
+        device_ids: row.get(4)?,
+        started_at: row.get(5)?,
+        completed_at: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+pub fn record_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionRecord> {
+    Ok(InspectionRecord {
+        id: row.get(0)?,
+        batch_id: row.get(1)?,
+        device_id: row.get(2)?,
+        status: row.get(3)?,
+        error_message: row.get(4)?,
+        command_outputs: row.get(5)?,
+        ai_status: row.get(6)?,
+        ai_result: row.get(7)?,
+        ai_analysis: row.get(8)?,
+        ai_suggestions: row.get(9)?,
+        command_judgments: row.get(10)?,
+        summary_judgment: row.get(11)?,
+        report_path: row.get(12)?,
+        started_at: row.get(13)?,
+        completed_at: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
+    })
+}
+
+pub fn report_template_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportTemplate> {
+    Ok(ReportTemplate {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        vendor: row.get(2)?,
+        file_path: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
