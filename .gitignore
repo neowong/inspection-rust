@@ -23,3 +23,12 @@ Thumbs.db
 
 # Compiled JS from TypeScript
 src/**/*.js
+
+# Claude Code
+.claude/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Coverage
+coverage/
