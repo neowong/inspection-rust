@@ -1,18 +1,18 @@
 type Status = "online" | "offline" | "unknown" | "ok" | "warning" | "critical" | "info" | "pending" | "running" | "completed" | "failed" | "stopped";
 
 const STYLES: Record<Status, string> = {
-  online: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  offline: "bg-red-500/15 text-red-400 border-red-500/30",
-  unknown: "bg-gray-500/15 text-gray-400 border-gray-500/30",
-  ok: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  warning: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  critical: "bg-red-500/15 text-red-400 border-red-500/30",
-  info: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  pending: "bg-gray-500/15 text-gray-400 border-gray-500/30",
-  running: "bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse",
-  completed: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  failed: "bg-red-500/15 text-red-400 border-red-500/30",
-  stopped: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  online: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25",
+  offline: "bg-red-500/10 text-red-700 border-red-500/25",
+  unknown: "bg-gray-500/10 text-gray-600 border-gray-500/25",
+  ok: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25",
+  warning: "bg-amber-500/10 text-amber-700 border-amber-500/25",
+  critical: "bg-red-500/10 text-red-700 border-red-500/25",
+  info: "bg-blue-500/10 text-blue-700 border-blue-500/25",
+  pending: "bg-gray-500/10 text-gray-600 border-gray-500/25",
+  running: "bg-blue-500/10 text-blue-700 border-blue-500/25 animate-pulse",
+  completed: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25",
+  failed: "bg-red-500/10 text-red-700 border-red-500/25",
+  stopped: "bg-amber-500/10 text-amber-700 border-amber-500/25",
 };
 
 const LABELS: Record<Status, string> = {
@@ -22,9 +22,9 @@ const LABELS: Record<Status, string> = {
 };
 
 const DOT_COLORS: Record<Status, string> = {
-  online: "bg-emerald-400", offline: "bg-red-400", unknown: "bg-gray-400",
-  ok: "bg-emerald-400", warning: "bg-amber-400", critical: "bg-red-400", info: "bg-blue-400",
-  pending: "bg-gray-400", running: "bg-blue-400", completed: "bg-emerald-400", failed: "bg-red-400", stopped: "bg-amber-400",
+  online: "bg-emerald-500", offline: "bg-red-500", unknown: "bg-gray-400",
+  ok: "bg-emerald-500", warning: "bg-amber-500", critical: "bg-red-500", info: "bg-blue-500",
+  pending: "bg-gray-400", running: "bg-blue-500", completed: "bg-emerald-500", failed: "bg-red-500", stopped: "bg-amber-500",
 };
 
 export default function StatusBadge({ status }: { status: Status }) {

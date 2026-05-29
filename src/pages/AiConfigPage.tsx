@@ -148,8 +148,8 @@ export default function AiConfigPage() {
       render: (c: AiModelConfig) => (
         <span className={`inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium ${
           c.provider === "openai"
-            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-            : "bg-purple-500/15 text-purple-400 border-purple-500/30"
+            ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/25"
+            : "bg-purple-500/10 text-purple-700 border-purple-500/25"
         }`}>
           {c.provider === "openai" ? "OpenAI" : "Anthropic"}
         </span>

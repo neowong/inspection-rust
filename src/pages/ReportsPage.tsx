@@ -573,7 +573,7 @@ export default function ReportsPage() {
                                   </td>
                                   <td className="px-3 py-1.5">
                                     {rec.report_path ? (
-                                      <span className="text-emerald-400">
+                                      <span className="text-emerald-600">
                                         已生成
                                       </span>
                                     ) : (
@@ -679,43 +679,43 @@ function AiJudgmentBadge({
       const isCrit = summaryJudgment.includes("[CRITICAL]");
       if (isCrit)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/10 text-red-700 border-red-500/25">
             严重
           </span>
         );
       if (isWarn)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-amber-500/15 text-amber-400 border-amber-500/30">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-amber-500/10 text-amber-700 border-amber-500/25">
             警告
           </span>
         );
       if (isOk)
         return (
-          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+          <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/10 text-emerald-700 border-emerald-500/25">
             正常
           </span>
         );
     }
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-emerald-500/10 text-emerald-700 border-emerald-500/25">
         已完成
       </span>
     );
   }
   if (aiStatus === "running" || aiStatus === "processing")
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-blue-500/15 text-blue-400 border-blue-500/30">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-blue-500/10 text-blue-700 border-blue-500/25">
         分析中
       </span>
     );
   if (aiStatus === "failed")
     return (
-      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/15 text-red-400 border-red-500/30">
+      <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-red-500/10 text-red-700 border-red-500/25">
         失败
       </span>
     );
   return (
-    <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-gray-500/15 text-[hsl(var(--text-tertiary))] border-gray-500/30">
+    <span className="inline-block px-1.5 py-0.5 rounded border text-[11px] font-medium bg-gray-500/10 text-gray-600 border-gray-500/25">
       等待中
     </span>
   );
