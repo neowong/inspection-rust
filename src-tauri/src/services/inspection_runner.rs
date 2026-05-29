@@ -19,6 +19,65 @@ pub fn run_commands(
     vendor: &str,
     commands: &[String],
 ) -> Result<HashMap<String, String>, String> {
+    // Try libssh2 first, fallback to system ssh
+    match run_commands_libssh2(source, vendor, commands) {
+        Ok(results) => Ok(results),
+        Err(e) => {
+            eprintln!("libssh2 failed: {}, trying system ssh", e);
+            run_commands_system_ssh(source, commands)
+        }
+    }
+}
+
+/// Fallback: use system ssh command
+fn run_commands_system_ssh(
+    source: &SSHSessionSource,
+    commands: &[String],
+) -> Result<HashMap<String, String>, String> {
+    use std::process::{Command, Stdio};
+
+    let mut results = HashMap::new();
+
+    for cmd in commands {
+        let child = Command::new("sshpass")
+            .args(&["-p", &source.password])
+            .arg("ssh")
+            .args(&[
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "HostKeyAlgorithms=+ssh-rsa",
+                "-o", "PubkeyAcceptedKeyTypes=+ssh-rsa",
+                "-o", "ConnectTimeout=10",
+                "-p", &source.port.to_string(),
+                &format!("{}@{}", source.username, source.host),
+                cmd,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动ssh命令失败: {}", e))?;
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("等待ssh输出失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("SSH命令失败: {}", stderr));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        results.insert(cmd.clone(), stdout);
+    }
+
+    Ok(results)
+}
+
+/// Original libssh2 implementation
+fn run_commands_libssh2(
+    source: &SSHSessionSource,
+    vendor: &str,
+    commands: &[String],
+) -> Result<HashMap<String, String>, String> {
     // 1. TCP connect with 10 second timeout
     let addr = format!("{}:{}", source.host, source.port)
         .to_socket_addrs()
@@ -33,6 +92,10 @@ pub fn run_commands(
     let mut session = Session::new()
         .map_err(|e| format!("创建SSH会话失败: {}", e))?;
     session.set_tcp_stream(tcp);
+
+    // Set banner for better compatibility with network devices
+    session.set_banner("SSH-2.0-OpenSSH_8.0").ok();
+
     session
         .handshake()
         .map_err(|e| format!("SSH握手失败: {}", e))?;
@@ -44,6 +107,12 @@ pub fn run_commands(
         return Err("SSH认证未通过".to_string());
     }
 
+    // Set session timeout early - some devices need this before channel creation
+    session.set_timeout(30_000);
+
+    // Small delay after authentication for devices that need time
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
     // 4. Send pagination disable command based on vendor
     let page_cmd = match vendor.to_lowercase().as_str() {
         "h3c" | "华三" | "huawei" | "华为" => "screen-length disable",
@@ -52,6 +121,7 @@ pub fn run_commands(
     };
 
     if !page_cmd.is_empty() {
+        // Ignore pagination command failure - some devices don't support it
         let _ = exec_command_on_session(&session, page_cmd, source.password.as_str());
     }
 
@@ -79,9 +149,21 @@ fn exec_command_on_session(session: &Session, cmd: &str, password: &str) -> Resu
         .channel_session()
         .map_err(|e| format!("创建SSH通道失败: {}", e))?;
 
+    // Request PTY for network devices that require it
+    let _ = channel.request_pty("xterm", None, None);
+
+    // Try shell mode instead of exec for better compatibility
     channel
-        .exec(cmd)
-        .map_err(|e| format!("命令执行失败 '{}': {}", cmd, e))?;
+        .shell()
+        .map_err(|e| format!("启动Shell失败: {}", e))?;
+
+    // Send the command
+    writeln!(channel, "{}", cmd)
+        .map_err(|e| format!("发送命令失败 '{}': {}", cmd, e))?;
+
+    // Send exit to close the shell after command completes
+    writeln!(channel, "exit")
+        .map_err(|e| format!("发送exit失败: {}", e))?;
 
     // 5. Read stdout up to 4096 bytes
     let mut output = String::new();

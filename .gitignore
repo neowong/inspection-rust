@@ -32,3 +32,11 @@ src/**/*.js
 
 # Coverage
 coverage/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Stray files
+*.png
+!public/*.png
+!src-tauri/icons/*.png
