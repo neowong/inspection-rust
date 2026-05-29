@@ -70,18 +70,6 @@ export interface InspectionRecordSummary {
   error_message: string | null;
 }
 
-export interface ScheduledTask {
-  id: number;
-  name: string;
-  cron_expression: string;
-  enabled: boolean;
-  device_ids: number[];
-  next_run_at: string | null;
-  last_run_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface AiModelConfig {
   id: number;
   name: string;
@@ -108,7 +96,6 @@ export interface Stats {
   offline_device_count: number;
   template_count: number;
   command_count: number;
-  report_template_count: number;
   batch_count: number;
   pending_batch_count: number;
   completed_batch_count: number;
