@@ -28,6 +28,16 @@ export default function InspectionPage() {
   const [retrying, setRetrying] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  const triggerShake = (field: string) => {
+    setShakeFields((prev) => new Set(prev).add(field));
+    setTimeout(() => setShakeFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    }), 600);
+  };
 
   const loadBatches = useCallback(() => {
     invoke<InspectionBatch[]>("list_batches", { status: undefined })
@@ -62,6 +72,9 @@ export default function InspectionPage() {
   }, [loadBatches, refreshSelectedBatch, selectedBatch]);
 
   const handleCreateBatch = () => {
+    if (!batchForm.name.trim()) { triggerShake("batch_name"); return; }
+    if (batchForm.device_ids.length === 0) { triggerShake("batch_devices"); return; }
+
     const data: Record<string, unknown> = {
       name: batchForm.name,
       device_ids: JSON.stringify(batchForm.device_ids),
@@ -261,11 +274,11 @@ export default function InspectionPage() {
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">批次名称</label>
-            <Input value={batchForm.name} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} placeholder="例如: 核心交换机周检" />
+            <Input value={batchForm.name} className={shakeFields.has("batch_name") ? "animate-shake" : ""} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} placeholder="例如: 核心交换机周检" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">选择设备</label>
-            <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
+            <div className={`max-h-48 overflow-y-auto border rounded-md p-2 space-y-1 ${shakeFields.has("batch_devices") ? "animate-shake" : "border-[hsl(var(--border))]"}`}>
               {devices.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无设备</p>}
               {devices.map((d) => {
                 const checked = batchForm.device_ids.includes(d.id);

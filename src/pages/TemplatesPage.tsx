@@ -46,6 +46,16 @@ export default function TemplatesPage() {
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  const triggerShake = (field: string) => {
+    setShakeFields((prev) => new Set(prev).add(field));
+    setTimeout(() => setShakeFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    }), 600);
+  };
 
   // Command pool state
   const [commands, setCommands] = useState<CommandPool[]>([]);
@@ -105,10 +115,7 @@ export default function TemplatesPage() {
   };
 
   const handleSaveTemplate = () => {
-    if (!templateForm.name.trim()) {
-      setSaveError("请输入模板名称");
-      return;
-    }
+    if (!templateForm.name.trim()) { triggerShake("template_name"); return; }
 
     const data: Record<string, unknown> = {
       name: templateForm.name,
@@ -164,10 +171,7 @@ export default function TemplatesPage() {
   };
 
   const handleSaveCommand = () => {
-    if (!cmdForm.command.trim()) {
-      setCmdSaveError("请输入命令文本");
-      return;
-    }
+    if (!cmdForm.command.trim()) { triggerShake("cmd_command"); return; }
     setCmdSaving(true);
     setCmdSaveError(null);
     const promise = editingCmd
@@ -289,7 +293,7 @@ export default function TemplatesPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={templateForm.name} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
+              <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
@@ -391,7 +395,7 @@ export default function TemplatesPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
-            <Input value={cmdForm.command} onChange={(e) => setCmdForm({ ...cmdForm, command: e.target.value })} placeholder="display version" />
+            <Input value={cmdForm.command} className={shakeFields.has("cmd_command") ? "animate-shake" : ""} onChange={(e) => setCmdForm({ ...cmdForm, command: e.target.value })} placeholder="display version" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>

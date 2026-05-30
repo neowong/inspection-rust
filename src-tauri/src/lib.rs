@@ -21,8 +21,25 @@ impl AppState {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn extract_webview2_loader() {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let dll_path = exe_dir.join("WebView2Loader.dll");
+    if !dll_path.exists() {
+        let _ = std::fs::write(&dll_path, include_bytes!("../WebView2Loader.dll"));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn extract_webview2_loader() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    extract_webview2_loader();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

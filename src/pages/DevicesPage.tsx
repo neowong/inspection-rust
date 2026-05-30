@@ -42,6 +42,27 @@ export default function DevicesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  const triggerShake = (field: string) => {
+    setShakeFields((prev) => new Set(prev).add(field));
+    setTimeout(() => setShakeFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    }), 600);
+  };
+
+  const isValidIp = (ip: string) => {
+    const p = ip.trim();
+    if (!p) return false;
+    const parts = p.split(".");
+    if (parts.length !== 4) return false;
+    return parts.every((part) => {
+      const n = Number(part);
+      return part !== "" && !isNaN(n) && n >= 0 && n <= 255 && part === String(n);
+    });
+  };
 
   const loadDevices = useCallback(() => {
     invoke<Device[]>("list_devices", {
@@ -84,14 +105,10 @@ export default function DevicesPage() {
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) {
-      setSaveError("请输入设备名称");
-      return;
-    }
-    if (!form.ip.trim()) {
-      setSaveError("请输入 IP 地址");
-      return;
-    }
+    if (!form.name.trim()) { triggerShake("name"); return; }
+    if (!isValidIp(form.ip)) { triggerShake("ip"); return; }
+    if (!form.ssh_username.trim()) { triggerShake("ssh_username"); return; }
+    if (!editing && !form.ssh_password.trim()) { triggerShake("ssh_password"); return; }
 
     const data: Record<string, unknown> = {
       name: form.name,
@@ -309,11 +326,11 @@ export default function DevicesPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
+              <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP</label>
-              <Input value={form.ip} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP <span className="text-[hsl(var(--danger))]">*</span></label>
+              <Input value={form.ip} className={shakeFields.has("ip") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -330,12 +347,12 @@ export default function DevicesPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名</label>
-              <Input value={form.ssh_username} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
+              <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码</label>
-              <Input type="password" value={form.ssh_password} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
+              <Input type="password" value={form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

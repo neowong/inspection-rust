@@ -42,6 +42,16 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+
+  const triggerShake = (field: string) => {
+    setShakeFields((prev) => new Set(prev).add(field));
+    setTimeout(() => setShakeFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    }), 600);
+  };
 
   // Load system settings
   useEffect(() => {
@@ -92,18 +102,9 @@ export default function SettingsPage() {
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) {
-      setSaveError("请输入配置名称");
-      return;
-    }
-    if (!form.model_id.trim()) {
-      setSaveError("请输入 Model ID");
-      return;
-    }
-    if (!editing && !form.api_key.trim()) {
-      setSaveError("请输入 API Key");
-      return;
-    }
+    if (!form.name.trim()) { triggerShake("name"); return; }
+    if (!form.model_id.trim()) { triggerShake("model_id"); return; }
+    if (!editing && !form.api_key.trim()) { triggerShake("api_key"); return; }
 
     const data: Record<string, unknown> = {
       name: form.name,
@@ -243,7 +244,7 @@ export default function SettingsPage() {
           )}
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-            <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
+            <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Provider</label>
@@ -253,11 +254,11 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Model ID</label>
-            <Input value={form.model_id} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder={form.provider === "deepseek" ? "deepseek-chat" : form.provider === "openai" ? "gpt-4o" : "claude-sonnet-4-20250514"} />
+            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder={form.provider === "deepseek" ? "deepseek-chat" : form.provider === "openai" ? "gpt-4o" : "claude-sonnet-4-20250514"} />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>
-            <Input type="password" value={form.api_key} onChange={(e) => { setForm({ ...form, api_key: e.target.value }); setSaveError(null); }} placeholder={editing ? "留空则不修改" : "输入 API Key"} />
+            <Input type="password" value={form.api_key} className={shakeFields.has("api_key") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, api_key: e.target.value }); setSaveError(null); }} placeholder={editing ? "留空则不修改" : "输入 API Key"} />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Base URL（可选）</label>

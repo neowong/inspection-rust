@@ -37,7 +37,7 @@ export default function DataTable<T>({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className="text-left px-3 py-2 border-b border-[hsl(var(--border))] text-[11px] font-medium uppercase tracking-wide text-[hsl(var(--text-secondary))]"
+                  className="text-left px-3 py-2 border-b border-[hsl(var(--border))] text-xs font-medium uppercase tracking-wide text-[hsl(var(--text-secondary))]"
                   style={{ width: col.width }}
                 >
                   {col.header}
@@ -77,7 +77,7 @@ export default function DataTable<T>({
                     {columns.map((col) => (
                       <td
                         key={col.key}
-                        className="px-3 py-2 border-b border-[hsl(var(--border-light))] text-[13px] text-[hsl(var(--text-primary))]"
+                        className="px-3 py-2 border-b border-[hsl(var(--border-light))] text-sm text-[hsl(var(--text-primary))]"
                       >
                         {col.render(row)}
                       </td>
