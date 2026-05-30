@@ -87,8 +87,15 @@ inspection-rust/
 - **DataTable**: Supports `onRowClick`, `onRowDoubleClick`, `selectedKey` props. TemplatesPage is reference implementation
 - **Config field encoding**: Template `config` is stored as JSON string in SQLite, `JSON.stringify()` on frontend, `serde_json::from_str()` on list. Frontend types declare `config: {...}` object, invoke params must send string
 - **API key/password fields**: Rust models use `api_key_encrypted` / `ssh_password_encrypted`. Frontend send `api_key_encrypted` / `ssh_password_encrypted` (NOT `api_key` / `ssh_password`)
+- **SSH (netmiko-style)**: libssh2 only (no system sshpass). Persistent shell channel per device. `extract_prompt` → base_prompt (strips terminator). `output_contains_prompt` uses `contains()` not `ends_with()`. Per-command timeout 15s, 2 consecutive timeouts → skip remaining. `screen-length disable` must succeed.
+- **Device concurrency**: `run_batch` / `create_batch`(auto_start) spawn `tokio::spawn` per device, shared `Arc<Mutex<Connection>>`. `inspect_one_device()` per-device flow. Progress tracked via `Arc<std::sync::Mutex<String>>` → DB poller every 2s.
+- **Background tasks**: `lib.rs` spawns std thread for 5-minute device status polling (`poll_device_statuses`), uses `try_lock` to avoid blocking.
+- **Export**: `export_batch_csv` writes CSV with BOM to `data/reports/`. Fields escaped for commas/newlines/quotes.
 - **tsconfig `noEmit: true` is REQUIRED**: Without it, `tsc` generates stale `.js` files in `src/` that Vite loads instead of `.tsx` — causing "changes not reflected" bugs
 - **Branding**: `public/network-internet-web-svgrepo-com.svg` (network globe icon) used as app logo in sidebar
+- **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`
+- **Dashboard cards**: Clickable with `cursor-pointer` + `navigate(path)`. Summary + detail cards both have path field.
+- **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
 
 ## Dev Commands
 

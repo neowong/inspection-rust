@@ -51,12 +51,14 @@ export default function InspectionPage() {
       .catch(console.error);
   }, [selectedBatch]);
 
-  // Auto-refresh selected batch every 3 seconds
+  // Auto-refresh every 3 seconds (both list and detail)
   useEffect(() => {
-    if (!selectedBatch) return;
-    const id = setInterval(refreshSelectedBatch, 3000);
+    const id = setInterval(() => {
+      loadBatches();
+      if (selectedBatch) refreshSelectedBatch();
+    }, 3000);
     return () => clearInterval(id);
-  }, [refreshSelectedBatch, selectedBatch]);
+  }, [loadBatches, refreshSelectedBatch, selectedBatch]);
 
   const handleCreateBatch = () => {
     const data: Record<string, unknown> = {
@@ -101,6 +103,16 @@ export default function InspectionPage() {
       });
   };
 
+  const handleExport = (batchId: number) => {
+    invoke<string>("export_batch_csv", { batchId })
+      .then((path) => {
+        alert(`CSV 已导出: ${path}`);
+      })
+      .catch((e) => {
+        setErrorMsg(`导出失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
+      });
+  };
+
   const handleRetry = (recordId: number) => {
     setRetrying(recordId);
     setErrorMsg(null);
@@ -133,7 +145,7 @@ export default function InspectionPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">执行巡检</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">创建和管理巡检批次</p>
       </div>
@@ -174,6 +186,9 @@ export default function InspectionPage() {
                 {r.status === "stopped" || r.status === "paused" || r.status === "failed" ? (
                   <Button size="sm" variant="ghost" loading={actionLoading === r.id} onClick={() => handleAction(r.id, "restart")}>重启</Button>
                 ) : null}
+                {(r.status === "completed" || r.status === "partially_completed") && (
+                  <Button size="sm" variant="ghost" onClick={() => handleExport(r.id)}>导出CSV</Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r.id)}>删除</Button>
               </div>
             ),
@@ -200,11 +215,13 @@ export default function InspectionPage() {
                 if (!r.ai_status || r.ai_status === "none") return <span className="text-[hsl(var(--text-tertiary))]">-</span>;
                 return <StatusBadge status={batchStatusColor(r.ai_status)} />;
               }},
-              { key: "error_message", header: "错误信息", render: (r) =>
-                r.error_message
-                  ? <span className="text-[hsl(var(--danger))] text-xs">{r.error_message}</span>
-                  : "-",
-              },
+              { key: "progress", header: "巡检进度", render: (r) => {
+                if (r.status === "completed") return <span className="text-xs text-[hsl(var(--success))]">已完成</span>;
+                if (r.status === "running" && r.error_message) return <span className="text-xs text-[hsl(var(--info))]">{r.error_message}</span>;
+                if (r.status === "failed") return <span className="text-xs text-[hsl(var(--danger))]">{r.error_message || "执行失败"}</span>;
+                if (r.status === "stopped") return <span className="text-xs text-[hsl(var(--warning))]">已停止</span>;
+                return <span className="text-xs text-[hsl(var(--text-tertiary))]">-</span>;
+              }},
               {
                 key: "actions", header: "操作", width: "120px", render: (r) => (
                   <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>

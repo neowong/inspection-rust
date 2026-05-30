@@ -150,11 +150,15 @@ export default function DevicesPage() {
 
   const handleCheckDevice = (d: Device) => {
     invoke<{ status: string }>("check_device_status", { deviceId: d.id })
-      .then((r) => {
-        const evt = new CustomEvent("statusbar-message", { detail: `设备 ${d.name} 状态: ${r.status}` });
-        window.dispatchEvent(evt);
+      .then(() => {
         loadDevices();
       })
+      .catch(console.error);
+  };
+
+  const handleCheckAll = () => {
+    invoke<{ total: number; online: number; offline: number }>("check_all_devices_status")
+      .then(() => loadDevices())
       .catch(console.error);
   };
 
@@ -184,7 +188,7 @@ export default function DevicesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">设备管理</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">管理网络设备信息</p>
       </div>
@@ -210,6 +214,7 @@ export default function DevicesPage() {
           <option value="unknown">未知</option>
         </Select>
         <SearchInput value={searchText} onChange={setSearchText} placeholder="搜索设备名称/IP..." />
+        <Button size="sm" variant="secondary" onClick={handleCheckAll}>检测全部</Button>
         {selectedIds.size > 0 && (
           <Button variant="danger" size="sm" onClick={handleBatchDelete}>
             批量删除 ({selectedIds.size})
@@ -248,9 +253,12 @@ export default function DevicesPage() {
           {
             key: "actions",
             header: "操作",
-            width: "120px",
+            width: "200px",
             render: (r) => (
               <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <Button size="sm" variant="ghost" onClick={() => handleCheckDevice(r)}>
+                  检测
+                </Button>
                 <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                   编辑
                 </Button>

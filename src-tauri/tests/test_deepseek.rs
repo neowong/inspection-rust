@@ -258,6 +258,7 @@ fn test_full_pipeline_with_deepseek() {
             &source,
             &device.1,
             &commands,
+            None,
         ).unwrap();
 
         let outputs_json = serde_json::to_string(&outputs).unwrap();

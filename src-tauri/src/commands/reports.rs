@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 
 use tauri::State;
 
@@ -853,4 +854,86 @@ pub fn get_active_ai_config(state: State<AppState>) -> Result<AiModelConfig, Str
         },
     )?
     .ok_or_else(|| "未找到激活的 AI 配置".to_string())
+}
+
+// ============================================================
+// CSV Export
+// ============================================================
+
+/// 将巡检批次的命令输出导出为 CSV 文件，返回文件路径。
+#[tauri::command]
+pub fn export_batch_csv(batch_id: i64, state: State<AppState>) -> Result<String, String> {
+    let conn = state.db.lock();
+
+    let batch_sql = format!("SELECT {} FROM inspection_batches WHERE id = ?1", crate::db::models::BATCH_COLUMNS);
+    let batch = crate::db::query::query_one(&conn, &batch_sql, rusqlite::params![batch_id], crate::db::models::batch_from_row)?
+        .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+
+    let records_sql = format!("SELECT {} FROM inspection_records WHERE batch_id = ?1 ORDER BY id", RECORD_COLUMNS);
+    let records = crate::db::query::query_all(&conn, &records_sql, rusqlite::params![batch_id], record_from_row)?;
+
+    let dir = ensure_reports_dir()?;
+    let safe_name = batch.name.unwrap_or_else(|| format!("batch_{}", batch_id));
+    let filename = format!("{}_{}.csv", safe_name.replace('/', "_").replace('\\', "_"), now_str().replace(' ', "_").replace(':', "-"));
+    let filepath = dir.join(&filename);
+
+    let mut w = std::io::BufWriter::new(std::fs::File::create(&filepath).map_err(|e| format!("创建CSV文件失败: {}", e))?);
+
+    // BOM for Excel UTF-8 compatibility
+    w.write(b"\xEF\xBB\xBF").map_err(|e| e.to_string())?;
+
+    // Header
+    writeln!(w, "设备名称,设备IP,厂商,记录状态,命令,命令输出").map_err(|e| e.to_string())?;
+
+    for record in &records {
+        let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        let device = crate::db::query::query_one(&conn, &device_sql, rusqlite::params![record.device_id], device_from_row)?
+            .unwrap_or_else(|| crate::db::models::Device {
+                id: record.device_id,
+                name: "未知设备".into(),
+                ip: "".into(),
+                device_type: "".into(),
+                vendor: "".into(),
+                model: None,
+                ssh_username: None,
+                ssh_password_encrypted: None,
+                ssh_port: 22,
+                template_id: None,
+                status: "unknown".into(),
+                last_checked_at: None,
+                created_at: "".into(),
+                updated_at: "".into(),
+            });
+
+        let outputs = parse_command_outputs(&record.command_outputs).unwrap_or_default();
+
+        if outputs.is_empty() {
+            writeln!(w, "{},{},{},{},,", csv_escape(&device.name), csv_escape(&device.ip), csv_escape(&device.vendor), record.status).map_err(|e| e.to_string())?;
+        } else {
+            for (cmd, output) in &outputs {
+                writeln!(w, "{},{},{},{},{},{}",
+                    csv_escape(&device.name),
+                    csv_escape(&device.ip),
+                    csv_escape(&device.vendor),
+                    record.status,
+                    csv_escape(cmd),
+                    csv_escape(output),
+                ).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    w.flush().map_err(|e| e.to_string())?;
+    let path_str = filepath.to_string_lossy().to_string();
+    tracing::info!("CSV 导出完成: {}", path_str);
+    Ok(path_str)
+}
+
+/// CSV field escaping: wrap in quotes if contains comma/newline/quote.
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('\n') || s.contains('"') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }

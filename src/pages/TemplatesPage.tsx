@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ChevronRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
 import type { InspectionTemplate, CommandPool } from "../types";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
-import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import { VENDORS, CATEGORIES } from "../lib/constants";
@@ -40,7 +40,6 @@ export default function TemplatesPage() {
   const [templateSearch, setTemplateSearch] = useState("");
   const [templateVendor, setTemplateVendor] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<InspectionTemplate | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [templateModal, setTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(EMPTY_TEMPLATE_FORM);
@@ -52,13 +51,12 @@ export default function TemplatesPage() {
   const [commands, setCommands] = useState<CommandPool[]>([]);
   const [cmdSearch, setCmdSearch] = useState("");
   const [cmdVendor, setCmdVendor] = useState("");
-  const [cmdCategory, setCmdCategory] = useState("");
   const [cmdModal, setCmdModal] = useState(false);
   const [editingCmd, setEditingCmd] = useState<CommandPool | null>(null);
   const [cmdForm, setCmdForm] = useState<CommandForm>(EMPTY_COMMAND_FORM);
   const [confirmDeleteCmd, setConfirmDeleteCmd] = useState<number | null>(null);
-  const [cmdCtxMenu, setCmdCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [selectedCmd, setSelectedCmd] = useState<CommandPool | null>(null);
+  const [cmdSaving, setCmdSaving] = useState(false);
+  const [cmdSaveError, setCmdSaveError] = useState<string | null>(null);
 
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
@@ -68,24 +66,20 @@ export default function TemplatesPage() {
   const loadCommands = () => {
     invoke<CommandPool[]>("list_commands", {
       vendor: cmdVendor || undefined,
-      category: cmdCategory || undefined,
     }).then(setCommands).catch(console.error);
   };
 
   useEffect(() => { loadTemplates(); }, [templateVendor]);
-  useEffect(() => { loadCommands(); }, [cmdVendor, cmdCategory]);
+  useEffect(() => { loadCommands(); }, [cmdVendor]);
 
-  // Filter templates
   const filteredTemplates = useMemo(() => templates.filter((t) =>
     !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase())
   ), [templates, templateSearch]);
 
-  // Filter commands
   const filteredCommands = useMemo(() => commands.filter((c) =>
     !cmdSearch || c.command.toLowerCase().includes(cmdSearch.toLowerCase()) || (c.description && c.description.toLowerCase().includes(cmdSearch.toLowerCase()))
   ), [commands, cmdSearch]);
 
-  // Filter commands by template vendor in modal
   const vendorFilteredCommands = useMemo(() => commands.filter((c) =>
     c.vendor === templateForm.vendor
   ), [commands, templateForm.vendor]);
@@ -149,23 +143,17 @@ export default function TemplatesPage() {
       .catch(console.error);
   };
 
-  const handleAutoGenerate = (t: InspectionTemplate) => {
-    invoke<{ command_ids: number[] }>("auto_generate_template", {
-      vendor: t.vendor,
-      model: t.model || undefined,
-      device_type: t.device_type || undefined,
-    }).then(() => loadTemplates()).catch(console.error);
-  };
-
   // Command handlers
   const openAddCmd = () => {
     setEditingCmd(null);
     setCmdForm(EMPTY_COMMAND_FORM);
+    setCmdSaveError(null);
     setCmdModal(true);
   };
 
   const openEditCmd = (c: CommandPool) => {
     setEditingCmd(c);
+    setCmdSaveError(null);
     setCmdForm({
       vendor: c.vendor,
       command: c.command,
@@ -176,13 +164,19 @@ export default function TemplatesPage() {
   };
 
   const handleSaveCommand = () => {
-    if (!cmdForm.command.trim()) return;
+    if (!cmdForm.command.trim()) {
+      setCmdSaveError("请输入命令文本");
+      return;
+    }
+    setCmdSaving(true);
+    setCmdSaveError(null);
     const promise = editingCmd
       ? invoke<CommandPool>("update_command", { commandId: editingCmd.id, data: { ...cmdForm } })
       : invoke<CommandPool>("create_command", { data: { ...cmdForm } });
     promise
       .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); setEditingCmd(null); loadCommands(); })
-      .catch(console.error);
+      .catch((e) => setCmdSaveError(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setCmdSaving(false));
   };
 
   const handleDeleteCmd = (id: number) => {
@@ -191,39 +185,9 @@ export default function TemplatesPage() {
       .catch(console.error);
   };
 
-  const handleCmdCtx = (e: React.MouseEvent, c: CommandPool) => {
-    e.preventDefault();
-    setSelectedCmd(c);
-    setCmdCtxMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const cmdCtxItems: ContextMenuItem[] = selectedCmd
-    ? [
-        { label: "编辑", action: () => openEditCmd(selectedCmd) },
-        { label: "", separator: true },
-        { label: "删除", danger: true, action: () => setConfirmDeleteCmd(selectedCmd.id) },
-      ]
-    : [];
-
-  const handleTemplateCtx = (e: React.MouseEvent, t: InspectionTemplate) => {
-    e.preventDefault();
-    setSelectedTemplate(t);
-    setCtxMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const ctxItems: ContextMenuItem[] = selectedTemplate
-    ? [
-        { label: "编辑", action: () => openEditTemplate(selectedTemplate) },
-        { label: "", separator: true },
-        { label: "自动生成命令", action: () => handleAutoGenerate(selectedTemplate) },
-        { label: "", separator: true },
-        { label: "删除", danger: true, action: () => setConfirmDeleteTemplate(selectedTemplate.id) },
-      ]
-    : [];
-
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检模板</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">管理巡检模板和命令库</p>
       </div>
@@ -252,12 +216,19 @@ export default function TemplatesPage() {
               key: "updated_at", header: "更新时间", render: (r) =>
                 new Date(r.updated_at).toLocaleString("zh-CN"),
             },
+            {
+              key: "actions", header: "操作", width: "140px", render: (r) => (
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
+                </div>
+              ),
+            },
           ]}
           data={filteredTemplates}
           rowKey={(r) => r.id}
           onRowClick={(r) => setSelectedTemplate(r)}
           onRowDoubleClick={(r) => openEditTemplate(r)}
-          onContextMenu={handleTemplateCtx}
           selectedKey={selectedTemplate?.id}
           emptyText="暂无模板"
         />
@@ -268,46 +239,33 @@ export default function TemplatesPage() {
         <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-3">命令库</h2>
         <Toolbar>
           <Button onClick={openAddCmd} size="sm">添加命令</Button>
-          <Select className="w-28" value={cmdVendor} onChange={(e) => setCmdVendor(e.target.value)}>
-            <option value="">全部厂商</option>
-            {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-          </Select>
-          <Select className="w-28" value={cmdCategory} onChange={(e) => setCmdCategory(e.target.value)}>
-            <option value="">全部分类</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </Select>
           <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
         </Toolbar>
-        <DataTable<CommandPool>
-          columns={[
-            { key: "vendor", header: "厂商", width: "80px", render: (r) => r.vendor },
-            { key: "command", header: "命令", render: (r) => <code className="text-xs bg-[hsl(var(--bg-hover))] px-1.5 py-0.5 rounded">{r.command}</code> },
-            { key: "description", header: "描述", render: (r) => r.description || "-" },
-            { key: "category", header: "分类", width: "100px", render: (r) => r.category || "-" },
-          ]}
-          data={filteredCommands}
-          rowKey={(r) => r.id}
-          onRowDoubleClick={(r) => openEditCmd(r)}
-          onContextMenu={handleCmdCtx}
-          emptyText="暂无命令"
+
+        {/* Vendor tabs */}
+        <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
+          {["全部", ...VENDORS].map((v) => (
+            <button
+              key={v}
+              onClick={() => setCmdVendor(v === "全部" ? "" : v)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors -mb-px ${
+                (v === "全部" && !cmdVendor) || v === cmdVendor
+                  ? "bg-[hsl(var(--bg-card))] text-[hsl(var(--accent))] border border-b-transparent border-[hsl(var(--border))]"
+                  : "text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+
+        {/* Grouped commands */}
+        <CommandList
+          commands={filteredCommands}
+          onEdit={openEditCmd}
+          onDelete={(id) => setConfirmDeleteCmd(id)}
         />
       </div>
-
-      <ContextMenu
-        items={ctxItems}
-        visible={ctxMenu !== null}
-        x={ctxMenu?.x ?? 0}
-        y={ctxMenu?.y ?? 0}
-        onClose={() => setCtxMenu(null)}
-      />
-
-      <ContextMenu
-        items={cmdCtxItems}
-        visible={cmdCtxMenu !== null}
-        x={cmdCtxMenu?.x ?? 0}
-        y={cmdCtxMenu?.y ?? 0}
-        onClose={() => setCmdCtxMenu(null)}
-      />
 
       {/* Template Modal */}
       <Modal
@@ -337,12 +295,7 @@ export default function TemplatesPage() {
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
               <Select value={templateForm.vendor} onChange={(e) => {
                 const newVendor = e.target.value;
-                // 切换厂商时清空已选命令（不同厂商的命令 ID 不同）
-                setTemplateForm({
-                  ...templateForm,
-                  vendor: newVendor,
-                  command_ids: [],
-                });
+                setTemplateForm({ ...templateForm, vendor: newVendor, command_ids: [] });
               }}>
                 {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
               </Select>
@@ -420,11 +373,16 @@ export default function TemplatesPage() {
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => { setCmdModal(false); setEditingCmd(null); }}>取消</Button>
-            <Button onClick={handleSaveCommand}>{editingCmd ? "保存" : "添加"}</Button>
+            <Button onClick={handleSaveCommand} loading={cmdSaving}>{editingCmd ? "保存" : "添加"}</Button>
           </div>
         }
       >
         <div className="space-y-3">
+          {cmdSaveError && (
+            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+              {cmdSaveError}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
             <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
@@ -463,6 +421,127 @@ export default function TemplatesPage() {
       >
         <p>确定要删除此命令吗？此操作不可恢复。</p>
       </Modal>
+    </div>
+  );
+}
+
+// ============================================================
+// Command List (collapsible by category)
+// ============================================================
+
+const CATEGORY_LABELS: Record<string, string> = {
+  version: "版本信息",
+  clock: "系统时钟",
+  cpu: "CPU",
+  memory: "内存",
+  hardware: "硬件信息",
+  interface: "接口",
+  vlan: "VLAN",
+  log: "日志",
+  protocol: "协议",
+  general: "通用",
+};
+
+function CommandList({
+  commands,
+  onEdit,
+  onDelete,
+}: {
+  commands: CommandPool[];
+  onEdit: (c: CommandPool) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggle = (cat: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, CommandPool[]>();
+    for (const cmd of commands) {
+      const cat = cmd.category || "general";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(cmd);
+    }
+    // Sort categories
+    const ordered = [...map.entries()].sort(([a], [b]) => {
+      const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
+      const ib = CATEGORIES.indexOf(b as typeof CATEGORIES[number]);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    return ordered;
+  }, [commands]);
+
+  if (commands.length === 0) {
+    return (
+      <div className="text-center py-8 text-sm text-[hsl(var(--text-tertiary))]">
+        暂无命令
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {grouped.map(([cat, cmds]) => {
+        const open = !collapsed.has(cat);
+        return (
+          <div key={cat} className="rounded-lg border border-[hsl(var(--border))] overflow-hidden">
+            <button
+              onClick={() => toggle(cat)}
+              className="w-full flex items-center gap-2 px-3 py-2 bg-[hsl(var(--bg-hover))] hover:bg-[hsl(var(--bg-active))] transition-colors text-left"
+            >
+              {open ? <ChevronDown size={14} className="text-[hsl(var(--text-tertiary))]" /> : <ChevronRight size={14} className="text-[hsl(var(--text-tertiary))]" />}
+              <span className="text-xs font-medium text-[hsl(var(--text-primary))]">
+                {CATEGORY_LABELS[cat] || cat}
+              </span>
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] ml-auto">
+                {cmds.length} 条
+              </span>
+            </button>
+            {open && (
+              <div className="divide-y divide-[hsl(var(--border-light))]">
+                {cmds.map((cmd) => (
+                  <div
+                    key={cmd.id}
+                    className="flex items-center gap-3 px-4 py-2 hover:bg-[hsl(var(--bg-hover))] transition-colors group"
+                  >
+                    <code className="flex-1 text-xs bg-[hsl(var(--bg-hover))] px-2 py-1 rounded font-mono text-[hsl(var(--text-primary))]">
+                      {cmd.command}
+                    </code>
+                    {cmd.description && (
+                      <span className="text-xs text-[hsl(var(--text-tertiary))] max-w-[200px] truncate hidden sm:block">
+                        {cmd.description}
+                      </span>
+                    )}
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        onClick={() => onEdit(cmd)}
+                        className="p-1 rounded hover:bg-[hsl(var(--bg-active))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))]"
+                        title="编辑"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={() => onDelete(cmd.id)}
+                        className="p-1 rounded hover:bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))]"
+                        title="删除"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

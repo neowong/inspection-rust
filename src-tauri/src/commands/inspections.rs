@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 use rusqlite::types::ToSql;
 
@@ -164,6 +165,7 @@ fn execute_device_ssh(
     username: &str,
     password: &str,
     commands: &[String],
+    on_progress: Option<Arc<std::sync::Mutex<String>>>,
 ) -> Result<std::collections::HashMap<String, String>, String> {
     let source = SSHSessionSource {
         host: device.ip.clone(),
@@ -171,7 +173,7 @@ fn execute_device_ssh(
         username: username.to_string(),
         password: password.to_string(),
     };
-    inspection_runner::run_commands(&source, &device.vendor, commands)
+    inspection_runner::run_commands(&source, &device.vendor, commands, on_progress)
 }
 
 // ============================================================
@@ -339,6 +341,8 @@ pub async fn create_batch(
         conn.last_insert_rowid()
     };
 
+    tracing::info!("批次 #{} 创建成功, auto_start={}", batch_id, auto_start.unwrap_or(false));
+
     if auto_start.unwrap_or(false) {
         let parsed_ids: Vec<i64> = serde_json::from_str(&device_ids)
             .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
@@ -365,79 +369,29 @@ pub async fn create_batch(
                 .map_err(|e| e.to_string())?;
             }
 
+            let device_count = parsed_ids.len();
+            tracing::info!("批次 #{} 自动开始执行, 共 {} 台设备并发", batch_id, device_count);
+
+            let db = state.db.clone();
+            let handles: Vec<_> = parsed_ids.into_iter().map(|device_id| {
+                let db = Arc::clone(&db);
+                tokio::spawn(async move {
+                    inspect_one_device(batch_id, device_id, db).await
+                })
+            }).collect();
+
             let mut completed_count = 0u32;
             let mut failed_count = 0u32;
-
-            for device_id in &parsed_ids {
-                let (device, username, password, commands, record_id) = {
-                    let conn = state.db.lock();
-                    // 创建 pending 记录
-                    conn.execute(
-                        "INSERT INTO inspection_records (batch_id, device_id, status) \
-                         VALUES (?1, ?2, 'pending')",
-                        rusqlite::params![batch_id, device_id],
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                    let rid = conn.last_insert_rowid();
-                    let (device, username, password, commands) =
-                        read_device_inspection_data(&conn, *device_id)?;
-
-                    // 更新为 running
-                    let now = now_str();
-                    conn.execute(
-                        "UPDATE inspection_records SET status = 'running', started_at = ?1, updated_at = ?1 WHERE id = ?2",
-                        rusqlite::params![now, rid],
-                    ).map_err(|e| e.to_string())?;
-
-                    (device, username, password, commands, rid)
-                }; // 锁释放
-
-                // SSH 执行（锁外）
-                let ssh_result = {
-                    let device_clone = device.clone();
-                    let username_clone = username.clone();
-                    let password_clone = password.clone();
-                    let commands_clone = commands.clone();
-                    tokio::task::spawn_blocking(move || {
-                        execute_device_ssh(
-                            &device_clone,
-                            &username_clone,
-                            &password_clone,
-                            &commands_clone,
-                        )
-                    })
-                    .await
-                    .map_err(|e| format!("SSH 任务调度失败: {}", e))?
-                };
-
-                // 写入结果（短暂获锁）
-                {
-                    let conn = state.db.lock();
-                    match ssh_result {
-                        Ok(outputs) => {
-                            let outputs_json = serde_json::to_string(&outputs)
-                                .map_err(|e| format!("序列化命令输出失败: {}", e))?;
-                            update_record_result(
-                                &conn,
-                                record_id,
-                                "completed",
-                                Some(&outputs_json),
-                                None,
-                            )?;
-                            completed_count += 1;
-                        }
-                        Err(err) => {
-                            update_record_result(
-                                &conn,
-                                record_id,
-                                "failed",
-                                None,
-                                Some(&err),
-                            )?;
-                            failed_count += 1;
-                            eprintln!("设备 {} 巡检失败: {}", device_id, err);
-                        }
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok(_)) => completed_count += 1,
+                    Ok(Err((_id, err))) => {
+                        failed_count += 1;
+                        tracing::warn!("批次 #{} 设备巡检失败: {}", batch_id, err);
+                    }
+                    Err(join_err) => {
+                        failed_count += 1;
+                        tracing::error!("批次 #{} 设备任务 panic: {}", batch_id, join_err);
                     }
                 }
             }
@@ -449,6 +403,11 @@ pub async fn create_batch(
             } else {
                 "partially_completed"
             };
+
+            tracing::info!(
+                "批次 #{} 执行完毕: status={}, completed={}, failed={}",
+                batch_id, final_status, completed_count, failed_count
+            );
 
             {
                 let conn = state.db.lock();
@@ -480,10 +439,12 @@ pub async fn create_batch(
     Ok(serde_json::json!(batch))
 }
 
-/// 运行指定批次，对批次内的每台设备执行 SSH 巡检命令。
-/// 异步执行，SSH 操作在锁外进行，不阻塞 tokio 工作线程。
+/// 运行指定批次，并发对每台设备执行 SSH 巡检命令。
+/// 各设备的命令在各自 shell 内串行，但设备之间并行。
 #[tauri::command]
 pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    tracing::info!("执行批次 #{} 开始", batch_id);
+
     // 1. 读取批次信息和设备列表（短暂获锁）
     let device_ids = {
         let conn = state.db.lock();
@@ -511,6 +472,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
                 rusqlite::params![now, batch_id],
             )
             .map_err(|e| e.to_string())?;
+            tracing::info!("批次 #{} 无设备，直接标记为完成", batch_id);
             return Ok(());
         }
 
@@ -523,56 +485,35 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         )
         .map_err(|e| e.to_string())?;
 
+        tracing::info!("批次 #{} 状态→running, 设备数={}", batch_id, ids.len());
         ids
     }; // 锁释放
 
-    // 2. 逐台设备执行（锁外 SSH）
+    // 2. 并发执行各设备
+    let db = state.db.clone();
+
+    let handles: Vec<_> = device_ids.into_iter().map(|device_id| {
+        let db = Arc::clone(&db);
+        tokio::spawn(async move {
+            inspect_one_device(batch_id, device_id, db).await
+        })
+    }).collect();
+
     let mut completed_count = 0u32;
     let mut failed_count = 0u32;
 
-    for device_id in &device_ids {
-        // 读取数据（短暂获锁）
-        let (device, username, password, commands) = {
-            let conn = state.db.lock();
-            read_device_inspection_data(&conn, *device_id)?
-        }; // 锁释放
-
-        // 创建记录（短暂获锁）
-        let record_id = {
-            let conn = state.db.lock();
-            create_or_reset_record(&conn, batch_id, *device_id)?
-        }; // 锁释放
-
-        // SSH 执行（锁外，spawn_blocking 避免阻塞 tokio）
-        let ssh_result = {
-            let device_clone = device.clone();
-            let username_clone = username.clone();
-            let password_clone = password.clone();
-            let commands_clone = commands.clone();
-            tokio::task::spawn_blocking(move || {
-                execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone)
-            })
-            .await
-            .map_err(|e| format!("SSH 任务调度失败: {}", e))?
-        };
-
-        // 写入结果（短暂获锁）
-        {
-            let conn = state.db.lock();
-            match ssh_result {
-                Ok(outputs) => {
-                    let outputs_json = serde_json::to_string(&outputs)
-                        .map_err(|e| format!("序列化命令输出失败: {}", e))?;
-                    update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)?;
-                    completed_count += 1;
-                }
-                Err(err) => {
-                    update_record_result(&conn, record_id, "failed", None, Some(&err))?;
-                    failed_count += 1;
-                    eprintln!("设备 {} 巡检失败: {}", device_id, err);
-                }
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(_)) => completed_count += 1,
+            Ok(Err((_id, err))) => {
+                failed_count += 1;
+                tracing::warn!("批次 #{} 设备巡检失败: {}", batch_id, err);
             }
-        } // 锁释放
+            Err(join_err) => {
+                failed_count += 1;
+                tracing::error!("批次 #{} 设备任务 panic: {}", batch_id, join_err);
+            }
+        }
     }
 
     // 3. 更新批次最终状态（短暂获锁）
@@ -584,6 +525,11 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         "partially_completed"
     };
 
+    tracing::info!(
+        "批次 #{} 执行完毕: status={}, completed={}, failed={}",
+        batch_id, final_status, completed_count, failed_count
+    );
+
     {
         let conn = state.db.lock();
         let now = now_str();
@@ -593,6 +539,95 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
             rusqlite::params![final_status, now, batch_id],
         )
         .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// 执行单台设备的巡检流程：读数据 → 建记录 → SSH → 写结果。
+/// 在 tokio 任务中运行，多设备并发调用。
+/// 通过 Arc<Mutex> 将当前执行命令回写 DB，前端可实时看到进度。
+async fn inspect_one_device(
+    batch_id: i64,
+    device_id: i64,
+    db: Arc<parking_lot::Mutex<rusqlite::Connection>>,
+) -> Result<(), (i64, String)> {
+    // 读取数据
+    let (device, username, password, commands) = {
+        let conn = db.lock();
+        read_device_inspection_data(&conn, device_id)
+            .map_err(|e| (device_id, e))?
+    };
+
+    // 创建/重置记录
+    let record_id = {
+        let conn = db.lock();
+        create_or_reset_record(&conn, batch_id, device_id)
+            .map_err(|e| (device_id, e))?
+    };
+
+    tracing::info!("批次 #{} 设备 #{} ({}) [{}] SSH 开始, {} 条命令", batch_id, device_id, device.name, device.ip, commands.len());
+
+    // 进度共享：SSH runner 写入当前命令，poller 每隔 2 秒刷新到 DB
+    let progress = Arc::new(std::sync::Mutex::new(String::new()));
+    let progress_clone = Arc::clone(&progress);
+    let db_clone = Arc::clone(&db);
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_clone = Arc::clone(&stop);
+
+    // 后台任务：定期将进度写入 DB 的 error_message 字段
+    let poller = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let msg = progress_clone.lock().unwrap().clone();
+            if !msg.is_empty() {
+                let conn = db_clone.lock();
+                let _ = conn.execute(
+                    "UPDATE inspection_records SET error_message = ?1 WHERE id = ?2",
+                    rusqlite::params![format!("正在执行: {}", msg), record_id],
+                );
+            }
+        }
+    });
+
+    // SSH 执行（spawn_blocking 避免阻塞 tokio）
+    let progress_ssh = Arc::clone(&progress);
+    let ssh_result = {
+        let device_clone = device.clone();
+        let username_clone = username.clone();
+        let password_clone = password.clone();
+        let commands_clone = commands.clone();
+        tokio::task::spawn_blocking(move || {
+            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone, Some(progress_ssh))
+        })
+        .await
+        .map_err(|e| (device_id, format!("SSH 任务调度失败: {}", e)))?
+    };
+
+    // 停止 poller
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = poller.await;
+
+    // 写入结果
+    {
+        let conn = db.lock();
+        match &ssh_result {
+            Ok(outputs) => {
+                let outputs_json = serde_json::to_string(outputs)
+                    .map_err(|e| (device_id, format!("序列化命令输出失败: {}", e)))?;
+                update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)
+                    .map_err(|e| (device_id, e))?;
+                tracing::info!("批次 #{} 设备 #{} OK, 获得 {} 条命令输出", batch_id, device_id, outputs.len());
+            }
+            Err(err) => {
+                update_record_result(&conn, record_id, "failed", None, Some(err))
+                    .map_err(|e| (device_id, e))?;
+                return Err((device_id, err.clone()));
+            }
+        }
     }
 
     Ok(())
@@ -740,7 +775,7 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         let password_clone = password.clone();
         let commands_clone = commands.clone();
         tokio::task::spawn_blocking(move || {
-            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone)
+            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone, None)
         })
         .await
         .map_err(|e| format!("SSH 任务调度失败: {}", e))?

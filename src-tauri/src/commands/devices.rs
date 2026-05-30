@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 use rusqlite::types::ToSql;
 
@@ -399,10 +400,9 @@ pub fn check_device_status(
     check_device_status_inner(&*state, device_id)
 }
 
-/// 检查所有设备连通状态
+/// 检查所有设备连通状态（并发）
 #[tauri::command]
-pub fn check_all_devices_status(state: State<AppState>) -> Result<serde_json::Value, String> {
-    // 先获取所有设备列表，释放连接锁
+pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let devices = {
         let conn = state.db.lock();
         let sql = format!("SELECT {} FROM devices", DEVICE_COLUMNS);
@@ -410,20 +410,47 @@ pub fn check_all_devices_status(state: State<AppState>) -> Result<serde_json::Va
     };
 
     let total = devices.len();
-    let mut online_count = 0;
-    let mut offline_count = 0;
+    let db = state.db.clone();
 
-    for device in &devices {
-        match check_device_status_inner(&*state, device.id) {
-            Ok(result) => {
-                if result["new_status"] == "online" {
-                    online_count += 1;
-                } else {
-                    offline_count += 1;
-                }
+    let handles: Vec<_> = devices.into_iter().map(|device| {
+        let db = Arc::clone(&db);
+        tokio::task::spawn_blocking(move || {
+            let ip_addr = std::net::IpAddr::from_str(&device.ip).ok();
+            let socket_addr = ip_addr.map(|ip| std::net::SocketAddr::new(ip, device.ssh_port as u16));
+            let new_status = match socket_addr {
+                Some(addr) => match std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5)) {
+                    Ok(_) => "online",
+                    Err(_) => "offline",
+                },
+                None => "offline",
+            };
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            {
+                let conn = db.lock();
+                let _ = conn.execute(
+                    "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![device.id, device.status, new_status, now],
+                );
+                let _ = conn.execute(
+                    "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
+                    rusqlite::params![new_status, now, now, device.id],
+                );
+            }
+            (device.id, device.name.clone(), new_status.to_string())
+        })
+    }).collect();
+
+    let mut online_count = 0u32;
+    let mut offline_count = 0u32;
+
+    for handle in handles {
+        match handle.await {
+            Ok((_id, _name, status)) => {
+                if status == "online" { online_count += 1; }
+                else { offline_count += 1; }
             }
             Err(e) => {
-                eprintln!("检查设备 {} 状态失败: {}", device.name, e);
+                tracing::warn!("设备状态检测任务失败: {}", e);
                 offline_count += 1;
             }
         }

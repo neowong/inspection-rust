@@ -186,6 +186,7 @@ fn test_full_inspection_pipeline() {
             &source,
             &device.2,
             &commands,
+            None,
         ).unwrap();
 
         println!("成功获取 {} 条命令输出", outputs.len());

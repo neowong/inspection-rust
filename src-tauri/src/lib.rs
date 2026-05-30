@@ -44,6 +44,15 @@ pub fn run() {
         std::fs::create_dir_all(data_dir.join(sub)).ok();
     }
 
+    // Background task: auto-detect device status every 5 minutes
+    let bg_db = state.db.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5 * 60));
+            poll_device_statuses(&bg_db);
+        }
+    });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -115,6 +124,7 @@ pub fn run() {
             commands::reports::preview_template,
             commands::reports::delete_report_template,
             commands::reports::batch_delete_report_templates,
+            commands::reports::export_batch_csv,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_settings,
@@ -153,4 +163,56 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
 #[tauri::command]
 fn health_check() -> serde_json::Value {
     serde_json::json!({"status": "ok", "version": "3.0.0"})
+}
+
+/// Background poller: TCP-connect each device's SSH port and update status.
+fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
+    let devices: Vec<(i64, String, i64)> = {
+        if let Some(conn) = db.try_lock() {
+            let mut stmt = match conn.prepare("SELECT id, ip, ssh_port FROM devices") {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let rows: Vec<_> = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                })
+                .ok()
+                .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default();
+            rows
+        } else {
+            return; // DB locked, skip this round
+        }
+    };
+
+    if devices.is_empty() { return; }
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let mut online_count = 0u32;
+    let mut offline_count = 0u32;
+
+    for (id, ip, port) in &devices {
+        let new_status = match ip.parse::<std::net::IpAddr>() {
+            Ok(ip_addr) => {
+                match std::net::TcpStream::connect_timeout(
+                    &std::net::SocketAddr::new(ip_addr, *port as u16),
+                    std::time::Duration::from_secs(5),
+                ) {
+                    Ok(_) => { online_count += 1; "online" }
+                    Err(_) => { offline_count += 1; "offline" }
+                }
+            }
+            Err(_) => { offline_count += 1; "offline" }
+        };
+
+        if let Some(conn) = db.try_lock() {
+            let _ = conn.execute(
+                "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![new_status, now, now, id],
+            );
+        }
+    }
+
+    tracing::info!("后台设备检测完成: {} 在线, {} 离线", online_count, offline_count);
 }

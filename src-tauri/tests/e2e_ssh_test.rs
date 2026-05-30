@@ -16,7 +16,7 @@ fn test_ssh_inspection_commands() {
     ];
 
     println!("\n=== 测试多条命令 ===");
-    match run_commands(&source, "H3C", &commands) {
+    match run_commands(&source, "H3C", &commands, None) {
         Ok(outputs) => {
             println!("成功! 获取 {} 条输出\n", outputs.len());
             assert_eq!(outputs.len(), commands.len());
@@ -50,7 +50,7 @@ fn test_ssh_single_command() {
     let commands = vec!["display version".to_string()];
 
     println!("\n=== 测试单条命令 ===");
-    match run_commands(&source, "H3C", &commands) {
+    match run_commands(&source, "H3C", &commands, None) {
         Ok(outputs) => {
             assert_eq!(outputs.len(), 1);
             println!("成功!");

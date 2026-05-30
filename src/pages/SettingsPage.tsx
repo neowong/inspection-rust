@@ -147,7 +147,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">系统设置</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">配置系统运行参数和 AI 模型</p>
       </div>

@@ -95,7 +95,7 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检报告</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">查看巡检结果、AI 分析和生成报告</p>
       </div>
