@@ -145,6 +145,8 @@ pub fn run() {
             commands::reports::analyze_record_logs,
             commands::reports::analyze_batch_logs,
             commands::reports::parse_log_text,
+            commands::reports::generate_html_report,
+            commands::reports::open_in_browser,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_settings,

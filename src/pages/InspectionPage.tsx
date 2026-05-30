@@ -262,7 +262,7 @@ export default function InspectionPage() {
       <Modal
         open={modalOpen}
         title="创建巡检批次"
-        width="max-w-lg"
+        width="max-w-xl"
         onClose={() => setModalOpen(false)}
         footer={
           <div className="flex gap-2">

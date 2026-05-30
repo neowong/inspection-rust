@@ -308,7 +308,7 @@ export default function DevicesPage() {
       <Modal
         open={modalOpen}
         title={editing ? "编辑设备" : "添加设备"}
-        width="max-w-md"
+        width="max-w-lg"
         onClose={() => setModalOpen(false)}
         footer={
           <div className="flex gap-2">

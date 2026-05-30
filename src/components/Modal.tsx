@@ -13,7 +13,7 @@ interface Props {
 export default function Modal({
   open,
   title,
-  width = "max-w-lg",
+  width = "max-w-xl",
   children,
   footer,
   onClose,

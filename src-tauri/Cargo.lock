@@ -1627,6 +1627,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fernet",
+ "open",
  "parking_lot",
  "reqwest 0.12.28",
  "rusqlite",

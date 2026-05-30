@@ -30,6 +30,7 @@ thiserror = "1"
 anyhow = "1"
 dirs = "6"
 parking_lot = "0.12"
+open = "5"
 serde_yml = "0.0.12"
 
 [build-dependencies]

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
-import type { InspectionTemplate, CommandPool } from "../types";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Upload } from "lucide-react";
+import type { InspectionTemplate, CommandPool, ReportTemplate } from "../types";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
 import DataTable from "../components/DataTable";
@@ -9,6 +9,18 @@ import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import { VENDORS, CATEGORIES } from "../lib/constants";
+
+type TabKey = "templates" | "commands" | "reports";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "templates", label: "巡检模板" },
+  { key: "commands", label: "命令库" },
+  { key: "reports", label: "报告模板" },
+];
+
+// ============================================================
+// Forms
+// ============================================================
 
 interface TemplateForm {
   name: string;
@@ -34,7 +46,13 @@ const EMPTY_COMMAND_FORM: CommandForm = {
   vendor: "H3C", command: "", description: "", category: "general",
 };
 
+// ============================================================
+// TemplatesPage
+// ============================================================
+
 export default function TemplatesPage() {
+  const [tab, setTab] = useState<TabKey>("templates");
+
   // Template state
   const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
   const [templateSearch, setTemplateSearch] = useState("");
@@ -68,19 +86,29 @@ export default function TemplatesPage() {
   const [cmdSaving, setCmdSaving] = useState(false);
   const [cmdSaveError, setCmdSaveError] = useState<string | null>(null);
 
+  // Report template state
+  const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
+  const [reportPreview, setReportPreview] = useState<string | null>(null);
+  const [confirmDeleteReport, setConfirmDeleteReport] = useState<number | null>(null);
+
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
       .then(setTemplates).catch(console.error);
   };
 
   const loadCommands = () => {
-    invoke<CommandPool[]>("list_commands", {
-      vendor: cmdVendor || undefined,
-    }).then(setCommands).catch(console.error);
+    invoke<CommandPool[]>("list_commands", { vendor: cmdVendor || undefined })
+      .then(setCommands).catch(console.error);
+  };
+
+  const loadReportTemplates = () => {
+    invoke<ReportTemplate[]>("list_report_templates")
+      .then(setReportTemplates).catch(console.error);
   };
 
   useEffect(() => { loadTemplates(); }, [templateVendor]);
   useEffect(() => { loadCommands(); }, [cmdVendor]);
+  useEffect(() => { if (tab === "reports") loadReportTemplates(); }, [tab]);
 
   const filteredTemplates = useMemo(() => templates.filter((t) =>
     !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase())
@@ -134,13 +162,8 @@ export default function TemplatesPage() {
       : invoke<InspectionTemplate>("create_template", { data });
 
     promise
-      .then(() => {
-        setTemplateModal(false);
-        loadTemplates();
-      })
-      .catch((e) => {
-        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
-      })
+      .then(() => { setTemplateModal(false); loadTemplates(); })
+      .catch((e) => { setSaveError(typeof e === "string" ? e : JSON.stringify(e)); })
       .finally(() => setSaving(false));
   };
 
@@ -189,170 +212,267 @@ export default function TemplatesPage() {
       .catch(console.error);
   };
 
+  // Report template handlers
+  const handleUploadReport = () => {
+    // Use a hidden file input
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".md,.html,.txt";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const name = file.name.replace(/\.[^.]+$/, "");
+      try {
+        // For Tauri desktop, use tauri dialog
+        await invoke<ReportTemplate>("upload_template", {
+          filePath: (file as unknown as { path: string }).path || file.name,
+          name,
+          vendor: null,
+        });
+        loadReportTemplates();
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    input.click();
+  };
+
+  const handlePreviewReport = (id: number) => {
+    invoke<string>("preview_template", { templateId: id })
+      .then(setReportPreview)
+      .catch(console.error);
+  };
+
+  const handleDeleteReport = (id: number) => {
+    invoke<void>("delete_report_template", { templateId: id })
+      .then(() => { setConfirmDeleteReport(null); loadReportTemplates(); })
+      .catch(console.error);
+  };
+
+  // ============================================================
+  // Render
+  // ============================================================
+
   return (
     <div className="space-y-6">
-      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-0 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检模板</h1>
-        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">管理巡检模板和命令库</p>
-      </div>
+        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1 mb-3">管理巡检模板、命令库和报告模板</p>
 
-      {/* Templates Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-3">模板列表</h2>
-        <Toolbar>
-          <Button onClick={openAddTemplate} size="sm">添加模板</Button>
-          <Select className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
-            <option value="">全部厂商</option>
-            {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-          </Select>
-          <SearchInput value={templateSearch} onChange={setTemplateSearch} placeholder="搜索模板..." />
-        </Toolbar>
-        <DataTable<InspectionTemplate>
-          columns={[
-            { key: "name", header: "名称", render: (r) => r.name },
-            { key: "vendor", header: "厂商", render: (r) => r.vendor },
-            {
-              key: "command_count", header: "命令数", width: "80px", render: (r) =>
-                String((r.config?.command_ids || []).length),
-            },
-            { key: "description", header: "描述", render: (r) => r.description || "-" },
-            {
-              key: "updated_at", header: "更新时间", render: (r) =>
-                new Date(r.updated_at).toLocaleString("zh-CN"),
-            },
-            {
-              key: "actions", header: "操作", width: "140px", render: (r) => (
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
-                </div>
-              ),
-            },
-          ]}
-          data={filteredTemplates}
-          rowKey={(r) => r.id}
-          onRowClick={(r) => setSelectedTemplate(r)}
-          onRowDoubleClick={(r) => openEditTemplate(r)}
-          selectedKey={selectedTemplate?.id}
-          emptyText="暂无模板"
-        />
-      </div>
-
-      {/* Command Pool Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-3">命令库</h2>
-        <Toolbar>
-          <Button onClick={openAddCmd} size="sm">添加命令</Button>
-          <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
-        </Toolbar>
-
-        {/* Vendor tabs */}
-        <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
-          {["全部", ...VENDORS].map((v) => (
+        {/* Tab bar */}
+        <div className="flex gap-0 border-b border-[hsl(var(--border))]">
+          {TABS.map((t) => (
             <button
-              key={v}
-              onClick={() => setCmdVendor(v === "全部" ? "" : v)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors -mb-px ${
-                (v === "全部" && !cmdVendor) || v === cmdVendor
-                  ? "bg-[hsl(var(--bg-card))] text-[hsl(var(--accent))] border border-b-transparent border-[hsl(var(--border))]"
-                  : "text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]"
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
+                tab === t.key
+                  ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
+                  : "text-[hsl(var(--text-secondary))] border-transparent hover:text-[hsl(var(--text-primary))]"
               }`}
             >
-              {v}
+              {t.label}
             </button>
           ))}
         </div>
-
-        {/* Grouped commands */}
-        <CommandList
-          commands={filteredCommands}
-          onEdit={openEditCmd}
-          onDelete={(id) => setConfirmDeleteCmd(id)}
-        />
       </div>
 
-      {/* Template Modal */}
-      <Modal
-        open={templateModal}
-        title={editingTemplate ? "编辑模板" : "添加模板"}
-        width="max-w-lg"
-        onClose={() => setTemplateModal(false)}
-        footer={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setTemplateModal(false)}>取消</Button>
-            <Button onClick={handleSaveTemplate} loading={saving}>{editingTemplate ? "保存" : "添加"}</Button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          {saveError && (
-            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-              {saveError}
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={templateForm.vendor} onChange={(e) => {
-                const newVendor = e.target.value;
-                setTemplateForm({ ...templateForm, vendor: newVendor, command_ids: [] });
-              }}>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号（可选）</label>
-              <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型（可选）</label>
-              <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
-            <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">选择命令 ({templateForm.vendor})</label>
-            <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
-              {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
-              {vendorFilteredCommands.map((cmd) => {
-                const checked = templateForm.command_ids.includes(cmd.id);
-                return (
-                  <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setTemplateForm({
-                          ...templateForm,
-                          command_ids: checked
-                            ? templateForm.command_ids.filter((id) => id !== cmd.id)
-                            : [...templateForm.command_ids, cmd.id],
-                        });
-                      }}
-                      className="accent-[hsl(var(--accent))]"
-                    />
-                    <span className="text-xs">
-                      <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
-                      {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+      {/* ====== Tab: 巡检模板 ====== */}
+      {tab === "templates" && (
+        <div>
+          <Toolbar>
+            <Button onClick={openAddTemplate} size="sm">添加模板</Button>
+            <Select className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
+              <option value="">全部厂商</option>
+              {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+            </Select>
+            <SearchInput value={templateSearch} onChange={setTemplateSearch} placeholder="搜索模板..." />
+          </Toolbar>
+          <DataTable<InspectionTemplate>
+            columns={[
+              { key: "name", header: "名称", render: (r) => r.name },
+              { key: "vendor", header: "厂商", render: (r) => r.vendor },
+              {
+                key: "command_count", header: "命令数", width: "80px", render: (r) =>
+                  String((r.config?.command_ids || []).length),
+              },
+              { key: "description", header: "描述", render: (r) => r.description || "-" },
+              {
+                key: "updated_at", header: "更新时间", render: (r) =>
+                  new Date(r.updated_at).toLocaleString("zh-CN"),
+              },
+              {
+                key: "actions", header: "操作", width: "140px", render: (r) => (
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
+                  </div>
+                ),
+              },
+            ]}
+            data={filteredTemplates}
+            rowKey={(r) => r.id}
+            onRowClick={(r) => setSelectedTemplate(r)}
+            onRowDoubleClick={(r) => openEditTemplate(r)}
+            selectedKey={selectedTemplate?.id}
+            emptyText="暂无模板"
+          />
         </div>
-      </Modal>
+      )}
 
-      {/* Delete Template Confirm */}
+      {/* ====== Tab: 命令库 ====== */}
+      {tab === "commands" && (
+        <div>
+          <Toolbar>
+            <Button onClick={openAddCmd} size="sm">添加命令</Button>
+            <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
+          </Toolbar>
+
+          {/* Vendor sub-tabs */}
+          <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
+            {["全部", ...VENDORS].map((v) => (
+              <button
+                key={v}
+                onClick={() => setCmdVendor(v === "全部" ? "" : v)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors -mb-px ${
+                  (v === "全部" && !cmdVendor) || v === cmdVendor
+                    ? "bg-[hsl(var(--bg-card))] text-[hsl(var(--accent))] border border-b-transparent border-[hsl(var(--border))]"
+                    : "text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+
+          <CommandList
+            commands={filteredCommands}
+            onEdit={openEditCmd}
+            onDelete={(id) => setConfirmDeleteCmd(id)}
+          />
+        </div>
+      )}
+
+      {/* ====== Tab: 报告模板 ====== */}
+      {tab === "reports" && (
+        <div>
+          <Toolbar>
+            <Button onClick={handleUploadReport} size="sm">
+              <Upload size={14} className="mr-1" />上传模板
+            </Button>
+          </Toolbar>
+          <DataTable<ReportTemplate>
+            columns={[
+              { key: "name", header: "名称", render: (r) => r.name },
+              { key: "vendor", header: "厂商", render: (r) => r.vendor || "通用" },
+              {
+                key: "file_path", header: "文件路径", render: (r) => (
+                  <span className="text-xs font-mono text-[hsl(var(--text-tertiary))]">{r.file_path}</span>
+                ),
+              },
+              {
+                key: "updated_at", header: "更新时间", render: (r) =>
+                  new Date(r.updated_at).toLocaleString("zh-CN"),
+              },
+              {
+                key: "actions", header: "操作", width: "140px", render: (r) => (
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button size="sm" variant="ghost" onClick={() => handlePreviewReport(r.id)}>预览</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteReport(r.id)}>删除</Button>
+                  </div>
+                ),
+              },
+            ]}
+            data={reportTemplates}
+            rowKey={(r) => r.id}
+            emptyText="暂无报告模板"
+          />
+        </div>
+      )}
+
+      {/* ====== Template Modal ====== */}
+      {tab === "templates" && (
+        <Modal
+          open={templateModal}
+          title={editingTemplate ? "编辑模板" : "添加模板"}
+          onClose={() => setTemplateModal(false)}
+          footer={
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setTemplateModal(false)}>取消</Button>
+              <Button onClick={handleSaveTemplate} loading={saving}>{editingTemplate ? "保存" : "添加"}</Button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            {saveError && (
+              <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+                {saveError}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
+                <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+                <Select value={templateForm.vendor} onChange={(e) => {
+                  const newVendor = e.target.value;
+                  setTemplateForm({ ...templateForm, vendor: newVendor, command_ids: [] });
+                }}>
+                  {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号（可选）</label>
+                <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型（可选）</label>
+                <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
+              <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">选择命令 ({templateForm.vendor})</label>
+              <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
+                {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
+                {vendorFilteredCommands.map((cmd) => {
+                  const checked = templateForm.command_ids.includes(cmd.id);
+                  return (
+                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setTemplateForm({
+                            ...templateForm,
+                            command_ids: checked
+                              ? templateForm.command_ids.filter((id) => id !== cmd.id)
+                              : [...templateForm.command_ids, cmd.id],
+                          });
+                        }}
+                        className="accent-[hsl(var(--accent))]"
+                      />
+                      <span className="text-xs">
+                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
+                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Template Delete Confirm */}
       <Modal
         open={confirmDeleteTemplate !== null}
         title="确认删除"
@@ -368,49 +488,51 @@ export default function TemplatesPage() {
         <p>确定要删除此模板吗？此操作不可恢复。</p>
       </Modal>
 
-      {/* Command Modal */}
-      <Modal
-        open={cmdModal}
-        title={editingCmd ? "编辑命令" : "添加命令"}
-        width="max-w-md"
-        onClose={() => { setCmdModal(false); setEditingCmd(null); }}
-        footer={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => { setCmdModal(false); setEditingCmd(null); }}>取消</Button>
-            <Button onClick={handleSaveCommand} loading={cmdSaving}>{editingCmd ? "保存" : "添加"}</Button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          {cmdSaveError && (
-            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-              {cmdSaveError}
+      {/* ====== Command Modal ====== */}
+      {tab === "commands" && (
+        <Modal
+          open={cmdModal}
+          title={editingCmd ? "编辑命令" : "添加命令"}
+          width="max-w-lg"
+          onClose={() => { setCmdModal(false); setEditingCmd(null); }}
+          footer={
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => { setCmdModal(false); setEditingCmd(null); }}>取消</Button>
+              <Button onClick={handleSaveCommand} loading={cmdSaving}>{editingCmd ? "保存" : "添加"}</Button>
             </div>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-            <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
-              {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </Select>
+          }
+        >
+          <div className="space-y-3">
+            {cmdSaveError && (
+              <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+                {cmdSaveError}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+              <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
+                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
+              <Input value={cmdForm.command} className={shakeFields.has("cmd_command") ? "animate-shake" : ""} onChange={(e) => setCmdForm({ ...cmdForm, command: e.target.value })} placeholder="display version" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
+              <Input value={cmdForm.description} onChange={(e) => setCmdForm({ ...cmdForm, description: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">分类</label>
+              <Select value={cmdForm.category} onChange={(e) => setCmdForm({ ...cmdForm, category: e.target.value })}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
-            <Input value={cmdForm.command} className={shakeFields.has("cmd_command") ? "animate-shake" : ""} onChange={(e) => setCmdForm({ ...cmdForm, command: e.target.value })} placeholder="display version" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
-            <Input value={cmdForm.description} onChange={(e) => setCmdForm({ ...cmdForm, description: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">分类</label>
-            <Select value={cmdForm.category} onChange={(e) => setCmdForm({ ...cmdForm, category: e.target.value })}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </Select>
-          </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
-      {/* Delete Command Confirm */}
+      {/* Command Delete Confirm */}
       <Modal
         open={confirmDeleteCmd !== null}
         title="确认删除"
@@ -424,6 +546,37 @@ export default function TemplatesPage() {
         }
       >
         <p>确定要删除此命令吗？此操作不可恢复。</p>
+      </Modal>
+
+      {/* Report Template Preview */}
+      <Modal
+        open={reportPreview !== null}
+        title="报告模板预览"
+        width="max-w-2xl"
+        onClose={() => setReportPreview(null)}
+        footer={
+          <Button variant="secondary" onClick={() => setReportPreview(null)}>关闭</Button>
+        }
+      >
+        <pre className="text-xs font-mono whitespace-pre-wrap max-h-96 overflow-auto bg-[hsl(var(--bg-hover))] p-3 rounded">
+          {reportPreview || "(空)"}
+        </pre>
+      </Modal>
+
+      {/* Report Template Delete Confirm */}
+      <Modal
+        open={confirmDeleteReport !== null}
+        title="确认删除"
+        width="max-w-sm"
+        onClose={() => setConfirmDeleteReport(null)}
+        footer={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setConfirmDeleteReport(null)}>取消</Button>
+            <Button variant="danger" onClick={() => handleDeleteReport(confirmDeleteReport!)}>删除</Button>
+          </div>
+        }
+      >
+        <p>确定要删除此报告模板吗？此操作不可恢复。</p>
       </Modal>
     </div>
   );
@@ -473,7 +626,6 @@ function CommandList({
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(cmd);
     }
-    // Sort categories
     const ordered = [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
       const ib = CATEGORIES.indexOf(b as typeof CATEGORIES[number]);

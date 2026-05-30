@@ -227,7 +227,7 @@ export default function SettingsPage() {
       <Modal
         open={modalOpen}
         title={editing ? "编辑 AI 配置" : "添加 AI 配置"}
-        width="max-w-md"
+        width="max-w-lg"
         onClose={() => setModalOpen(false)}
         footer={
           <div className="flex gap-2">

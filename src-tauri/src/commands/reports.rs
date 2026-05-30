@@ -1046,3 +1046,36 @@ fn csv_escape(s: &str) -> String {
         s.to_string()
     }
 }
+
+// ============================================================
+// HTML Report Generation
+// ============================================================
+
+/// Generate an HTML inspection report for a batch and return the file path.
+#[tauri::command]
+pub fn generate_html_report(
+    batch_id: i64,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock();
+
+    let html = crate::services::report_builder::build_report_html(&conn, batch_id)?;
+
+    let reports_dir = ensure_reports_dir()?;
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let file_name = format!("batch_{}_report_{}.html", batch_id, timestamp);
+    let file_path = reports_dir.join(&file_name);
+
+    std::fs::write(&file_path, &html)
+        .map_err(|e| format!("保存 HTML 报告失败: {}", e))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+    tracing::info!("HTML 报告已生成: {}", path_str);
+    Ok(path_str)
+}
+
+/// Open a file in the system default browser.
+#[tauri::command]
+pub fn open_in_browser(file_path: String) -> Result<(), String> {
+    open::that(&file_path).map_err(|e| format!("打开浏览器失败: {}", e))
+}

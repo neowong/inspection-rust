@@ -50,40 +50,60 @@ export default function AppShell() {
     return () => window.removeEventListener("statusbar-message", handler);
   }, []);
 
+  const sidebarBg = "hsl(var(--sidebar-bg))";
+  const sidebarActive = "hsl(var(--sidebar-active))";
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: "hsl(var(--bg-app))" }}>
+    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: "hsl(var(--bg-content))" }}>
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className={`${collapsed ? "w-[56px]" : "w-[224px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out border-r border-[hsl(var(--border-light))]`}
-          style={{ backgroundColor: "hsl(var(--bg-app))" }}>
+        {/* Sidebar — dark navy */}
+        <aside
+          className={`${collapsed ? "w-[56px]" : "w-[228px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out`}
+          style={{ backgroundColor: sidebarBg }}
+        >
 
           {/* Brand */}
-          <div className={`flex items-center gap-3 h-12 border-b border-[hsl(var(--border-light))] ${collapsed ? "px-0 justify-center" : "px-4"}`}>
-            <div className="w-8 h-8 rounded-lg bg-[hsl(var(--accent))] flex items-center justify-center shrink-0 shadow-sm">
+          <div className={`flex items-center gap-3 h-12 border-b ${collapsed ? "px-0 justify-center" : "px-4"}`}
+            style={{ borderColor: "hsl(var(--sidebar-hover))" }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ backgroundColor: "hsl(var(--accent))" }}>
               <img src="/network-internet-web-svgrepo-com.svg" alt="" className="w-5 h-5" style={{ filter: "brightness(0) invert(1)" }} />
             </div>
-            {!collapsed && <span className="text-[15px] font-semibold text-[hsl(var(--text-primary))] tracking-tight">NetInspect</span>}
+            {!collapsed && <span className="text-[15px] font-semibold tracking-tight" style={{ color: "hsl(var(--sidebar-text))" }}>NetInspect</span>}
           </div>
 
           {/* Nav groups */}
-          <nav className="flex-1 py-2 overflow-y-auto">
+          <nav className="flex-1 py-3 overflow-y-auto sidebar-scroll">
             {NAV_GROUPS.map((group, gi) => (
-              <div key={gi} className={gi > 0 ? "mt-2" : ""}>
+              <div key={gi} className={gi > 0 ? "mt-3" : ""}>
                 {!collapsed && group.label && (
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-widest text-[hsl(var(--text-tertiary))]">{group.label}</div>
+                  <div className="px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest"
+                    style={{ color: "hsl(var(--sidebar-text-muted))" }}>
+                    {group.label}
+                  </div>
                 )}
                 <div className="px-2 space-y-0.5">
                   {group.items.map(item => {
                     const active = activeKey === item.key;
                     const Icon = item.icon;
                     return (
-                      <button key={item.key} onClick={() => navigate(item.path)} title={collapsed ? item.label : undefined}
-                        className={`flex items-center gap-3 w-full select-none transition-all duration-150 border-l-[3px] rounded-r-md
-                          ${collapsed ? "px-0 justify-center h-9 rounded-l-md border-l-0" : "px-3 h-8 rounded-l-[2px]"}
-                          ${active ? "bg-[hsl(var(--accent-subtle))] text-[hsl(var(--accent))] font-medium border-l-[hsl(var(--accent))]"
-                            : "text-[hsl(var(--text-tertiary))] border-l-transparent hover:text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-hover))]"}`}>
-                        <Icon size={17} className={`shrink-0 ${active ? "opacity-100" : "opacity-70"}`} />
-                        {!collapsed && <span className="text-sm truncate">{item.label}</span>}
+                      <button
+                        key={item.key}
+                        onClick={() => navigate(item.path)}
+                        title={collapsed ? item.label : undefined}
+                        className={`flex items-center gap-3 w-full select-none transition-all duration-150 rounded-lg
+                          ${collapsed ? "px-0 justify-center h-10" : "px-3 h-9"}
+                          ${active
+                            ? "font-medium"
+                            : "hover:bg-[hsl(var(--sidebar-hover))]"
+                          }`}
+                        style={active
+                          ? { backgroundColor: sidebarActive, color: "hsl(var(--accent-foreground))" }
+                          : { color: "hsl(var(--sidebar-text-muted))" }
+                        }
+                      >
+                        <Icon size={18} className="shrink-0" />
+                        {!collapsed && <span className="text-[13px] truncate">{item.label}</span>}
                       </button>
                     );
                   })}
@@ -93,9 +113,12 @@ export default function AppShell() {
           </nav>
 
           {/* Collapse toggle */}
-          <div className="border-t border-[hsl(var(--border-light))] p-2">
-            <button onClick={() => setCollapsed(!collapsed)}
-              className={`w-full flex items-center gap-2 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-hover))] rounded-md transition-colors ${collapsed ? "justify-center h-9" : "px-3 h-8"}`}>
+          <div className="p-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className={`w-full flex items-center gap-2 rounded-lg transition-colors hover:bg-[hsl(var(--sidebar-hover))] ${collapsed ? "justify-center h-10" : "px-3 h-9"}`}
+              style={{ color: "hsl(var(--sidebar-text-muted))" }}
+            >
               <ChevronLeft size={14} style={{ transform: collapsed ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
               {!collapsed && <span className="text-[12px]">收起菜单</span>}
             </button>
@@ -111,9 +134,12 @@ export default function AppShell() {
       </div>
 
       {/* Status bar */}
-      <footer className="h-7 shrink-0 flex items-center px-4 text-[11px] gap-3 select-none border-t border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))]" style={{ backgroundColor: "hsl(var(--bg-app))" }}>
+      <footer
+        className="h-7 shrink-0 flex items-center px-4 text-[11px] gap-3 select-none"
+        style={{ backgroundColor: sidebarBg, color: "hsl(var(--sidebar-text-muted))", borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}
+      >
         <span className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/40" />
+          <span className="w-1.5 h-1.5 rounded-full shadow-sm" style={{ backgroundColor: "hsl(var(--success))" }} />
           {statusMsg}
         </span>
         <span className="flex-1" />

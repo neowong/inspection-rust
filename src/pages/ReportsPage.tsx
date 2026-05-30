@@ -18,6 +18,7 @@ export default function ReportsPage() {
   const [downloading, setDownloading] = useState(false);
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
+  const [htmlExporting, setHtmlExporting] = useState(false);
 
   const loadBatches = useCallback(() => {
     invoke<InspectionBatch[]>("list_batches").then(setBatches).catch(console.error);
@@ -63,6 +64,19 @@ export default function ReportsPage() {
     invoke<void>("download_report", { recordId })
       .then(() => setDownloading(false))
       .catch(() => setDownloading(false));
+  };
+
+  const handleHtmlExport = (batchId: number) => {
+    setHtmlExporting(true);
+    invoke<string>("generate_html_report", { batchId })
+      .then((filePath) => {
+        invoke("open_in_browser", { filePath }).catch(console.error);
+        setHtmlExporting(false);
+      })
+      .catch((e) => {
+        console.error(e);
+        setHtmlExporting(false);
+      });
   };
 
   const handleLogAnalyze = (recordId: number) => {
@@ -179,6 +193,9 @@ export default function ReportsPage() {
               </Button>
               <Button size="sm" variant="secondary" onClick={() => handleGenerateReport(selectedRecord.id)} loading={generating}>
                 生成报告
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => selectedBatch && handleHtmlExport(selectedBatch.id)} loading={htmlExporting}>
+                导出 HTML 报告
               </Button>
               {selectedRecord.report_path && (
                 <Button size="sm" variant="secondary" onClick={() => handleDownloadReport(selectedRecord.id)} loading={downloading}>
