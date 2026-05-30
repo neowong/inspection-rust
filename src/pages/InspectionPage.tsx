@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import type { InspectionBatch, Device, InspectionRecordSummary } from "../types";
 import Toolbar from "../components/Toolbar";
 import DataTable from "../components/DataTable";
@@ -103,14 +104,17 @@ export default function InspectionPage() {
       });
   };
 
-  const handleExport = (batchId: number) => {
-    invoke<string>("export_batch_csv", { batchId })
-      .then((path) => {
-        alert(`CSV 已导出: ${path}`);
-      })
-      .catch((e) => {
-        setErrorMsg(`导出失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
+  const handleExport = async (batchId: number) => {
+    try {
+      const path = await save({
+        filters: [{ name: "CSV 文件", extensions: ["csv"] }],
+        defaultPath: `batch_${batchId}.csv`,
       });
+      if (!path) return;
+      await invoke<string>("export_batch_csv", { batchId, savePath: path });
+    } catch (e) {
+      setErrorMsg(`导出失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
+    }
   };
 
   const handleRetry = (recordId: number) => {

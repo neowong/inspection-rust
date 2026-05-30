@@ -16,6 +16,8 @@ export default function ReportsPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [logAnalyzing, setLogAnalyzing] = useState(false);
+  const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
 
   const loadBatches = useCallback(() => {
     invoke<InspectionBatch[]>("list_batches").then(setBatches).catch(console.error);
@@ -61,6 +63,15 @@ export default function ReportsPage() {
     invoke<void>("download_report", { recordId })
       .then(() => setDownloading(false))
       .catch(() => setDownloading(false));
+  };
+
+  const handleLogAnalyze = (recordId: number) => {
+    setLogAnalyzing(true);
+    setLogResult(null);
+    invoke<Record<string, unknown>>("analyze_record_logs", { recordId })
+      .then((r) => setLogResult(r))
+      .catch((e) => setLogResult({ error: typeof e === "string" ? e : JSON.stringify(e) }))
+      .finally(() => setLogAnalyzing(false));
   };
 
   // Parse command outputs (HashMap<string, string> → array of {command, content})
@@ -137,6 +148,11 @@ export default function ReportsPage() {
               { key: "report_path", header: "报告", render: (r) =>
                 r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : "-",
               },
+              { key: "actions", header: "操作", width: "100px", render: (r) => (
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" onClick={() => { loadRecord(r.id); handleLogAnalyze(r.id); }}>分析日志</Button>
+                </div>
+              )},
             ]}
             data={selectedBatch.records || []}
             rowKey={(r) => r.id}
@@ -155,6 +171,9 @@ export default function ReportsPage() {
               设备 #{selectedRecord.device_id} 详情
             </h2>
             <div className="flex gap-2">
+              <Button size="sm" onClick={() => handleLogAnalyze(selectedRecord.id)} loading={logAnalyzing}>
+                分析日志
+              </Button>
               <Button size="sm" onClick={() => handleAnalyze(selectedRecord.id)} loading={analyzing}>
                 AI 分析
               </Button>
@@ -194,6 +213,53 @@ export default function ReportsPage() {
                   </details>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Log Analysis Result */}
+          {logResult && !logResult.error && logResult.entries && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] mb-2">日志分析</h3>
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <StatBadge label="总计" value={String(logResult.total ?? 0)} color="info" />
+                <StatBadge label="ERROR" value={String(logResult.errors ?? 0)} color="danger" />
+                <StatBadge label="WARNING" value={String(logResult.warnings ?? 0)} color="warning" />
+                <StatBadge label="INFO/DEBUG" value={String(Number(logResult.info ?? 0) + Number(logResult.debug ?? 0))} color="text-secondary" />
+              </div>
+              <p className="text-xs text-[hsl(var(--text-secondary))] mb-2">{logResult.summary as string}</p>
+              <div className="border border-[hsl(var(--border))] rounded-md overflow-hidden max-h-80 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-[hsl(var(--bg-hover))] sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium text-[hsl(var(--text-secondary))] w-[140px]">时间</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-[hsl(var(--text-secondary))] w-[60px]">级别</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-[hsl(var(--text-secondary))] w-[80px]">模块</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-[hsl(var(--text-secondary))]">消息</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[hsl(var(--border-light))]">
+                    {(logResult.entries as Array<{timestamp: string; severity: string; module: string; mnemonic: string; message: string}>).map((e, i) => (
+                      <tr key={i} className="hover:bg-[hsl(var(--bg-hover))]">
+                        <td className="px-2 py-1 font-mono text-[hsl(var(--text-tertiary))]">{e.timestamp}</td>
+                        <td className="px-2 py-1">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            e.severity === "ERROR" || e.severity === "CRIT" || e.severity === "EMERG" ? "bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--danger))]" :
+                            e.severity === "WARNING" || e.severity === "NOTICE" ? "bg-[hsl(var(--warning)_/_0.1)] text-[hsl(var(--warning))]" :
+                            "bg-[hsl(var(--bg-hover))] text-[hsl(var(--text-secondary))]"
+                          }`}>{e.severity}</span>
+                        </td>
+                        <td className="px-2 py-1 text-[hsl(var(--text-secondary))]">{e.module}/{e.mnemonic}</td>
+                        <td className="px-2 py-1 text-[hsl(var(--text-primary))]">{e.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {logResult?.error && (
+            <div className="mb-4 p-3 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
+              {String(logResult.error)}
             </div>
           )}
 
@@ -239,6 +305,17 @@ export default function ReportsPage() {
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+function StatBadge({ label, value, color }: { label: string; value: string; color: string }) {
+  const c = color.startsWith("text") ? `hsl(var(--${color}))` : `hsl(var(--${color}))`;
+  const bg = color.startsWith("text") ? "bg-[hsl(var(--bg-hover))]" : `bg-[hsl(var(--${color})_/_0.1)]`;
+  return (
+    <div className={`rounded-lg ${bg} px-3 py-2 text-center`}>
+      <div className="text-lg font-bold" style={{ color: c }}>{value}</div>
+      <div className="text-[10px] uppercase tracking-wide" style={{ color: c, opacity: 0.7 }}>{label}</div>
     </div>
   );
 }

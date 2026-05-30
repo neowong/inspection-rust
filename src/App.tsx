@@ -7,6 +7,7 @@ import TemplatesPage from "./pages/TemplatesPage";
 import InspectionPage from "./pages/InspectionPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
+import LogAnalysisPage from "./pages/LogAnalysisPage";
 
 export default function App() {
   useGlobalShortcuts();
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/inspection" element={<InspectionPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/logs" element={<LogAnalysisPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={
           <div className="flex flex-col items-center justify-center h-64 text-[hsl(var(--text-tertiary))]">

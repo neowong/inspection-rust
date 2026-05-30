@@ -125,6 +125,9 @@ pub fn run() {
             commands::reports::delete_report_template,
             commands::reports::batch_delete_report_templates,
             commands::reports::export_batch_csv,
+            commands::reports::analyze_record_logs,
+            commands::reports::analyze_batch_logs,
+            commands::reports::parse_log_text,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_settings,

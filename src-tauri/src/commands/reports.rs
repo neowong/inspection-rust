@@ -857,12 +857,117 @@ pub fn get_active_ai_config(state: State<AppState>) -> Result<AiModelConfig, Str
 }
 
 // ============================================================
+// Log Analysis
+// ============================================================
+
+/// 解析单条巡检记录中的设备日志（display logbuffer 等），返回结构化日志分析。
+#[tauri::command]
+pub fn analyze_record_logs(record_id: i64, state: State<AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.lock();
+
+    let record_sql = format!("SELECT {} FROM inspection_records WHERE id = ?1", RECORD_COLUMNS);
+    let record: InspectionRecord = crate::db::query::query_one(
+        &conn, &record_sql, rusqlite::params![record_id], record_from_row,
+    )?
+    .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+    let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+    let device = crate::db::query::query_one(
+        &conn, &device_sql, rusqlite::params![record.device_id], device_from_row,
+    )?
+    .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
+
+    let outputs = parse_command_outputs(&record.command_outputs).unwrap_or_default();
+
+    // Find log-related commands (display logbuffer, show logging, etc.)
+    let log_patterns = ["logbuffer", "log buffer", "logging", "log"];
+    let mut all_logs = String::new();
+    for (cmd, output) in &outputs {
+        let cmd_lower = cmd.to_lowercase();
+        if log_patterns.iter().any(|p| cmd_lower.contains(p)) {
+            if !all_logs.is_empty() { all_logs.push('\n'); }
+            all_logs.push_str(output);
+        }
+    }
+
+    if all_logs.is_empty() {
+        return Ok(serde_json::json!({
+            "total": 0, "errors": 0, "warnings": 0, "info": 0, "debug": 0,
+            "entries": [], "summary": "未找到设备日志数据。请确保巡检模板包含 display logbuffer 或类似命令。",
+            "device_name": device.name,
+        }));
+    }
+
+    let analysis = crate::services::log_analyzer::parse_logs(&all_logs, &device.vendor);
+    Ok(serde_json::json!({
+        "total": analysis.total,
+        "errors": analysis.errors,
+        "warnings": analysis.warnings,
+        "info": analysis.info,
+        "debug": analysis.debug,
+        "entries": analysis.entries,
+        "summary": analysis.summary,
+        "device_name": device.name,
+        "device_vendor": device.vendor,
+    }))
+}
+
+/// 解析批次中所有记录的设备日志，汇总返回。
+#[tauri::command]
+pub fn analyze_batch_logs(batch_id: i64, state: State<AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.lock();
+
+    let records_sql = format!("SELECT {} FROM inspection_records WHERE batch_id = ?1", RECORD_COLUMNS);
+    let records: Vec<InspectionRecord> = crate::db::query::query_all(
+        &conn, &records_sql, rusqlite::params![batch_id], record_from_row,
+    )?;
+
+    let mut all_results = Vec::new();
+    let mut total_errors = 0usize;
+    let mut total_warnings = 0usize;
+
+    for record in &records {
+        let result = analyze_record_logs(record.id, state.clone())?;
+        if let Some(e) = result.get("errors").and_then(|v| v.as_u64()) {
+            total_errors += e as usize;
+        }
+        if let Some(w) = result.get("warnings").and_then(|v| v.as_u64()) {
+            total_warnings += w as usize;
+        }
+        all_results.push(result);
+    }
+
+    Ok(serde_json::json!({
+        "batch_id": batch_id,
+        "total_errors": total_errors,
+        "total_warnings": total_warnings,
+        "devices": all_results,
+    }))
+}
+
+/// 直接解析用户提供的日志文本（与巡检记录无关），返回结构化分析结果。
+#[tauri::command]
+pub fn parse_log_text(text: String, vendor: String) -> Result<serde_json::Value, String> {
+    let analysis = crate::services::log_analyzer::parse_logs(&text, &vendor);
+    Ok(serde_json::json!({
+        "total": analysis.total,
+        "errors": analysis.errors,
+        "warnings": analysis.warnings,
+        "info": analysis.info,
+        "debug": analysis.debug,
+        "entries": analysis.entries,
+        "summary": analysis.summary,
+    }))
+}
+
+// ============================================================
 // CSV Export
 // ============================================================
 
 /// 将巡检批次的命令输出导出为 CSV 文件，返回文件路径。
+/// 若提供 save_path 则保存到指定路径，否则保存到默认 reports 目录。
 #[tauri::command]
-pub fn export_batch_csv(batch_id: i64, state: State<AppState>) -> Result<String, String> {
+pub fn export_batch_csv(batch_id: i64, save_path: Option<String>, state: State<AppState>) -> Result<String, String> {
     let conn = state.db.lock();
 
     let batch_sql = format!("SELECT {} FROM inspection_batches WHERE id = ?1", crate::db::models::BATCH_COLUMNS);
@@ -872,10 +977,14 @@ pub fn export_batch_csv(batch_id: i64, state: State<AppState>) -> Result<String,
     let records_sql = format!("SELECT {} FROM inspection_records WHERE batch_id = ?1 ORDER BY id", RECORD_COLUMNS);
     let records = crate::db::query::query_all(&conn, &records_sql, rusqlite::params![batch_id], record_from_row)?;
 
-    let dir = ensure_reports_dir()?;
-    let safe_name = batch.name.unwrap_or_else(|| format!("batch_{}", batch_id));
-    let filename = format!("{}_{}.csv", safe_name.replace('/', "_").replace('\\', "_"), now_str().replace(' ', "_").replace(':', "-"));
-    let filepath = dir.join(&filename);
+    let filepath = if let Some(ref p) = save_path {
+        std::path::PathBuf::from(p)
+    } else {
+        let dir = ensure_reports_dir()?;
+        let safe_name = batch.name.unwrap_or_else(|| format!("batch_{}", batch_id));
+        let filename = format!("{}_{}.csv", safe_name.replace('/', "_").replace('\\', "_"), now_str().replace(' ', "_").replace(':', "-"));
+        dir.join(&filename)
+    };
 
     let mut w = std::io::BufWriter::new(std::fs::File::create(&filepath).map_err(|e| format!("创建CSV文件失败: {}", e))?);
 

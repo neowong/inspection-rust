@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, FolderTree, Server, Play, FileText, Settings, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, FolderTree, Server, Play, FileText, Settings, ChevronLeft, FileSearch } from "lucide-react";
 
-type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "settings";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "logs" | "settings";
 
 interface NavItem {
   key: PageKey;
@@ -20,6 +20,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
       { key: "devices",    label: "设备管理", path: "/devices",    icon: Server },
       { key: "inspection", label: "执行巡检", path: "/inspection", icon: Play },
       { key: "reports",    label: "巡检报告", path: "/reports",    icon: FileText },
+      { key: "logs",       label: "日志分析", path: "/logs",       icon: FileSearch },
     ],
   },
   {
@@ -82,7 +83,7 @@ export default function AppShell() {
                           ${active ? "bg-[hsl(var(--accent-subtle))] text-[hsl(var(--accent))] font-medium border-l-[hsl(var(--accent))]"
                             : "text-[hsl(var(--text-tertiary))] border-l-transparent hover:text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-hover))]"}`}>
                         <Icon size={17} className={`shrink-0 ${active ? "opacity-100" : "opacity-70"}`} />
-                        {!collapsed && <span className="text-[13px] truncate">{item.label}</span>}
+                        {!collapsed && <span className="text-sm truncate">{item.label}</span>}
                       </button>
                     );
                   })}

@@ -77,7 +77,7 @@ fn run_commands_libssh2(
             }
         }
 
-        match send_command(&mut channel, cmd, &prompt, source.password.as_str(), host) {
+        match send_command(&mut channel, cmd, &prompt, source.password.as_str(), host, vendor) {
             Ok(output) => {
                 consecutive_timeouts = 0;
                 if let Some(error_msg) = check_unrecognized_command(&output) {
@@ -182,13 +182,13 @@ fn open_shell_session<'s>(
     // Switch to non-blocking for prompt detection
     session.set_blocking(false);
 
-    let prompt = find_prompt(&mut channel)?;
-    tracing::info!("检测到设备提示符: {:?}", prompt);
+    let (prompt, full_prompt) = find_prompt(&mut channel)?;
+    tracing::info!("检测到设备提示符: {:?}", full_prompt.trim());
 
     // Disable paging — must succeed; without it, subsequent commands
     // will hang at "---- More ----" pagination prompts.
     if let Some(disable_cmd) = get_disable_paging_cmd(vendor) {
-        send_command(&mut channel, disable_cmd, &prompt, password, host)
+        send_command(&mut channel, disable_cmd, &prompt, password, host, vendor)
             .map_err(|e| format!("分页禁用命令 '{}' 失败: {}", disable_cmd, e))?;
         tracing::info!("[{}] 已发送分页禁用命令: {}", host, disable_cmd);
     }
@@ -204,18 +204,19 @@ fn open_shell_session<'s>(
 /// then continue draining until the channel is silent to ensure
 /// all login banners and MOTD are fully consumed.
 /// Timeout: 15 seconds.
-fn find_prompt(channel: &mut ssh2::Channel) -> Result<String, String> {
+fn find_prompt(channel: &mut ssh2::Channel) -> Result<(String, String), String> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(15);
     let mut buffer = String::new();
     let mut buf = [0u8; 4096];
     let mut prompt: Option<String> = None;
+    let mut full_prompt = String::new();
     let mut silent_rounds = 0u32;
     const SILENT_THRESHOLD: u32 = 5; // 5 consecutive WouldBlocks (~500ms of silence)
 
     loop {
         if start.elapsed() > timeout {
-            return prompt.ok_or_else(|| "等待设备提示符超时（15秒）".to_string());
+            return Err("等待设备提示符超时（15秒）".to_string());
         }
 
         match channel.read(&mut buf) {
@@ -223,10 +224,11 @@ fn find_prompt(channel: &mut ssh2::Channel) -> Result<String, String> {
                 if prompt.is_some() {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok(prompt.unwrap());
+                        return Ok((prompt.unwrap(), full_prompt.clone()));
                     }
                 } else if let Some(p) = extract_prompt(&buffer) {
                     prompt = Some(p);
+                    full_prompt = last_non_empty_line(&buffer).unwrap_or_default();
                     silent_rounds = 0;
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -236,13 +238,14 @@ fn find_prompt(channel: &mut ssh2::Channel) -> Result<String, String> {
                 buffer.push_str(&String::from_utf8_lossy(&buf[..n]));
                 if let Some(p) = extract_prompt(&buffer) {
                     prompt = Some(p);
+                    full_prompt = last_non_empty_line(&buffer).unwrap_or_default();
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if prompt.is_some() {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok(prompt.unwrap());
+                        return Ok((prompt.unwrap(), full_prompt.clone()));
                     }
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -251,10 +254,11 @@ fn find_prompt(channel: &mut ssh2::Channel) -> Result<String, String> {
                 if prompt.is_some() {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok(prompt.unwrap());
+                        return Ok((prompt.unwrap(), full_prompt.clone()));
                     }
                 } else if let Some(p) = extract_prompt(&buffer) {
                     prompt = Some(p);
+                    full_prompt = last_non_empty_line(&buffer).unwrap_or_default();
                     silent_rounds = 0;
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -264,9 +268,17 @@ fn find_prompt(channel: &mut ssh2::Channel) -> Result<String, String> {
     }
 }
 
-/// Extract the base prompt from buffer — netmiko-style: take the last non-empty
-/// line and strip the trailing terminator character (>, #, ], $).
-/// Also strips leading control characters (e.g. NULL bytes from terminal init).
+/// Get the last non-empty line from the buffer, stripped of ANSI and trimmed.
+fn last_non_empty_line(buffer: &str) -> Option<String> {
+    buffer
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .last()
+        .map(|l| strip_ansi(l).trim().to_string())
+}
+
+/// Extract the base prompt from buffer.
+/// Strips leading control characters and trailing terminator characters.
 fn extract_prompt(buffer: &str) -> Option<String> {
     let last = buffer
         .lines()
@@ -274,17 +286,58 @@ fn extract_prompt(buffer: &str) -> Option<String> {
         .last()?;
 
     let trimmed = strip_ansi(last).trim().to_string();
-    // Strip leading control characters (NULL bytes, BEL, etc.)
     let cleaned: String = trimmed.chars().skip_while(|c| c.is_control()).collect();
-    if let Some(base) = cleaned.strip_suffix('>')
+
+    // Strip known terminator characters
+    let base = cleaned
+        .strip_suffix('>')
         .or_else(|| cleaned.strip_suffix('#'))
         .or_else(|| cleaned.strip_suffix(']'))
-        .or_else(|| cleaned.strip_suffix('$'))
-    {
-        Some(base.to_string())
-    } else {
-        None
+        .or_else(|| cleaned.strip_suffix('$'));
+
+    base.map(|s| s.to_string())
+}
+
+/// Check whether the last non-empty line of output matches the expected
+/// prompt for this vendor. Uses vendor-specific patterns.
+fn line_looks_like_prompt(line: &str, vendor: &str) -> bool {
+    let line = line.trim();
+    if line.is_empty() { return false; }
+    match vendor.to_lowercase().as_str() {
+        // H3C/Huawei: <hostname> or [hostname]
+        "h3c" | "华三" | "huawei" | "华为" => {
+            (line.starts_with('<') && line.ends_with('>'))
+                || (line.starts_with('[') && line.ends_with(']'))
+        }
+        // Cisco/Ruijie: hostname# or hostname>
+        "cisco" | "思科" | "ruijie" | "锐捷" => {
+            line.ends_with('#') || line.ends_with('>')
+        }
+        // Fallback: any common terminator
+        _ => line.ends_with('>') || line.ends_with('#') || line.ends_with(']') || line.ends_with('$'),
     }
+}
+
+/// Check whether the accumulated output ends with a line that looks like
+/// a device prompt for the given vendor.
+fn output_contains_prompt(output: &str, base_prompt: &str, vendor: &str) -> bool {
+    if base_prompt.is_empty() && vendor.is_empty() {
+        return false;
+    }
+    let cleaned = strip_ansi(output);
+    cleaned
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .last()
+        .map_or(false, |last| {
+            let lt = last.trim();
+            // Exact match via contains (handles prompt changes gracefully)
+            if !base_prompt.is_empty() && lt.contains(base_prompt) {
+                return true;
+            }
+            // Vendor-specific pattern fallback
+            line_looks_like_prompt(lt, vendor)
+        })
 }
 
 /// Read channel output until the device prompt appears at the end of the
@@ -296,6 +349,7 @@ fn read_until_prompt(
     password: &str,
     host: &str,
     cmd: &str,
+    vendor: &str,
 ) -> Result<String, String> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(15);
@@ -337,7 +391,7 @@ fn read_until_prompt(
                     password_sent = true;
                 }
 
-                if output_contains_prompt(&output, prompt) {
+                if output_contains_prompt(&output, prompt, vendor) {
                     return Ok(clean_output(&output, prompt));
                 }
             }
@@ -345,7 +399,7 @@ fn read_until_prompt(
                 std::thread::sleep(Duration::from_millis(50));
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                if output_contains_prompt(&output, prompt) {
+                if output_contains_prompt(&output, prompt, vendor) {
                     return Ok(clean_output(&output, prompt));
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -366,34 +420,6 @@ fn get_disable_paging_cmd(vendor: &str) -> Option<&str> {
         "cisco" | "思科" | "ruijie" | "锐捷" => Some("terminal length 0"),
         _ => None,
     }
-}
-
-/// Check whether the accumulated output ends with the device prompt,
-/// signalling that the command has finished executing.
-/// netmiko-style: check whether output contains the base prompt (no terminator).
-/// Netmiko stores `prompt[:-1]` (strips the trailing `#`/`>`) and uses
-/// `re.search()` on the full accumulated output. We use `contains()` on the
-/// last non-empty line for the same effect.
-fn output_contains_prompt(output: &str, base_prompt: &str) -> bool {
-    if base_prompt.is_empty() {
-        return false;
-    }
-    let cleaned = strip_ansi(output);
-    let result = cleaned
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .last()
-        .map_or(false, |last| last.trim().contains(base_prompt));
-
-    if !result && !output.is_empty() {
-        let last_line = cleaned.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("(none)");
-        tracing::info!(
-            "output_contains_prompt=false: base_prompt='{}', last_line='{}', output_len={}",
-            base_prompt, last_line.trim(), output.len()
-        );
-    }
-
-    result
 }
 
 /// Drain stale data from the channel until it goes silent for a short period.
@@ -436,6 +462,7 @@ fn send_command(
     prompt: &str,
     password: &str,
     host: &str,
+    vendor: &str,
 ) -> Result<String, String> {
     clear_channel_buffer(channel);
 
@@ -444,7 +471,7 @@ fn send_command(
     writeln!(channel, "{}", cmd)
         .map_err(|e| format!("[{}] 发送命令失败 '{}': {}", host, cmd, e))?;
 
-    read_until_prompt(channel, prompt, password, host, cmd)
+    read_until_prompt(channel, prompt, password, host, cmd, vendor)
 }
 
 // ---------------------------------------------------------------------------
@@ -587,11 +614,26 @@ mod tests {
 
     #[test]
     fn test_output_contains_prompt() {
-        // base_prompt "<aHope_WLAN_AC" should match "<aHope_WLAN_AC>"
-        assert!(output_contains_prompt("screen-length disable\n<aHope_WLAN_AC>", "<aHope_WLAN_AC"));
-        assert!(output_contains_prompt("Router#show version\nstuff\nRouter#", "Router"));
-        assert!(!output_contains_prompt("some output without prompt", "Router"));
-        assert!(!output_contains_prompt("stuff", ""));
+        // base_prompt contains match
+        assert!(output_contains_prompt("screen-length disable\n<aHope_WLAN_AC>", "<aHope_WLAN_AC", "H3C"));
+        assert!(output_contains_prompt("Router#show version\nstuff\nRouter#", "Router", "Cisco"));
+        // Vendor pattern fallback
+        assert!(output_contains_prompt("some output\n<aHope>", "", "H3C"));
+        assert!(output_contains_prompt("some output\nRouter#", "", "Cisco"));
+        assert!(output_contains_prompt("some output\n[Core]", "", "H3C"));
+        // Not matching
+        assert!(!output_contains_prompt("some output without prompt", "Router", "Cisco"));
+        assert!(!output_contains_prompt("stuff", "", ""));
+    }
+
+    #[test]
+    fn test_line_looks_like_prompt() {
+        assert!(line_looks_like_prompt("<aHope_WLAN_AC>", "H3C"));
+        assert!(line_looks_like_prompt("[Core-Switch]", "H3C"));
+        assert!(line_looks_like_prompt("Router#", "Cisco"));
+        assert!(line_looks_like_prompt("Router>", "Cisco"));
+        assert!(!line_looks_like_prompt("some output", "H3C"));
+        assert!(!line_looks_like_prompt("", "H3C"));
     }
 
     #[test]
