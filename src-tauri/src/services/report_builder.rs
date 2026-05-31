@@ -8,56 +8,64 @@ const REPORT_HTML: &str = r#"<!DOCTYPE html>
 <meta charset="UTF-8">
 <title>{{report_title}}</title>
 <style>
-  @page { size: A4 portrait; margin: 20mm; }
+  @page { size: A4 portrait; margin: 15mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: "宋体", "SimSun", "SimSun-ExtB", "NSimSun", serif;
-    font-size: 11pt; color: #000; background: #e8e8e8;
-    padding: 24px; display: flex; justify-content: center; line-height: 1.5;
+    font-family: "微软雅黑", "Microsoft YaHei", "宋体", "SimSun", sans-serif;
+    font-size: 10pt; color: #222; background: #e8e8e8;
+    padding: 16px; display: flex; justify-content: center; line-height: 1.5;
   }
   .page-wrapper {
     background: #fff; max-width: 794px; width: 100%;
-    padding: 20mm; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    padding: 15mm 18mm; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
   }
   @media screen { .page-wrapper { margin: 0 auto; } }
   .report-title {
-    text-align: center; font-size: 18pt; font-weight: bold;
-    margin-bottom: 6mm; letter-spacing: 2pt;
+    text-align: center; font-size: 16pt; font-weight: bold;
+    margin-bottom: 4mm; letter-spacing: 1pt; border-bottom: 2pt solid #333; padding-bottom: 3mm;
   }
-  .report-meta { text-align: center; font-size: 9pt; color: #000; margin-bottom: 10mm; }
-  .device-title { font-size: 14pt; font-weight: bold; margin: 8mm 0 4mm; padding-bottom: 1mm; }
-  .section-subtitle { font-size: 12pt; font-weight: bold; margin: 5mm 0 3mm; }
-  table.info { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11pt; }
+  .report-meta { text-align: center; font-size: 8pt; color: #555; margin-bottom: 6mm; }
+  .device-title { font-size: 13pt; font-weight: bold; margin: 6mm 0 3mm; padding-bottom: 1mm; border-bottom: 1pt solid #999; }
+  .section-subtitle { font-size: 11pt; font-weight: bold; margin: 4mm 0 2mm; color: #333; }
+  table.info { width: 100%; border-collapse: collapse; margin-bottom: 4mm; font-size: 9pt; table-layout: fixed; }
   table.info td {
-    border: 1pt solid #333; padding: 2mm 3mm; line-height: 1.4;
-    text-align: center; white-space: nowrap;
+    border: 0.5pt solid #999; padding: 1mm 2mm; line-height: 1.4;
+    text-align: center; word-break: break-all;
   }
-  table.info td.label { font-weight: bold; width: 14%; text-align: left; white-space: nowrap; }
-  table.result { width: 100%; border-collapse: collapse; font-size: 10.5pt; table-layout: auto; }
+  table.info td.label {
+    font-weight: bold; width: 15%; text-align: right; background: #f9f9f9;
+    white-space: nowrap; padding-right: 2mm;
+  }
+  table.result { width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed; margin-bottom: 3mm; }
   table.result th {
-    border: 1pt solid #333; padding: 1.5mm 2mm; font-weight: bold;
-    text-align: center; background: #f5f5f5; color: #000;
+    border: 0.5pt solid #999; padding: 1mm 1.5mm; font-weight: bold;
+    text-align: center; background: #f0f0f0; color: #333; font-size: 8.5pt;
   }
   table.result td {
-    border: 1pt solid #333; padding: 1.5mm 2mm;
-    vertical-align: middle; text-align: center; line-height: 1.4;
+    border: 0.5pt solid #999; padding: 1mm 1.5mm;
+    vertical-align: middle; text-align: center; line-height: 1.4; font-size: 8.5pt;
   }
-  table.result td.num { text-align: center; vertical-align: middle; width: 40px; }
-  table.result td.item { width: 80px; font-weight: bold; text-align: center; vertical-align: middle; white-space: nowrap; }
+  table.result td.num { text-align: center; vertical-align: middle; width: 5%; }
+  table.result td.item { width: 18%; font-weight: bold; text-align: center; vertical-align: middle; overflow-wrap: break-word; word-break: break-all; }
   table.result td.detail {
-    font-size: 9pt; font-family: "Consolas", "Courier New", "SimSun", monospace;
-    white-space: pre-wrap; word-break: break-all; text-align: left; vertical-align: top; width: auto;
+    font-size: 8pt; font-family: "Consolas", "Courier New", monospace;
+    white-space: pre-wrap; word-break: break-all; text-align: left; vertical-align: top; width: 45%;
+    max-height: 180px; overflow: hidden;
   }
-  table.result td.verdict { font-size: 9pt; text-align: left; vertical-align: middle; white-space: normal; word-break: break-all; }
+  table.result td.verdict { font-size: 8pt; text-align: left; vertical-align: middle; white-space: normal; word-break: break-all; width: 32%; }
   table.result td.summary {
-    padding: 2mm 3mm; font-size: 10.5pt; line-height: 1.6;
-    text-align: left; vertical-align: top; border-top: 1.5pt solid #333;
+    padding: 1.5mm 2mm; font-size: 9pt; line-height: 1.5;
+    text-align: left; vertical-align: top; border-top: 1pt solid #333; background: #fafafa;
   }
+  .verdict-status { display: block; font-weight: bold; }
+  .verdict-suggestion { display: block; font-size: 7.5pt; color: #555; margin-top: 1mm; }
+  .cmd { display: none; }
   .device-section { page-break-after: always; page-break-inside: avoid; }
   @media print {
     body { background: #fff; padding: 0; display: block; }
     .page-wrapper { max-width: none; padding: 0; box-shadow: none; margin: 0; }
     table.result th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table.info td.label { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     thead { display: table-header-group; }
     .device-section { page-break-after: always; }
   }
@@ -78,10 +86,10 @@ const DEVICE_SECTION: &str = r#"<div class="device-section">
   <table class="info">
     {{info_rows}}
   </table>
-  <h3 class="section-subtitle">巡检记录</h3>
+  <h3 class="section-subtitle">巡检结果</h3>
   <table class="result">
     <thead>
-      <tr><th>序号</th><th>巡检项目</th><th>巡检内容</th><th>评判结论</th></tr>
+      <tr><th>序号</th><th>巡检项目</th><th>巡检结果</th><th>评判结论</th></tr>
     </thead>
     <tbody>
       {{inspection_rows}}
@@ -220,28 +228,31 @@ fn build_inspection_rows(record: &InspectionRecord) -> String {
     for (cmd, output) in &outputs {
         seq += 1;
         let cmd_label = cmd.clone();
-        let detail = format!(
-            "<span class=\"cmd\">&lt;{}&gt; {}</span>\n{}",
-            html_escape(&cmd_label),
-            html_escape(&cmd_label),
-            html_escape(output),
-        );
+        let mut detail_parts = Vec::new();
+        if let Some(jdg) = judgments.get(cmd) {
+            let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("");
+            if !finding.is_empty() {
+                detail_parts.push(html_escape(finding));
+            }
+        }
+        // Include trimmed output as detail (limit to 15 lines / 600 chars)
+        let lines: Vec<&str> = output.lines().collect();
+        let trimmed = if lines.len() > 15 {
+            format!("{}...\n[共 {} 行，已截断]", &lines[..15].join("\n"), lines.len())
+        } else if output.len() > 600 {
+            format!("{}...", &output[..600])
+        } else {
+            output.clone()
+        };
+        detail_parts.push(html_escape(&trimmed));
+        let detail = detail_parts.join("<br>");
 
         let verdict_html = if let Some(jdg) = judgments.get(cmd) {
             let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("");
             let suggestion = jdg.get("suggestion").and_then(|v| v.as_str()).unwrap_or("");
-
-            let mut v = format!(
-                "<span class=\"verdict-line\">{}：{}</span>",
-                html_escape(status),
-                html_escape(finding),
-            );
+            let mut v = format!("<span class=\"verdict-status\">{}</span>", html_escape(status));
             if !suggestion.is_empty() {
-                v.push_str(&format!(
-                    "<span class=\"verdict-line\">建议: {}</span>",
-                    html_escape(suggestion),
-                ));
+                v.push_str(&format!("<br><span class=\"verdict-line\">建议：{}</span>", html_escape(suggestion)));
             }
             v
         } else {

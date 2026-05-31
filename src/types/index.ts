@@ -143,7 +143,7 @@ export interface ReportTemplateUpdate {
 }
 
 export interface TemplateSection {
-  type: "title" | "basic_info" | "device_details" | "inspection_results" | "ai_analysis" | "overall_assessment";
+  type: "title" | "basic_info" | "inspection_results" | "ai_analysis" | "overall_assessment";
   enabled: boolean;
   label: string;
   config: Record<string, unknown>;

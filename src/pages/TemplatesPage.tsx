@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings, GripVertical } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { InspectionTemplate, CommandPool, ReportTemplate, TemplateSection, TemplateConfig } from "../types";
@@ -27,8 +27,7 @@ const TABS: { key: TabKey; label: string }[] = [
 function cloneSections(): TemplateSection[] {
   return [
     { type: "title", enabled: true, label: "报告标题", config: {} },
-    { type: "basic_info", enabled: true, label: "基本信息", config: { fields: ["device_name", "device_ip", "vendor", "model"] } },
-    { type: "device_details", enabled: true, label: "设备详情", config: { fields: ["sn", "hostname", "os_release", "kernel", "cpu_cores", "mem_total", "manufacturing_date"] } },
+    { type: "basic_info", enabled: true, label: "基本信息", config: { fields: ["device_name", "device_ip", "vendor", "model", "sn", "manufacturing_date"] } },
     { type: "inspection_results", enabled: true, label: "巡检结果", config: { show_output: true, max_output_lines: 60 } },
     { type: "ai_analysis", enabled: true, label: "AI 分析总结", config: {} },
     { type: "overall_assessment", enabled: true, label: "总体评估", config: {} },
@@ -37,9 +36,8 @@ function cloneSections(): TemplateSection[] {
 
 const SECTION_META: Record<string, { description: string; icon: string }> = {
   title: { description: "报告标题和生成时间", icon: "📋" },
-  basic_info: { description: "设备名称、IP、厂商、型号等核心信息表格", icon: "📊" },
-  device_details: { description: "序列号、主机名、操作系统、CPU、内存等详情", icon: "🔧" },
-  inspection_results: { description: "逐命令巡检判断结果（状态/发现/建议）", icon: "✅" },
+  basic_info: { description: "设备名称、IP、厂商、型号、序列号、生产日期", icon: "📊" },
+  inspection_results: { description: "逐命令巡检判断结果（序号/项目/结果/结论）", icon: "✅" },
   ai_analysis: { description: "AI 对巡检结果的整体分析文字", icon: "🤖" },
   overall_assessment: { description: "综合判断结论和处理建议", icon: "📝" },
 };
@@ -49,15 +47,7 @@ const BASIC_INFO_FIELDS = [
   { key: "device_ip", label: "IP 地址" },
   { key: "vendor", label: "厂商" },
   { key: "model", label: "型号" },
-];
-
-const DEVICE_DETAIL_FIELDS = [
   { key: "sn", label: "序列号" },
-  { key: "hostname", label: "主机名" },
-  { key: "os_release", label: "操作系统" },
-  { key: "kernel", label: "内核" },
-  { key: "cpu_cores", label: "CPU 核心数" },
-  { key: "mem_total", label: "内存总量" },
   { key: "manufacturing_date", label: "生产日期" },
 ];
 
@@ -824,18 +814,18 @@ export default function TemplatesPage() {
 
           {/* ---- VISUAL MODE: split pane ---- */}
           {reportForm.mode === "visual" && (
-            <div className="flex gap-4" style={{ minHeight: "400px" }}>
-              {/* Left: Drag-and-drop section list */}
+            <div className="flex gap-4" style={{ minHeight: "420px" }}>
+              {/* Left: Building blocks panel */}
               <div className="w-1/2 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-[hsl(var(--text-secondary))]">
-                    报告区块 <span className="text-[10px] text-[hsl(var(--text-tertiary))]">（勾选启用，拖拽排序）</span>
+                    🧱 积木拼装区 <span className="text-[10px] text-[hsl(var(--text-tertiary))]">（拖拽手柄排序）</span>
                   </span>
-                  <span className="text-[10px] text-[hsl(var(--text-tertiary))]">
-                    {reportForm.sections.filter(s => s.enabled).length}/{reportForm.sections.length}
+                  <span className="text-[10px] text-[hsl(var(--text-tertiary))] bg-[hsl(var(--bg-hover))] px-2 py-0.5 rounded-full">
+                    {reportForm.sections.filter(s => s.enabled).length}/{reportForm.sections.length} 已启用
                   </span>
                 </div>
-                <div className="space-y-1 flex-1 overflow-y-auto" style={{ maxHeight: "380px" }}>
+                <div className="space-y-2 flex-1 overflow-y-auto pr-1" style={{ maxHeight: "400px" }}>
                   {reportForm.sections.map((section, i) => {
                     const meta = SECTION_META[section.type] || { description: "", icon: "📄" };
                     const isExpanded = expandedSection === section.type;
@@ -846,22 +836,36 @@ export default function TemplatesPage() {
                         onDragStart={(e) => {
                           e.dataTransfer.effectAllowed = "move";
                           e.dataTransfer.setData("text/plain", String(i));
-                          (e.currentTarget as HTMLElement).style.opacity = "0.5";
+                          setTimeout(() => {
+                            (e.currentTarget as HTMLElement).style.opacity = "0.4";
+                            (e.currentTarget as HTMLElement).style.transform = "scale(0.95)";
+                          }, 0);
                         }}
                         onDragEnd={(e) => {
-                          (e.currentTarget as HTMLElement).style.opacity = "";
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.opacity = "";
+                          el.style.transform = "";
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
                           e.dataTransfer.dropEffect = "move";
-                          (e.currentTarget as HTMLElement).classList.add("ring-2", "ring-[hsl(var(--accent))]");
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.borderColor = "hsl(var(--accent))";
+                          el.style.boxShadow = "0 0 0 1px hsl(var(--accent) / 0.3)";
+                          el.style.transform = "scale(1.02)";
                         }}
                         onDragLeave={(e) => {
-                          (e.currentTarget as HTMLElement).classList.remove("ring-2", "ring-[hsl(var(--accent))]");
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.borderColor = "";
+                          el.style.boxShadow = "";
+                          el.style.transform = "";
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          (e.currentTarget as HTMLElement).classList.remove("ring-2", "ring-[hsl(var(--accent))]");
+                          const el = e.currentTarget as HTMLElement;
+                          el.style.borderColor = "";
+                          el.style.boxShadow = "";
+                          el.style.transform = "";
                           const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
                           if (!isNaN(fromIdx) && fromIdx !== i) {
                             setReportForm(prev => {
@@ -872,69 +876,84 @@ export default function TemplatesPage() {
                             });
                           }
                         }}
-                        className={`border rounded-lg transition-all cursor-grab active:cursor-grabbing ${
+                        className={`group rounded-lg transition-all duration-150 select-none ${
                           section.enabled
-                            ? "border-[hsl(var(--border))] bg-[hsl(var(--bg-card))]"
-                            : "border-[hsl(var(--border-light))] bg-[hsl(var(--bg-app))] opacity-50"
+                            ? "bg-[hsl(var(--bg-card))] border-2 border-[hsl(var(--border))] shadow-sm hover:shadow-md"
+                            : "bg-[hsl(var(--bg-app))] border-2 border-dashed border-[hsl(var(--border-light))] opacity-50"
                         }`}
                       >
-                        <div className="flex items-center gap-2 px-2.5 py-1.5">
+                        <div className="flex items-center gap-2 px-2 py-2">
+                          {/* Drag handle — the grip */}
+                          <div className="shrink-0 text-[hsl(var(--text-tertiary))] group-hover:text-[hsl(var(--text-primary))] transition-colors cursor-grab active:cursor-grabbing">
+                            <GripVertical size={16} />
+                          </div>
                           {/* Toggle */}
                           <input
                             type="checkbox"
                             checked={section.enabled}
                             onChange={() => toggleSection(i)}
-                            className="accent-[hsl(var(--accent))] shrink-0"
+                            className="accent-[hsl(var(--accent))] shrink-0 w-3.5 h-3.5"
                           />
-                          <span className="text-sm">{meta.icon}</span>
-                          <span className={`text-xs font-medium flex-1 ${section.enabled ? "text-[hsl(var(--text-primary))]" : "text-[hsl(var(--text-tertiary))]"}`}>
-                            {section.label}
-                          </span>
+                          <span className="text-base">{meta.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-xs font-medium ${section.enabled ? "text-[hsl(var(--text-primary))]" : "text-[hsl(var(--text-tertiary))]"}`}>
+                              {section.label}
+                            </div>
+                            <div className="text-[10px] text-[hsl(var(--text-tertiary))] leading-tight">{meta.description}</div>
+                          </div>
                           {/* Config gear */}
-                          {(section.type === "basic_info" || section.type === "device_details" || section.type === "inspection_results") && section.enabled && (
+                          {(section.type === "basic_info" || section.type === "inspection_results") && section.enabled && (
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setExpandedSection(isExpanded ? null : section.type); }}
-                              className={`p-0.5 rounded ${isExpanded ? "text-[hsl(var(--accent))]" : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]"}`}
-                            ><Settings size={12} /></button>
+                              className={`shrink-0 p-1 rounded-md transition-colors ${
+                                isExpanded
+                                  ? "text-[hsl(var(--accent))] bg-[hsl(var(--accent)_/_0.1)]"
+                                  : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))]"
+                              }`}
+                              title="配置字段"
+                            ><Settings size={13} /></button>
                           )}
                         </div>
                         {/* Expanded config */}
                         {isExpanded && section.enabled && (
-                          <div className="px-3 pb-2 border-t border-[hsl(var(--border-light))] pt-2 ml-7">
-                            {(section.type === "basic_info" || section.type === "device_details") && (
-                              <div className="flex flex-wrap gap-1">
-                                {(section.type === "basic_info" ? BASIC_INFO_FIELDS : DEVICE_DETAIL_FIELDS).map((f) => {
-                                  const fields = (section.config.fields as string[]) || [];
-                                  const checked = fields.includes(f.key);
-                                  return (
-                                    <span
-                                      key={f.key}
-                                      onClick={() => toggleSectionField(i, f.key)}
-                                      className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer border transition-colors ${
-                                        checked
-                                          ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent)_/_0.3)] text-[hsl(var(--accent))]"
-                                          : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))]"
-                                      }`}
-                                    >{f.label}</span>
-                                  );
-                                })}
+                          <div className="px-3 pb-2.5 border-t border-[hsl(var(--border-light))] pt-2 ml-9">
+                            {section.type === "basic_info" && (
+                              <div>
+                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的字段：</div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {BASIC_INFO_FIELDS.map((f) => {
+                                    const fields = (section.config.fields as string[]) || [];
+                                    const checked = fields.includes(f.key);
+                                    return (
+                                      <span
+                                        key={f.key}
+                                        onClick={() => toggleSectionField(i, f.key)}
+                                        className={`px-2 py-1 rounded-md text-[11px] cursor-pointer border transition-all ${
+                                          checked
+                                            ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))] font-medium"
+                                            : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))] hover:border-[hsl(var(--border))] hover:text-[hsl(var(--text-secondary))]"
+                                        }`}
+                                      >{f.label}</span>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
                             {section.type === "inspection_results" && (
-                              <div className="flex items-center gap-3">
-                                <label className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-secondary))]">
+                              <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
                                   <input type="checkbox" checked={section.config.show_output as boolean ?? true}
                                     onChange={(e) => updateSectionConfig(i, { show_output: e.target.checked })}
-                                    className="accent-[hsl(var(--accent))]" />
+                                    className="accent-[hsl(var(--accent))] w-3 h-3" />
                                   显示原始输出
                                 </label>
-                                <label className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-secondary))]">
-                                  最大行数
+                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))]">
+                                  截断行数
                                   <input type="number" value={section.config.max_output_lines as number ?? 60}
                                     onChange={(e) => updateSectionConfig(i, { max_output_lines: Number(e.target.value) || 60 })}
                                     min={5} max={500}
-                                    className="w-12 h-5 px-1 text-[10px] rounded border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))]" />
+                                    className="w-14 h-6 px-1.5 text-[11px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--accent))]" />
                                 </label>
                               </div>
                             )}
@@ -946,14 +965,18 @@ export default function TemplatesPage() {
                 </div>
               </div>
 
-              {/* Right: WYSIWYG structural preview */}
-              <div className="w-1/2 border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-app))] flex flex-col">
-                <div className="px-3 py-2 border-b border-[hsl(var(--border-light))] bg-[hsl(var(--bg-hover))] rounded-t-lg">
-                  <span className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">📋 实时结构预览</span>
+              {/* Right: WYSIWYG preview */}
+              <div className="w-1/2 border border-[hsl(var(--border))] rounded-lg bg-white flex flex-col shadow-inner">
+                <div className="px-3 py-1.5 border-b border-[hsl(var(--border-light))] bg-[hsl(var(--bg-hover))] rounded-t-lg flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">👁 实时预览</span>
+                  <span className="text-[10px] text-[hsl(var(--text-tertiary))]">（示例数据模拟最终报告效果）</span>
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ maxHeight: "380px", fontFamily: "system-ui, sans-serif" }}>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2.5" style={{ maxHeight: "400px", fontFamily: "system-ui, -apple-system, sans-serif" }}>
                   {reportForm.sections.filter(s => s.enabled).length === 0 && (
-                    <p className="text-xs text-[hsl(var(--text-tertiary))] text-center py-8">请勾选左侧区块来构建报告</p>
+                    <div className="text-center py-12">
+                      <span className="text-3xl">🧱</span>
+                      <p className="text-xs text-[hsl(var(--text-tertiary))] mt-2">从左侧拖拽积木块来组装报告</p>
+                    </div>
                   )}
                   {reportForm.sections.filter(s => s.enabled).map((section, i) => (
                     <WysiwygBlock key={section.type + i} section={section} format={reportForm.format} />
@@ -1034,45 +1057,63 @@ export default function TemplatesPage() {
 // WYSIWYG Preview Block
 // ============================================================
 
-function WysiwygBlock({ section, format }: { section: TemplateSection; format: string }) {
+function chunked<T>(arr: T[], n: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
+  return result;
+}
+
+function WysiwygBlock({ section, format: _format }: { section: TemplateSection; format: string }) {
   const meta = SECTION_META[section.type] || { description: "", icon: "📄" };
+  const fieldLabel = (f: string) => {
+    const m: Record<string, string> = {
+      device_name: "设备名称", device_ip: "IP 地址", vendor: "厂商", model: "型号",
+      sn: "序列号", hostname: "主机名", os_release: "操作系统", kernel: "内核",
+      cpu_cores: "CPU 核心数", mem_total: "内存总量", manufacturing_date: "生产日期",
+    };
+    return m[f] || f;
+  };
 
   return (
-    <div className={`rounded-md border border-[hsl(var(--border-light))] overflow-hidden text-[11px] ${format === "html" ? "font-sans" : "font-mono"}`}>
-      {/* Section header */}
-      <div className="px-2.5 py-1.5 bg-[hsl(var(--bg-hover))] border-b border-[hsl(var(--border-light))] flex items-center gap-2">
-        <span>{meta.icon}</span>
-        <span className="font-medium text-[hsl(var(--text-primary))]">{section.label}</span>
+    <div className="rounded-md border border-[hsl(var(--border-light))] overflow-hidden text-[11px] bg-white shadow-sm">
+      {/* Section header bar */}
+      <div className="px-2.5 py-1.5 bg-[hsl(var(--bg-hover))] border-b border-[hsl(var(--border-light))] flex items-center gap-1.5">
+        <span className="text-xs">{meta.icon}</span>
+        <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">{section.label}</span>
       </div>
 
-      {/* Section preview body */}
-      <div className="px-2.5 py-2 space-y-1.5 bg-[hsl(var(--bg-card))]">
+      {/* Preview body */}
+      <div className="px-3 py-2 space-y-1.5">
         {section.type === "title" && (
-          <div>
-            <div className={`font-bold ${format === "html" ? "text-base" : "text-sm"}`}>
-              {format === "html" ? "" : "# "}示例设备 巡检报告
-            </div>
-            <div className="text-[hsl(var(--text-tertiary))] text-[10px]">
-              &gt; 生成时间: 2026-05-31 14:30:00
-            </div>
+          <div className="text-center py-1">
+            <div className="font-bold text-sm text-[hsl(var(--text-primary))]">示例设备 巡检报告</div>
+            <div className="text-[10px] text-[hsl(var(--text-tertiary))] mt-0.5">生成时间: 2026-05-31 14:30:00</div>
           </div>
         )}
 
-        {(section.type === "basic_info" || section.type === "device_details") && (
+        {section.type === "basic_info" && (
           <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] mb-1">
-              {format === "html" ? "" : "## "}{section.label}
-            </div>
-            <table className="w-full text-[10px] border-collapse">
+            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
+            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
               <tbody>
-                {((section.config.fields as string[]) || []).map((f: string) => (
-                  <tr key={f} className="border-b border-[hsl(var(--border-light))] last:border-0">
-                    <td className="py-0.5 pr-2 font-medium text-[hsl(var(--text-secondary))]">
-                      {f === "device_name" ? "设备名称" : f === "device_ip" ? "IP 地址" : f === "vendor" ? "厂商" : f === "model" ? "型号" : f === "sn" ? "序列号" : f === "hostname" ? "主机名" : f === "os_release" ? "操作系统" : f === "kernel" ? "内核" : f === "cpu_cores" ? "CPU 核心数" : f === "mem_total" ? "内存总量" : f === "manufacturing_date" ? "生产日期" : f}
-                    </td>
-                    <td className={`py-0.5 ${format === "html" ? "text-[hsl(var(--text-tertiary))]" : ""}`}>
-                      {`{{${f}}}`}
-                    </td>
+                {chunked(((section.config.fields as string[]) || []), 2).map((pair, ri) => (
+                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
+                    {pair.map((f, ci) => (
+                      <React.Fragment key={f}>
+                        <td className="py-1 px-2 font-medium text-[hsl(var(--text-secondary))] bg-[hsl(var(--bg-hover))] w-[25%] border-r border-[hsl(var(--border-light))]">
+                          {fieldLabel(f)}
+                        </td>
+                        <td className={`py-1 px-2 text-[hsl(var(--text-tertiary))] ${ci < pair.length - 1 ? "border-r border-[hsl(var(--border-light))]" : ""} w-[25%]`}>
+                          {`{{${f}}}`}
+                        </td>
+                      </React.Fragment>
+                    ))}
+                    {pair.length === 1 && (
+                      <>
+                        <td className="py-1 px-2 w-[25%]"></td>
+                        <td className="py-1 px-2 w-[25%]"></td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1082,51 +1123,55 @@ function WysiwygBlock({ section, format }: { section: TemplateSection; format: s
 
         {section.type === "inspection_results" && (
           <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] mb-1">
-              {format === "html" ? "" : "## "}{section.label}
-            </div>
-            <div className="space-y-1.5">
-              {["display version", "display cpu-usage", "display memory-usage"].map((cmd) => (
-                <div key={cmd} className="border border-[hsl(var(--border-light))] rounded p-1.5">
-                  <div className="font-medium text-[hsl(var(--text-primary))] text-[10px] mb-0.5">
-                    {format === "html" ? "" : "### "}{cmd}
-                  </div>
-                  <div className="text-[10px] space-y-0.5 text-[hsl(var(--text-secondary))]">
-                    <div>- 状态: <span className="text-[hsl(var(--success))]">正常</span></div>
-                    <div>- 结果: 运行正常</div>
-                    <div>- 建议: 无需处理</div>
-                    {(section.config.show_output as boolean) && (
-                      <div className="mt-1 p-1 rounded bg-[hsl(var(--bg-app))] text-[hsl(var(--text-tertiary))] text-[9px] max-h-10 overflow-hidden">
-                        H3C Comware Software, Version 7.1.070...
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <div className="text-[10px] text-[hsl(var(--text-tertiary))] italic">... 共 N 条命令结果</div>
-            </div>
+            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
+            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
+              <thead>
+                <tr className="bg-[hsl(var(--bg-hover))]">
+                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))] w-[30px]">序号</th>
+                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">巡检项目</th>
+                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">巡检结果</th>
+                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-[hsl(var(--border-light))]">评判结论</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { cmd: "display version", status: "正常", finding: "软件版本为推荐版本", suggestion: "" },
+                  { cmd: "display cpu-usage", status: "警告", finding: "CPU 使用率偏高 (78%)", suggestion: "建议关注 CPU 负载趋势" },
+                  { cmd: "display memory-usage", status: "正常", finding: "内存使用率 45%", suggestion: "" },
+                ].map((row, ri) => (
+                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
+                    <td className="py-1 px-1.5 text-center text-[hsl(var(--text-tertiary))] border-r border-[hsl(var(--border-light))]">{ri + 1}</td>
+                    <td className="py-1 px-1.5 text-[hsl(var(--text-primary))] border-r border-[hsl(var(--border-light))] font-medium">{row.cmd}</td>
+                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] text-[10px]">{row.finding}</td>
+                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] text-[10px]">
+                      <span className={row.status === "正常" ? "text-[hsl(var(--success))]" : row.status === "警告" ? "text-[hsl(var(--warning))]" : "text-[hsl(var(--danger))]"}>
+                        {row.status}
+                      </span>
+                      {row.suggestion && <span className="text-[hsl(var(--text-tertiary))]"> — {row.suggestion}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-[hsl(var(--text-tertiary))] text-center mt-1">... 共 N 条</div>
           </div>
         )}
 
         {section.type === "ai_analysis" && (
           <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] mb-1">
-              {format === "html" ? "" : "## "}{section.label}
-            </div>
+            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
             <p className="text-[hsl(var(--text-secondary))] text-[10px] leading-relaxed">
-              设备整体运行状态良好。CPU 使用率偏高需要关注，建议监控趋势。内存和软件版本均处于正常范围。
+              设备整体运行状态良好。CPU 使用率偏高需要关注，建议监控趋势并在必要时进行扩容评估。内存和软件版本均处于正常范围。
             </p>
           </div>
         )}
 
         {section.type === "overall_assessment" && (
           <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] mb-1">
-              {format === "html" ? "" : "## "}{section.label}
-            </div>
-            <div className="text-[10px] space-y-1 text-[hsl(var(--text-secondary))]">
-              <div><strong>综合判断：</strong><span className="text-[hsl(var(--warning))]">warning (CPU偏高需关注)</span></div>
-              <div><strong>建议：</strong>建议关注 CPU 负载趋势；排查链路异常日志</div>
+            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
+            <div className="text-[10px] space-y-0.5 text-[hsl(var(--text-secondary))]">
+              <div className="flex gap-2"><span className="font-medium">综合判断：</span><span className="text-[hsl(var(--warning))] font-medium">⚠ 警告</span></div>
+              <div className="flex gap-2"><span className="font-medium">建议：</span><span>关注 CPU 负载趋势，排查链路异常日志</span></div>
             </div>
           </div>
         )}

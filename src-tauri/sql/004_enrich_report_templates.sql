@@ -21,24 +21,11 @@ VALUES (
 
 ## 基本信息
 
-| 项目 | 内容 |
-|------|------|
-| 设备名称 | {{device_name}} |
-| IP 地址 | {{device_ip}} |
-| 厂商 | {{vendor}} |
-| 型号 | {{model}} |
-
-## 设备详情
-
-| 项目 | 内容 |
-|------|------|
-| 序列号 | {{sn}} |
-| 主机名 | {{hostname}} |
-| 操作系统 | {{os_release}} |
-| 内核 | {{kernel}} |
-| CPU 核心数 | {{cpu_cores}} |
-| 内存总量 | {{mem_total}} |
-| 生产日期 | {{manufacturing_date}} |
+| 项目 | 内容 | 项目 | 内容 |
+|------|------|------|------|
+| 设备名称 | {{device_name}} | IP 地址 | {{device_ip}} |
+| 厂商 | {{vendor}} | 型号 | {{model}} |
+| 序列号 | {{sn}} | 生产日期 | {{manufacturing_date}} |
 
 ## 巡检结果
 

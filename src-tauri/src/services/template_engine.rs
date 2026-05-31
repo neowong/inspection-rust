@@ -76,59 +76,41 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
         }
 
         "basic_info" => {
-            let fields = get_section_fields(&section.config, &["device_name", "device_ip", "vendor", "model"]);
+            let fields = get_section_fields(&section.config, &["device_name", "device_ip", "vendor", "model", "sn", "manufacturing_date"]);
             let labels: HashMap<&str, &str> = [
                 ("device_name", "设备名称"), ("device_ip", "IP 地址"),
                 ("vendor", "厂商"), ("model", "型号"),
+                ("sn", "序列号"), ("manufacturing_date", "生产日期"),
             ].iter().cloned().collect();
 
             if is_html {
                 let mut t = "<h2>基本信息</h2>\n<table class=\"info\">\n".to_string();
-                for f in &fields {
-                    let f_str = f.as_str();
-                    let label = labels.get(f_str).copied().unwrap_or(f_str);
-                    t.push_str(&format!("<tr><td class=\"label\">{}</td><td>{{{{{}}}}}</td></tr>\n", label, f));
+                for chunk in fields.chunks(2) {
+                    t.push_str("<tr>");
+                    for f in chunk {
+                        let label = labels.get(f.as_str()).copied().unwrap_or(f.as_str());
+                        t.push_str(&format!("<td class=\"label\">{}</td><td>{{{{{}}}}}</td>", label, f));
+                    }
+                    // Fill empty cells if odd count
+                    if chunk.len() == 1 { t.push_str("<td></td><td></td>"); }
+                    t.push_str("</tr>\n");
                 }
                 t.push_str("</table>\n");
                 t
             } else {
-                let mut t = "## 基本信息\n\n| 项目 | 内容 |\n|------|------|\n".to_string();
-                for f in &fields {
-                    let f_str = f.as_str();
-                    let label = labels.get(f_str).copied().unwrap_or(f_str);
-                    t.push_str(&format!("| {} | {{{{{}}}}} |\n", label, f));
-                }
-                t.push('\n');
-                t
-            }
-        }
-
-        "device_details" => {
-            let fields = get_section_fields(&section.config, &[
-                "sn", "hostname", "os_release", "kernel", "cpu_cores", "mem_total", "manufacturing_date",
-            ]);
-            let labels: HashMap<&str, &str> = [
-                ("sn", "序列号"), ("hostname", "主机名"),
-                ("os_release", "操作系统"), ("kernel", "内核"),
-                ("cpu_cores", "CPU 核心数"), ("mem_total", "内存总量"),
-                ("manufacturing_date", "生产日期"),
-            ].iter().cloned().collect();
-
-            if is_html {
-                let mut t = "<h2>设备详情</h2>\n<table class=\"info\">\n".to_string();
-                for f in &fields {
-                    let f_str = f.as_str();
-                    let label = labels.get(f_str).copied().unwrap_or(f_str);
-                    t.push_str(&format!("<tr><td class=\"label\">{}</td><td>{{{{{}}}}}</td></tr>\n", label, f));
-                }
-                t.push_str("</table>\n");
-                t
-            } else {
-                let mut t = "## 设备详情\n\n| 项目 | 内容 |\n|------|------|\n".to_string();
-                for f in &fields {
-                    let f_str = f.as_str();
-                    let label = labels.get(f_str).copied().unwrap_or(f_str);
-                    t.push_str(&format!("| {} | {{{{{}}}}} |\n", label, f));
+                let mut t = "## 基本信息\n\n| 项目 | 内容 | 项目 | 内容 |\n|------|------|------|------|\n".to_string();
+                for chunk in fields.chunks(2) {
+                    let mut cells = Vec::new();
+                    for f in chunk {
+                        let label = labels.get(f.as_str()).copied().unwrap_or(f.as_str());
+                        cells.push(label.to_string());
+                        cells.push(format!("{{{{{}}}}}", f));
+                    }
+                    if chunk.len() == 1 {
+                        cells.push(String::new());
+                        cells.push(String::new());
+                    }
+                    t.push_str(&format!("| {} |\n", cells.join(" | ")));
                 }
                 t.push('\n');
                 t
@@ -143,19 +125,24 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
 
             if is_html {
                 let mut t = "<h2>巡检结果</h2>\n<table class=\"result\">\n".to_string();
-                t.push_str("<thead><tr><th>命令</th><th>状态</th><th>结果</th><th>建议</th>");
+                t.push_str("<thead><tr><th>序号</th><th>巡检项目</th><th>巡检结果</th><th>评判结论</th>");
                 if show_output { t.push_str("<th>原始输出</th>"); }
                 t.push_str("</tr></thead>\n<tbody>\n");
-                // We'll use {{#each}} in the raw render, but for section-based we build explicitly
                 if let Some(judgments) = ctx.get("command_judgments").and_then(|v| v.as_object()) {
                     let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
+                    let mut seq = 0u32;
                     for (cmd, jdg) in judgments {
+                        seq += 1;
                         let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("-");
                         let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("-");
                         let suggestion = jdg.get("suggestion").and_then(|v| v.as_str()).unwrap_or("-");
-                        t.push_str(&format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>",
-                            html_escape_str(cmd), html_escape_str(status),
-                            html_escape_str(finding), html_escape_str(suggestion)));
+                        let conclusion = if suggestion.is_empty() {
+                            format!("{}：{}", html_escape_str(status), html_escape_str(finding))
+                        } else {
+                            format!("{}：{}；建议：{}", html_escape_str(status), html_escape_str(finding), html_escape_str(suggestion))
+                        };
+                        t.push_str(&format!("<tr><td class=\"num\">{}</td><td class=\"item\">{}</td><td class=\"detail\">{}</td><td class=\"verdict\">{}</td>",
+                            seq, html_escape_str(cmd), html_escape_str(finding), conclusion));
                         if show_output {
                             let raw = outputs.and_then(|o| o.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
                             let trimmed = trim_output(raw, max_lines);
@@ -168,15 +155,18 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 t
             } else {
                 let mut t = "## 巡检结果\n\n".to_string();
+                t.push_str("| 序号 | 巡检项目 | 巡检结果 | 评判结论 |\n");
+                t.push_str("|------|----------|----------|----------|\n");
                 t.push_str("{{#each command_judgments}}\n");
-                t.push_str("### {{command}}\n\n");
-                t.push_str("- 状态: {{status}}\n");
-                t.push_str("- 结果: {{finding}}\n");
-                t.push_str("- 建议: {{suggestion}}\n");
+                t.push_str("| {{_seq}} | {{command}} | {{finding}} | {{status}}：{{finding}}；建议：{{suggestion}} |\n");
+                t.push_str("{{/each}}\n");
+                t.push('\n');
                 if show_output {
-                    t.push_str("\n```\n{{output}}\n```\n");
+                    t.push_str("### 命令原始输出\n\n");
+                    t.push_str("{{#each command_judgments}}\n");
+                    t.push_str("**{{command}}**\n```\n{{output}}\n```\n\n");
+                    t.push_str("{{/each}}\n");
                 }
-                t.push_str("\n{{/each}}\n");
                 t
             }
         }
@@ -207,7 +197,6 @@ fn render_default_sections(ctx: &HashMap<String, serde_json::Value>, format: &st
         sections: vec![
             TemplateSection { section_type: "title".into(), enabled: true, label: "报告标题".into(), config: serde_json::Value::Object(Default::default()) },
             TemplateSection { section_type: "basic_info".into(), enabled: true, label: "基本信息".into(), config: serde_json::Value::Object(Default::default()) },
-            TemplateSection { section_type: "device_details".into(), enabled: true, label: "设备详情".into(), config: serde_json::Value::Object(Default::default()) },
             TemplateSection { section_type: "inspection_results".into(), enabled: true, label: "巡检结果".into(), config: serde_json::Value::Object(Default::default()) },
             TemplateSection { section_type: "ai_analysis".into(), enabled: true, label: "AI 分析总结".into(), config: serde_json::Value::Object(Default::default()) },
             TemplateSection { section_type: "overall_assessment".into(), enabled: true, label: "总体评估".into(), config: serde_json::Value::Object(Default::default()) },
@@ -251,8 +240,11 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
         match items {
             Some(serde_json::Value::Object(map)) => {
                 let mut out = String::new();
+                let mut seq = 0u32;
                 for (cmd_name, jdg) in map {
+                    seq += 1;
                     let mut rendered = inner.to_string();
+                    rendered = rendered.replace("{{_seq}}", &seq.to_string());
                     rendered = rendered.replace("{{command}}", cmd_name);
 
                     let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("-");
@@ -276,8 +268,11 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
             }
             Some(serde_json::Value::Array(arr)) => {
                 let mut out = String::new();
+                let mut seq = 0u32;
                 for item in arr {
+                    seq += 1;
                     let mut rendered = inner.to_string();
+                    rendered = rendered.replace("{{_seq}}", &seq.to_string());
                     if let Some(obj) = item.as_object() {
                         for (k, v) in obj {
                             let placeholder = format!("{{{{{}}}}}", k);

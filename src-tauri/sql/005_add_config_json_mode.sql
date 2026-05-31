@@ -12,6 +12,6 @@ ALTER TABLE report_templates ADD COLUMN mode TEXT DEFAULT 'visual' CHECK(mode IN
 
 -- 更新内置默认模板为可视化模式（若存在且尚未配置）
 UPDATE report_templates SET
-    config_json = '{"sections":[{"type":"title","enabled":true,"label":"报告标题","config":{}},{"type":"basic_info","enabled":true,"label":"基本信息","config":{"fields":["device_name","device_ip","vendor","model"]}},{"type":"device_details","enabled":true,"label":"设备详情","config":{"fields":["sn","hostname","os_release","kernel","cpu_cores","mem_total","manufacturing_date"]}},{"type":"inspection_results","enabled":true,"label":"巡检结果","config":{"show_output":true,"max_output_lines":60}},{"type":"ai_analysis","enabled":true,"label":"AI 分析总结","config":{}},{"type":"overall_assessment","enabled":true,"label":"总体评估","config":{}}]}',
+    config_json = '{"sections":[{"type":"title","enabled":true,"label":"报告标题","config":{}},{"type":"basic_info","enabled":true,"label":"基本信息","config":{"fields":["device_name","device_ip","vendor","model","sn","manufacturing_date"]}},{"type":"inspection_results","enabled":true,"label":"巡检结果","config":{"show_output":true,"max_output_lines":60}},{"type":"ai_analysis","enabled":true,"label":"AI 分析总结","config":{}},{"type":"overall_assessment","enabled":true,"label":"总体评估","config":{}}]}',
     mode = 'visual'
 WHERE is_default = 1 AND (config_json IS NULL OR config_json = '');
