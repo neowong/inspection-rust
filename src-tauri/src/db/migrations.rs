@@ -27,5 +27,30 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 3")?;
     }
 
+    if version < 4 {
+        conn.execute_batch(include_str!("../../sql/004_enrich_report_templates.sql"))?;
+        conn.execute_batch("PRAGMA user_version = 4")?;
+    }
+
+    if version < 5 {
+        // Check if config_json column already exists (could be added by updated 004)
+        let has_config_json: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('report_templates') WHERE name = 'config_json'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if !has_config_json {
+            conn.execute_batch("ALTER TABLE report_templates ADD COLUMN config_json TEXT DEFAULT ''; ALTER TABLE report_templates ADD COLUMN mode TEXT DEFAULT 'visual' CHECK(mode IN ('visual','advanced'));")?;
+        }
+
+        // Update default template config (safe to run regardless)
+        conn.execute_batch(
+            "UPDATE report_templates SET config_json = '{\"sections\":[{\"type\":\"title\",\"enabled\":true,\"label\":\"报告标题\",\"config\":{}},{\"type\":\"basic_info\",\"enabled\":true,\"label\":\"基本信息\",\"config\":{\"fields\":[\"device_name\",\"device_ip\",\"vendor\",\"model\"]}},{\"type\":\"device_details\",\"enabled\":true,\"label\":\"设备详情\",\"config\":{\"fields\":[\"sn\",\"hostname\",\"os_release\",\"kernel\",\"cpu_cores\",\"mem_total\",\"manufacturing_date\"]}},{\"type\":\"inspection_results\",\"enabled\":true,\"label\":\"巡检结果\",\"config\":{\"show_output\":true,\"max_output_lines\":60}},{\"type\":\"ai_analysis\",\"enabled\":true,\"label\":\"AI 分析总结\",\"config\":{}},{\"type\":\"overall_assessment\",\"enabled\":true,\"label\":\"总体评估\",\"config\":{}}]}', mode = 'visual' WHERE is_default = 1 AND (config_json IS NULL OR config_json = '');"
+        )?;
+
+        conn.execute_batch("PRAGMA user_version = 5")?;
+    }
+
     Ok(())
 }

@@ -10,7 +10,7 @@ use crate::db::models::{
     record_from_row, device_from_row, report_template_from_row, now_str,
 };
 use crate::services::crypto::CryptoService;
-use crate::services::{ai_inspection, report_generator};
+use crate::services::{ai_inspection, report_generator, template_engine, template_variables};
 
 // ============================================================
 // Helpers
@@ -334,9 +334,86 @@ pub fn get_record(
 // Report Generation — Inner (sync, takes &Connection)
 // ============================================================
 
+/// Resolved template data: config_json, content, mode, format
+struct ResolvedTemplate {
+    config_json: String,
+    content: String,
+    mode: String,
+    format: String,
+}
+
+/// Resolve the report template to use for a record.
+/// Chain: record -> device -> inspection_template -> report_template_id.
+/// Falls back to default template (is_default=1), then to hardcoded builder.
+fn resolve_report_template(
+    conn: &rusqlite::Connection,
+    record: &InspectionRecord,
+    override_template_id: Option<i64>,
+) -> Result<Option<ResolvedTemplate>, String> {
+    let try_load = |tid: i64| -> Option<ResolvedTemplate> {
+        let sql = format!("SELECT {} FROM report_templates WHERE id = ?1", REPORT_TEMPLATE_COLUMNS);
+        crate::db::query::query_one(conn, &sql, rusqlite::params![tid], report_template_from_row)
+            .ok()
+            .flatten()
+            .filter(|t: &ReportTemplate| !t.config_json.is_empty() || !t.content.is_empty())
+            .map(|t| ResolvedTemplate {
+                config_json: t.config_json,
+                content: t.content,
+                mode: t.mode,
+                format: t.format,
+            })
+    };
+
+    // If an explicit override is provided, use that
+    if let Some(tid) = override_template_id {
+        if let Some(t) = try_load(tid) {
+            return Ok(Some(t));
+        }
+    }
+
+    // Walk the chain: record -> device -> template_id -> inspection_template -> report_template_id
+    let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+    if let Ok(Some(device)) = crate::db::query::query_one(
+        conn, &device_sql, rusqlite::params![record.device_id], device_from_row,
+    ) {
+        if let Some(tid) = device.template_id {
+            let tpl_sql = format!("SELECT {} FROM inspection_templates WHERE id = ?1", crate::db::models::TEMPLATE_COLUMNS);
+            if let Ok(Some(tpl)) = crate::db::query::query_one(
+                conn, &tpl_sql, rusqlite::params![tid],
+                crate::db::models::template_from_row,
+            ) {
+                if let Some(rt_id) = tpl.report_template_id {
+                    if let Some(t) = try_load(rt_id) {
+                        return Ok(Some(t));
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to default template
+    let default_sql = format!(
+        "SELECT {} FROM report_templates WHERE is_default = 1 LIMIT 1",
+        REPORT_TEMPLATE_COLUMNS
+    );
+    if let Ok(Some(t)) = crate::db::query::query_one(conn, &default_sql, &[], report_template_from_row) {
+        if !t.config_json.is_empty() || !t.content.is_empty() {
+            return Ok(Some(ResolvedTemplate {
+                config_json: t.config_json,
+                content: t.content,
+                mode: t.mode,
+                format: t.format,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
 fn generate_report_inner(
     conn: &rusqlite::Connection,
     record_id: i64,
+    template_id: Option<i64>,
 ) -> Result<String, String> {
     // 1. Get record
     let record_sql =
@@ -359,59 +436,46 @@ fn generate_report_inner(
     )?
     .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
 
-    // 3. Build context HashMap
-    let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
+    // 3. Resolve template
+    let template = resolve_report_template(conn, &record, template_id)?;
 
-    // Device info
-    ctx.insert(
-        "device_name".to_string(),
-        serde_json::Value::String(device.name.clone()),
-    );
-    ctx.insert(
-        "device_ip".to_string(),
-        serde_json::Value::String(device.ip.clone()),
-    );
-    ctx.insert(
-        "vendor".to_string(),
-        serde_json::Value::String(device.vendor.clone()),
-    );
-    if let Some(ref model) = device.model {
-        ctx.insert("model".to_string(), serde_json::Value::String(model.clone()));
-    }
-
-    // Command outputs (parse JSON -> Value)
-    if let Some(ref outputs_str) = record.command_outputs {
-        if let Ok(outputs_val) = serde_json::from_str::<serde_json::Value>(outputs_str) {
-            ctx.insert("command_outputs".to_string(), outputs_val);
+    let (markdown, extension) = if let Some(t) = template {
+        let ctx = template_variables::build_template_context(&device, &record);
+        let rendered = template_engine::render_template_from_config(
+            &t.config_json, &t.content, &t.mode, &ctx, &t.format,
+        );
+        let ext = if t.format == "html" { "html" } else { "md" };
+        (rendered, ext)
+    } else {
+        // Fallback to hardcoded markdown builder
+        let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
+        ctx.insert("device_name".into(), serde_json::Value::String(device.name.clone()));
+        ctx.insert("device_ip".into(), serde_json::Value::String(device.ip.clone()));
+        ctx.insert("vendor".into(), serde_json::Value::String(device.vendor.clone()));
+        if let Some(ref model) = device.model {
+            ctx.insert("model".into(), serde_json::Value::String(model.clone()));
         }
-    }
-
-    // Command judgments (parse JSON -> Value)
-    if let Some(ref judgments_str) = record.command_judgments {
-        if let Ok(judgments_val) = serde_json::from_str::<serde_json::Value>(judgments_str) {
-            ctx.insert("command_judgments".to_string(), judgments_val);
+        if let Some(ref outputs_str) = record.command_outputs {
+            if let Ok(outputs_val) = serde_json::from_str::<serde_json::Value>(outputs_str) {
+                ctx.insert("command_outputs".into(), outputs_val);
+            }
         }
-    }
-
-    // Summary
-    let summary = record
-        .summary_judgment
-        .clone()
-        .unwrap_or_else(|| String::new());
-    ctx.insert(
-        "summary".to_string(),
-        serde_json::Value::String(summary),
-    );
-
-    // 4. Build markdown
-    let markdown = report_generator::build_markdown(&ctx);
+        if let Some(ref judgments_str) = record.command_judgments {
+            if let Ok(judgments_val) = serde_json::from_str::<serde_json::Value>(judgments_str) {
+                ctx.insert("command_judgments".into(), judgments_val);
+            }
+        }
+        let summary = record.summary_judgment.clone().unwrap_or_default();
+        ctx.insert("summary".into(), serde_json::Value::String(summary));
+        (report_generator::build_markdown(&ctx), "md")
+    };
 
     // 5. Save to file
     let reports_dir = ensure_reports_dir()?;
     let now = chrono::Local::now()
         .format("%Y%m%d_%H%M%S")
         .to_string();
-    let file_name = format!("report_{}_{}.md", record_id, now);
+    let file_name = format!("report_{}_{}.{}", record_id, now, extension);
     let file_path = reports_dir.join(&file_name);
     std::fs::write(&file_path, &markdown)
         .map_err(|e| format!("保存报告文件失败: {}", e))?;
@@ -437,16 +501,18 @@ fn generate_report_inner(
 #[tauri::command]
 pub fn generate_report(
     record_id: i64,
+    template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<String, String> {
     let conn = state.db.lock();
-    generate_report_inner(&conn, record_id)
+    generate_report_inner(&conn, record_id, template_id)
 }
 
 /// 生成批次内所有已完成记录的巡检报告
 #[tauri::command]
 pub fn generate_batch_reports(
     batch_id: i64,
+    template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<Vec<String>, String> {
     // Get completed record IDs
@@ -468,7 +534,7 @@ pub fn generate_batch_reports(
     let mut reports = Vec::new();
     for rid in &record_ids {
         let conn = state.db.lock();
-        match generate_report_inner(&conn, *rid) {
+        match generate_report_inner(&conn, *rid, template_id) {
             Ok(markdown) => reports.push(markdown),
             Err(e) => {
                 eprintln!("生成记录 {} 报告失败: {}", rid, e);
@@ -621,7 +687,7 @@ pub fn list_report_templates(state: State<AppState>) -> Result<Vec<ReportTemplat
     crate::db::query::query_all(&conn, &sql, &[], report_template_from_row)
 }
 
-/// 上传报告模板（复制文件到 data/report_templates/ 目录）
+/// 上传报告模板（复制文件到 data/report_templates/ 目录，并读取内容到 DB）
 #[tauri::command]
 pub fn upload_template(
     file_path: String,
@@ -634,6 +700,10 @@ pub fn upload_template(
     // Copy file to report_templates directory
     let templates_dir = ensure_report_templates_dir()?;
     let src = std::path::Path::new(&file_path);
+    let ext = src.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("md");
+    let format = if ext == "html" { "html" } else { "markdown" };
     let file_name = format!(
         "{}_{}",
         uuid::Uuid::new_v4(),
@@ -647,10 +717,13 @@ pub fn upload_template(
 
     let dest_str = dest.to_string_lossy().to_string();
 
-    // Insert into DB
+    // Read file content into DB
+    let content = std::fs::read_to_string(&dest).unwrap_or_default();
+
+    // Insert into DB with new columns
     conn.execute(
-        "INSERT INTO report_templates (name, vendor, file_path) VALUES (?1, ?2, ?3)",
-        rusqlite::params![name, vendor, dest_str],
+        "INSERT INTO report_templates (name, vendor, file_path, content, format) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![name, vendor, dest_str, content, format],
     )
     .map_err(|e| e.to_string())?;
 
@@ -741,7 +814,7 @@ pub fn preview_template_context(
     ))
 }
 
-/// 删除报告模板（同时删除文件）
+/// 删除报告模板（同时删除文件，并清理关联引用）
 #[tauri::command]
 pub fn delete_report_template(
     template_id: i64,
@@ -761,6 +834,13 @@ pub fn delete_report_template(
     )?
     .ok_or_else(|| format!("报告模板 ID {} 不存在", template_id))?;
 
+    // Clear references in inspection_templates
+    conn.execute(
+        "UPDATE inspection_templates SET report_template_id = NULL WHERE report_template_id = ?1",
+        rusqlite::params![template_id],
+    )
+    .map_err(|e| e.to_string())?;
+
     // Delete from DB
     let affected = conn
         .execute(
@@ -774,8 +854,10 @@ pub fn delete_report_template(
     }
 
     // Try to delete the file (best-effort)
-    if let Err(e) = std::fs::remove_file(&template.file_path) {
-        eprintln!("删除模板文件失败: {}", e);
+    if !template.file_path.is_empty() {
+        if let Err(e) = std::fs::remove_file(&template.file_path) {
+            eprintln!("删除模板文件失败: {}", e);
+        }
     }
 
     Ok(())
@@ -822,6 +904,150 @@ pub fn batch_delete_report_templates(
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// 创建报告模板（内容编辑模式）
+#[tauri::command]
+pub fn create_report_template(
+    data: crate::db::models::ReportTemplateCreate,
+    state: State<AppState>,
+) -> Result<ReportTemplate, String> {
+    let conn = state.db.lock();
+
+    let format = data.format.unwrap_or_else(|| "markdown".to_string());
+    let description = data.description.unwrap_or_default();
+    let sample_data = data.sample_data.unwrap_or_else(|| "{}".to_string());
+    let content = data.content.unwrap_or_default();
+    let config_json = data.config_json.unwrap_or_default();
+    let mode = data.mode.unwrap_or_else(|| "visual".to_string());
+
+    conn.execute(
+        "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode) \
+         VALUES (?1, ?2, '', ?3, ?4, 0, ?5, ?6, ?7, ?8)",
+        rusqlite::params![data.name, data.vendor, content, format, description, sample_data, config_json, mode],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let last_id = conn.last_insert_rowid();
+
+    let sql = format!(
+        "SELECT {} FROM report_templates WHERE id = ?1",
+        REPORT_TEMPLATE_COLUMNS
+    );
+    crate::db::query::query_one(&conn, &sql, rusqlite::params![last_id], report_template_from_row)?
+        .ok_or_else(|| "创建报告模板后查询失败".to_string())
+}
+
+/// 更新报告模板内容
+#[tauri::command]
+pub fn update_report_template(
+    template_id: i64,
+    data: crate::db::models::ReportTemplateUpdate,
+    state: State<AppState>,
+) -> Result<ReportTemplate, String> {
+    let conn = state.db.lock();
+
+    // Build dynamic UPDATE
+    let mut sets = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(ref name) = data.name {
+        sets.push("name = ?");
+        params.push(Box::new(name.clone()));
+    }
+    if let Some(ref vendor) = data.vendor {
+        sets.push("vendor = ?");
+        params.push(Box::new(vendor.clone()));
+    }
+    if let Some(ref content) = data.content {
+        sets.push("content = ?");
+        params.push(Box::new(content.clone()));
+    }
+    if let Some(ref format) = data.format {
+        sets.push("format = ?");
+        params.push(Box::new(format.clone()));
+    }
+    if let Some(is_default) = data.is_default {
+        sets.push("is_default = ?");
+        params.push(Box::new(is_default));
+    }
+    if let Some(ref description) = data.description {
+        sets.push("description = ?");
+        params.push(Box::new(description.clone()));
+    }
+    if let Some(ref sample_data) = data.sample_data {
+        sets.push("sample_data = ?");
+        params.push(Box::new(sample_data.clone()));
+    }
+    if let Some(ref config_json) = data.config_json {
+        sets.push("config_json = ?");
+        params.push(Box::new(config_json.clone()));
+    }
+    if let Some(ref mode) = data.mode {
+        sets.push("mode = ?");
+        params.push(Box::new(mode.clone()));
+    }
+
+    if sets.is_empty() {
+        return Err("未提供任何更新字段".to_string());
+    }
+
+    sets.push("updated_at = ?");
+    params.push(Box::new(now_str()));
+
+    let set_clause = sets.join(", ");
+    let sql = format!(
+        "UPDATE report_templates SET {} WHERE id = ?{}",
+        set_clause,
+        params.len() + 1
+    );
+    params.push(Box::new(template_id));
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let affected = conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+
+    if affected == 0 {
+        return Err(format!("报告模板 ID {} 不存在", template_id));
+    }
+
+    let query_sql = format!(
+        "SELECT {} FROM report_templates WHERE id = ?1",
+        REPORT_TEMPLATE_COLUMNS
+    );
+    crate::db::query::query_one(&conn, &query_sql, rusqlite::params![template_id], report_template_from_row)?
+        .ok_or_else(|| "更新报告模板后查询失败".to_string())
+}
+
+/// 获取所有可用的模板变量定义（供前端变量选择器使用）
+#[tauri::command]
+pub fn get_available_variables() -> Result<Vec<template_variables::VariableDef>, String> {
+    Ok(template_variables::get_variable_definitions())
+}
+
+/// 预览报告模板（用示例数据渲染）
+#[tauri::command]
+pub fn render_template_preview(
+    template_id: i64,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock();
+
+    let sql = format!(
+        "SELECT {} FROM report_templates WHERE id = ?1",
+        REPORT_TEMPLATE_COLUMNS
+    );
+    let template = crate::db::query::query_one(
+        &conn,
+        &sql,
+        rusqlite::params![template_id],
+        report_template_from_row,
+    )?
+    .ok_or_else(|| format!("报告模板 ID {} 不存在", template_id))?;
+
+    let ctx = template_variables::build_sample_context();
+    Ok(template_engine::render_template_from_config(
+        &template.config_json, &template.content, &template.mode, &ctx, &template.format,
+    ))
 }
 
 // ============================================================
@@ -1055,11 +1281,12 @@ fn csv_escape(s: &str) -> String {
 #[tauri::command]
 pub fn generate_html_report(
     batch_id: i64,
+    template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<String, String> {
     let conn = state.db.lock();
 
-    let html = crate::services::report_builder::build_report_html(&conn, batch_id)?;
+    let html = crate::services::report_builder::build_report_html(&conn, batch_id, template_id)?;
 
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");

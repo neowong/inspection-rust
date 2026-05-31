@@ -1,4 +1,6 @@
-use crate::db::models::{InspectionBatch, InspectionRecord, Device, now_str, BATCH_COLUMNS, RECORD_COLUMNS, DEVICE_COLUMNS, batch_from_row, record_from_row, device_from_row};
+use crate::db::models::{InspectionBatch, InspectionRecord, Device, now_str, BATCH_COLUMNS, RECORD_COLUMNS, DEVICE_COLUMNS, REPORT_TEMPLATE_COLUMNS, batch_from_row, record_from_row, device_from_row, report_template_from_row};
+use super::template_engine;
+use std::collections::HashMap;
 
 const REPORT_HTML: &str = r#"<!DOCTYPE html>
 <html lang="zh-CN">
@@ -88,8 +90,9 @@ const DEVICE_SECTION: &str = r#"<div class="device-section">
 </div>"#;
 
 /// Build an HTML inspection report for a completed batch.
+/// If template_id is provided and valid, uses that template for rendering.
 /// Returns the full HTML string.
-pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64) -> Result<String, String> {
+pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id: Option<i64>) -> Result<String, String> {
     // 1. Get batch
     let batch_sql = format!("SELECT {} FROM inspection_batches WHERE id = ?1", BATCH_COLUMNS);
     let batch: InspectionBatch = crate::db::query::query_one(
@@ -149,11 +152,31 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64) -> Result<S
         records.len(),
     );
 
-    // 5. Assemble
-    let html = REPORT_HTML
-        .replace("{{report_title}}", &report_title)
-        .replace("{{report_meta}}", &report_meta)
-        .replace("{{device_sections}}", &device_sections);
+    // 5. Load template if specified
+    let template_content: Option<(String, String)> = if let Some(tid) = template_id {
+        let rt_sql = format!("SELECT {} FROM report_templates WHERE id = ?1", REPORT_TEMPLATE_COLUMNS);
+        crate::db::query::query_one(conn, &rt_sql, rusqlite::params![tid], report_template_from_row)
+            .ok()
+            .flatten()
+            .filter(|t| !t.content.is_empty())
+            .map(|t| (t.content, t.format))
+    } else {
+        None
+    };
+
+    // 6. Assemble: use template if available, otherwise use hardcoded HTML
+    let html = if let Some((content, format)) = template_content {
+        let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
+        ctx.insert("report_title".into(), serde_json::Value::String(report_title));
+        ctx.insert("report_meta".into(), serde_json::Value::String(report_meta));
+        ctx.insert("device_sections".into(), serde_json::Value::String(device_sections));
+        template_engine::render_template(&content, &ctx, &format)
+    } else {
+        REPORT_HTML
+            .replace("{{report_title}}", &report_title)
+            .replace("{{report_meta}}", &report_meta)
+            .replace("{{device_sections}}", &device_sections)
+    };
 
     Ok(html)
 }

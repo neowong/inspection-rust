@@ -246,8 +246,40 @@ pub struct ReportTemplate {
     pub name: String,
     pub vendor: Option<String>,
     pub file_path: String,
+    pub content: String,
+    pub format: String,
+    pub is_default: i64,
+    pub description: String,
+    pub sample_data: String,
+    pub config_json: String,
+    pub mode: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportTemplateCreate {
+    pub name: String,
+    pub vendor: Option<String>,
+    pub content: Option<String>,
+    pub format: Option<String>,
+    pub description: Option<String>,
+    pub sample_data: Option<String>,
+    pub config_json: Option<String>,
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportTemplateUpdate {
+    pub name: Option<String>,
+    pub vendor: Option<String>,
+    pub content: Option<String>,
+    pub format: Option<String>,
+    pub is_default: Option<i64>,
+    pub description: Option<String>,
+    pub sample_data: Option<String>,
+    pub config_json: Option<String>,
+    pub mode: Option<String>,
 }
 
 // ============================
@@ -295,7 +327,7 @@ pub const RECORD_COLUMNS: &str =
      started_at, completed_at, created_at, updated_at";
 
 pub const REPORT_TEMPLATE_COLUMNS: &str =
-    "id, name, vendor, file_path, created_at, updated_at";
+    "id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, created_at, updated_at";
 
 // ============================
 // 行映射函数（统一去重）
@@ -401,7 +433,14 @@ pub fn report_template_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportT
         name: row.get(1)?,
         vendor: row.get(2)?,
         file_path: row.get(3)?,
-        created_at: row.get(4)?,
-        updated_at: row.get(5)?,
+        content: row.get(4)?,
+        format: row.get(5)?,
+        is_default: row.get(6)?,
+        description: row.get(7)?,
+        sample_data: row.get(8)?,
+        config_json: row.get(9)?,
+        mode: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }

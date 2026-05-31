@@ -1629,6 +1629,7 @@ dependencies = [
  "fernet",
  "open",
  "parking_lot",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

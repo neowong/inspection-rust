@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { InspectionBatch, InspectionRecord } from "../types";
+import type { InspectionBatch, InspectionRecord, ReportTemplate } from "../types";
 import DataTable from "../components/DataTable";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -19,12 +19,17 @@ export default function ReportsPage() {
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
   const [htmlExporting, setHtmlExporting] = useState(false);
+  const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
 
   const loadBatches = useCallback(() => {
     invoke<InspectionBatch[]>("list_batches").then(setBatches).catch(console.error);
   }, []);
 
   useEffect(() => { loadBatches(); }, [loadBatches]);
+  useEffect(() => {
+    invoke<ReportTemplate[]>("list_report_templates").then(setReportTemplates).catch(() => {});
+  }, []);
 
   const loadRecord = useCallback((recordId: number) => {
     invoke<InspectionRecord>("get_record", { recordId })
@@ -50,10 +55,10 @@ export default function ReportsPage() {
 
   const handleGenerateReport = (recordId: number) => {
     setGenerating(true);
-    invoke<string>("generate_report", { recordId })
+    invoke<string>("generate_report", { recordId, templateId: selectedTemplateId })
       .then(() => {
         setGenerating(false);
-        loadRecord(recordId); // reload to get updated report_path
+        loadRecord(recordId);
         loadBatches();
       })
       .catch(() => setGenerating(false));
@@ -68,7 +73,7 @@ export default function ReportsPage() {
 
   const handleHtmlExport = (batchId: number) => {
     setHtmlExporting(true);
-    invoke<string>("generate_html_report", { batchId })
+    invoke<string>("generate_html_report", { batchId, templateId: selectedTemplateId })
       .then((filePath) => {
         invoke("open_in_browser", { filePath }).catch(console.error);
         setHtmlExporting(false);
@@ -184,7 +189,7 @@ export default function ReportsPage() {
             <h2 className="text-base font-semibold text-[hsl(var(--text-primary))]">
               设备 #{selectedRecord.device_id} 详情
             </h2>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center flex-wrap">
               <Button size="sm" onClick={() => handleLogAnalyze(selectedRecord.id)} loading={logAnalyzing}>
                 分析日志
               </Button>
@@ -197,6 +202,18 @@ export default function ReportsPage() {
               <Button size="sm" variant="primary" onClick={() => selectedBatch && handleHtmlExport(selectedBatch.id)} loading={htmlExporting}>
                 导出 HTML 报告
               </Button>
+              {reportTemplates.length > 0 && (
+                <select
+                  value={selectedTemplateId ?? ""}
+                  onChange={(e) => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
+                  className="h-7 px-2 text-xs rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] text-[hsl(var(--text-secondary))] focus:outline-none focus:border-[hsl(var(--accent))]"
+                >
+                  <option value="">模板: 跟随默认</option>
+                  {reportTemplates.map((rt) => (
+                    <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}</option>
+                  ))}
+                </select>
+              )}
               {selectedRecord.report_path && (
                 <Button size="sm" variant="secondary" onClick={() => handleDownloadReport(selectedRecord.id)} loading={downloading}>
                   下载报告

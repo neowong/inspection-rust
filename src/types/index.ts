@@ -108,8 +108,56 @@ export interface ReportTemplate {
   name: string;
   vendor: string | null;
   file_path: string;
+  content: string;
+  format: "markdown" | "html";
+  is_default: boolean;
+  description: string;
+  sample_data: string;
+  config_json: string;
+  mode: "visual" | "advanced";
   created_at: string;
   updated_at: string;
+}
+
+export interface ReportTemplateCreate {
+  name: string;
+  vendor?: string | null;
+  content?: string;
+  format?: "markdown" | "html";
+  description?: string;
+  sample_data?: string;
+  config_json?: string;
+  mode?: "visual" | "advanced";
+}
+
+export interface ReportTemplateUpdate {
+  name?: string;
+  vendor?: string | null;
+  content?: string;
+  format?: "markdown" | "html";
+  is_default?: boolean;
+  description?: string;
+  sample_data?: string;
+  config_json?: string;
+  mode?: "visual" | "advanced";
+}
+
+export interface TemplateSection {
+  type: "title" | "basic_info" | "device_details" | "inspection_results" | "ai_analysis" | "overall_assessment";
+  enabled: boolean;
+  label: string;
+  config: Record<string, unknown>;
+}
+
+export interface TemplateConfig {
+  sections: TemplateSection[];
+}
+
+export interface VariableDef {
+  name: string;
+  category: string;
+  description: string;
+  example: string;
 }
 
 export interface Stats {
