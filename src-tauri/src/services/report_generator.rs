@@ -35,7 +35,7 @@ fn ctx_opt_str(ctx: &HashMap<String, serde_json::Value>, key: &str) -> String {
 /// - `summary` (str)
 /// - `command_outputs` (map of command name to output string)
 /// - `command_judgments` (map of command name to judgment JSON object)
-pub fn build_markdown(ctx: &HashMap<String, serde_json::Value>) -> String {
+pub fn build_markdown(ctx: &HashMap<String, serde_json::Value>, cmd_descs: &HashMap<String, String>) -> String {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let device_name = ctx_str(ctx, "device_name", "未知设备");
 
@@ -93,7 +93,8 @@ pub fn build_markdown(ctx: &HashMap<String, serde_json::Value>) -> String {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            md.push_str(&format!("### {}\n\n", cmd));
+            let display_name = cmd_descs.get(cmd).map(|s| s.as_str()).unwrap_or(cmd);
+            md.push_str(&format!("### {}\n\n", display_name));
             md.push_str(&format!("- 状态: {}\n", status));
             md.push_str(&format!("- 结果: {}\n", finding));
             md.push_str(&format!("- 建议: {}\n", suggestion));

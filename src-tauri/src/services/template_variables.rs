@@ -170,9 +170,16 @@ pub fn get_variable_definitions() -> Vec<VariableDef> {
 /// Build the full template context HashMap from a device and inspection record.
 /// This is used both for live rendering and for preview (with sample data).
 pub fn build_template_context(
+    conn: &rusqlite::Connection,
     device: &Device,
     record: &InspectionRecord,
-) -> HashMap<String, serde_json::Value> {
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    // Load command descriptions for friendly labels
+    let cmd_descs = crate::services::report_builder::load_command_descriptions(conn);
+    let cmd_descs_val: serde_json::Map<String, serde_json::Value> = cmd_descs
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+        .collect();
     let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
 
     // Device info
@@ -237,7 +244,10 @@ pub fn build_template_context(
     ctx.insert("report_timestamp".into(), serde_json::Value::String(now.clone()));
     ctx.insert("generated_at".into(), serde_json::Value::String(now));
 
-    ctx
+    // Command descriptions for friendly labels
+    ctx.insert("command_descriptions".into(), serde_json::Value::Object(cmd_descs_val));
+
+    Ok(ctx)
 }
 
 /// Build a sample/fake context for template preview.

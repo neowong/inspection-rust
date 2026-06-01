@@ -128,6 +128,7 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 t.push_str("<thead><tr><th>序号</th><th>巡检项目</th><th>巡检结果</th><th>评判结论</th>");
                 if show_output { t.push_str("<th>原始输出</th>"); }
                 t.push_str("</tr></thead>\n<tbody>\n");
+                let cmd_desc_map = ctx.get("command_descriptions").and_then(|v| v.as_object());
                 if let Some(judgments) = ctx.get("command_judgments").and_then(|v| v.as_object()) {
                     let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
                     let mut seq = 0u32;
@@ -141,8 +142,12 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                         } else {
                             format!("{}：{}；建议：{}", html_escape_str(status), html_escape_str(finding), html_escape_str(suggestion))
                         };
+                        let display_name = cmd_desc_map
+                            .and_then(|m| m.get(cmd))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(cmd);
                         t.push_str(&format!("<tr><td class=\"num\">{}</td><td class=\"item\">{}</td><td class=\"detail\">{}</td><td class=\"verdict\">{}</td>",
-                            seq, html_escape_str(cmd), html_escape_str(finding), conclusion));
+                            seq, html_escape_str(display_name), html_escape_str(finding), conclusion));
                         if show_output {
                             let raw = outputs.and_then(|o| o.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
                             let trimmed = trim_output(raw, max_lines);
@@ -241,11 +246,16 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
             Some(serde_json::Value::Object(map)) => {
                 let mut out = String::new();
                 let mut seq = 0u32;
+                let cmd_desc_map = ctx.get("command_descriptions").and_then(|v| v.as_object());
                 for (cmd_name, jdg) in map {
                     seq += 1;
                     let mut rendered = inner.to_string();
                     rendered = rendered.replace("{{_seq}}", &seq.to_string());
-                    rendered = rendered.replace("{{command}}", cmd_name);
+                    let display_name = cmd_desc_map
+                        .and_then(|m| m.get(cmd_name))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(cmd_name);
+                    rendered = rendered.replace("{{command}}", display_name);
 
                     let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("-");
                     let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("-");

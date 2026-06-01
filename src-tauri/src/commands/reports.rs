@@ -10,7 +10,7 @@ use crate::db::models::{
     record_from_row, device_from_row, report_template_from_row, now_str,
 };
 use crate::services::crypto::CryptoService;
-use crate::services::{ai_inspection, report_generator, template_engine, template_variables};
+use crate::services::{ai_inspection, report_builder, report_generator, template_engine, template_variables};
 
 // ============================================================
 // Helpers
@@ -120,6 +120,13 @@ async fn analyze_record_inner(
     };
 
     // Step 3: AI analysis (async, no DB lock held)
+    // Log analysis start
+    let cmd_keys: Vec<&String> = command_outputs_map.keys().collect();
+    tracing::info!(
+        "开始 AI 分析 device_id={} record={}, 共 {} 条命令",
+        device_id, record_id_owned, cmd_keys.len()
+    );
+
     let analysis = match provider.as_str() {
         "openai" => {
             ai_inspection::analyze_with_openai(&api_key, &model, &base_url, &command_outputs_map)
@@ -147,6 +154,13 @@ async fn analyze_record_inner(
         _ => return Err(format!("不支持的 AI 提供商: {}", provider)),
     };
 
+    tracing::info!(
+        "AI 分析完成 device_id={} record={}: 综合={} 总结={}",
+        device_id, record_id_owned,
+        analysis.get("overall").and_then(|v| v.as_str()).unwrap_or("?"),
+        analysis.get("summary").and_then(|v| v.as_str()).unwrap_or("?"),
+    );
+
     // Step 4: Parse result and update record (lock, update, drop)
     {
         let conn = app_state.db.lock();
@@ -170,16 +184,23 @@ async fn analyze_record_inner(
         let mut suggestions = Vec::new();
 
         if let Some(items_array) = items {
+            let cmd_descs = report_builder::load_command_descriptions(&conn);
             for item in items_array {
                 if let Some(cmd) = item.get("command").and_then(|v| v.as_str()) {
+                    let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                    let finding = item.get("finding").and_then(|v| v.as_str()).unwrap_or("");
+                    let cmd_label = cmd_descs.get(cmd).map(|s| s.as_str()).unwrap_or(cmd);
+                    tracing::info!(
+                        "  AI分析结果 [{}] {} → {} ({})",
+                        status, cmd_label, finding, record_id_owned
+                    );
+
                     let mut jdg = serde_json::Map::new();
-                    if let Some(status) = item.get("status").and_then(|v| v.as_str()) {
-                        jdg.insert(
-                            "status".to_string(),
-                            serde_json::Value::String(status.to_string()),
-                        );
-                    }
-                    if let Some(finding) = item.get("finding").and_then(|v| v.as_str()) {
+                    jdg.insert(
+                        "status".to_string(),
+                        serde_json::Value::String(status.to_string()),
+                    );
+                    if !finding.is_empty() {
                         jdg.insert(
                             "finding".to_string(),
                             serde_json::Value::String(finding.to_string()),
@@ -448,13 +469,15 @@ fn generate_report_inner(
     let template = resolve_report_template(conn, &record, template_id)?;
 
     let (markdown, extension) = if let Some(t) = template {
-        let ctx = template_variables::build_template_context(&device, &record);
+        let ctx = template_variables::build_template_context(conn, &device, &record)?;
         let rendered = template_engine::render_template_from_config(
             &t.config_json, &t.content, &t.mode, &ctx, &t.format,
         );
         let ext = if t.format == "html" { "html" } else { "md" };
         (rendered, ext)
     } else {
+        // Load command descriptions for friendly labels
+        let cmd_descs = report_builder::load_command_descriptions(conn);
         // Fallback to hardcoded markdown builder
         let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
         ctx.insert("device_name".into(), serde_json::Value::String(device.name.clone()));
@@ -475,7 +498,7 @@ fn generate_report_inner(
         }
         let summary = record.summary_judgment.clone().unwrap_or_default();
         ctx.insert("summary".into(), serde_json::Value::String(summary));
-        (report_generator::build_markdown(&ctx), "md")
+        (report_generator::build_markdown(&ctx, &cmd_descs), "md")
     };
 
     // 5. Save to file

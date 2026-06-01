@@ -16,6 +16,7 @@ interface Props<T> {
   onRowClick?: (row: T) => void;
   selectedKey?: string | number | null;
   emptyText?: string;
+  className?: string;
 }
 
 export default function DataTable<T>({
@@ -26,12 +27,13 @@ export default function DataTable<T>({
   onContextMenu,
   onRowClick,
   selectedKey,
+  className,
   emptyText = "暂无数据",
 }: Props<T>) {
   return (
     <div className="border border-[hsl(var(--border))] rounded-lg overflow-hidden">
       <div className="overflow-auto max-h-[60vh]">
-        <table className="w-full text-sm">
+        <table className={`w-full text-sm ${className ?? ""}`}>
           <thead>
             <tr className="bg-[hsl(var(--bg-hover))] sticky top-0 z-10">
               {columns.map((col) => (

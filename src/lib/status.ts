@@ -1,4 +1,4 @@
-export type BatchStatus = "pending" | "running" | "completed" | "failed" | "stopped";
+export type BatchStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "partially_completed";
 
 export function batchStatusColor(status: string): BatchStatus {
   if (status === "pending" || status === "waiting") return "pending";
@@ -6,5 +6,6 @@ export function batchStatusColor(status: string): BatchStatus {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
   if (status === "stopped" || status === "paused") return "stopped";
+  if (status === "partially_completed") return "partially_completed";
   return "pending";
 }

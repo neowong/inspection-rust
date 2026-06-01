@@ -2,6 +2,25 @@ use crate::db::models::{InspectionBatch, InspectionRecord, Device, now_str, BATC
 use super::template_engine;
 use std::collections::HashMap;
 
+/// Load command→description mapping from the command pool.
+pub(crate) fn load_command_descriptions(conn: &rusqlite::Connection) -> HashMap<String, String> {
+    let mut stmt = match conn.prepare("SELECT command, description FROM command_pool") {
+        Ok(s) => s,
+        Err(_) => return HashMap::new(),
+    };
+    let map: HashMap<String, String> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ))
+        })
+        .ok()
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    map
+}
+
 const REPORT_HTML: &str = r#"<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -121,7 +140,10 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id
         return Err("批次中无已完成记录".to_string());
     }
 
-    // 3. Build device sections
+    // 3. Load command descriptions for friendly labels
+    let cmd_descs = load_command_descriptions(conn);
+
+    // 4. Build device sections
     let mut device_sections = String::new();
     for record in &records {
         // Get device
@@ -146,7 +168,7 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id
             updated_at: "".into(),
         });
 
-        let section = build_device_section(&device, record)?;
+        let section = build_device_section(&device, record, &cmd_descs)?;
         device_sections.push_str(&section);
     }
 
@@ -189,7 +211,7 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id
     Ok(html)
 }
 
-fn build_device_section(device: &Device, record: &InspectionRecord) -> Result<String, String> {
+fn build_device_section(device: &Device, record: &InspectionRecord, cmd_descs: &HashMap<String, String>) -> Result<String, String> {
     // Basic info table rows
     let model = device.model.as_deref().unwrap_or("-");
     let vendor = &device.vendor;
@@ -207,7 +229,7 @@ fn build_device_section(device: &Device, record: &InspectionRecord) -> Result<St
     );
 
     // Inspection rows
-    let inspection_rows = build_inspection_rows(record);
+    let inspection_rows = build_inspection_rows(record, cmd_descs);
 
     let section = DEVICE_SECTION
         .replace("{{device_name}}", &html_escape(&device.name))
@@ -217,7 +239,7 @@ fn build_device_section(device: &Device, record: &InspectionRecord) -> Result<St
     Ok(section)
 }
 
-fn build_inspection_rows(record: &InspectionRecord) -> String {
+fn build_inspection_rows(record: &InspectionRecord, cmd_descs: &HashMap<String, String>) -> String {
     let mut rows = String::new();
 
     // Parse command outputs and judgments
@@ -227,7 +249,7 @@ fn build_inspection_rows(record: &InspectionRecord) -> String {
     let mut seq = 0u32;
     for (cmd, output) in &outputs {
         seq += 1;
-        let cmd_label = cmd.clone();
+        let cmd_label = cmd_descs.get(cmd).cloned().unwrap_or_else(|| cmd.clone());
         let mut detail_parts = Vec::new();
         if let Some(jdg) = judgments.get(cmd) {
             let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("");

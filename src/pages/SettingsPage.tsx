@@ -199,7 +199,7 @@ export default function SettingsPage() {
             { key: "base_url", header: "Base URL", render: (r) => r.base_url || "-" },
             {
               key: "is_active", header: "状态", width: "80px", render: (r) => (
-                <StatusBadge status={r.is_active ? "online" : "offline"} />
+                <StatusBadge status={r.is_active ? "active" : "inactive"} />
               ),
             },
             {

@@ -5,10 +5,15 @@ pub mod services;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
 }
+
+/// Cached result of the last background AI health check.
+static LAST_AI_HEALTH: std::sync::Mutex<Option<services::ai_health::AiHealthResult>> =
+    std::sync::Mutex::new(None);
 
 impl AppState {
     pub fn new(db_path: &str) -> Self {
@@ -61,7 +66,7 @@ pub fn run() {
         std::fs::create_dir_all(data_dir.join(sub)).ok();
     }
 
-    // Background task: auto-detect device status every 5 minutes
+    // Background task: auto-detect device status every 5 minutes (blocking TCP, parallel via std::thread::scope)
     let bg_db = state.db.clone();
     std::thread::spawn(move || {
         loop {
@@ -75,6 +80,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            // Background task: AI health check every 5 minutes (async reqwest, needs tokio)
+            let ai_db = app.state::<AppState>().db.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+                    poll_ai_health(&ai_db).await;
+                }
+            });
+            Ok(())
+        })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // Devices
@@ -157,6 +173,8 @@ pub fn run() {
             // Stats & Health
             get_stats,
             health_check,
+            check_ai_health,
+            get_ai_health_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -191,7 +209,7 @@ fn health_check() -> serde_json::Value {
     serde_json::json!({"status": "ok", "version": "3.0.0"})
 }
 
-/// Background poller: TCP-connect each device's SSH port and update status.
+/// Background poller: TCP-connect each device's SSH port in parallel and update status.
 fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     let devices: Vec<(i64, String, i64)> = {
         if let Some(conn) = db.try_lock() {
@@ -215,30 +233,195 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     if devices.is_empty() { return; }
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let mut online_count = 0u32;
-    let mut offline_count = 0u32;
+    let online_count = std::sync::atomic::AtomicU32::new(0);
+    let offline_count = std::sync::atomic::AtomicU32::new(0);
 
-    for (id, ip, port) in &devices {
-        let new_status = match ip.parse::<std::net::IpAddr>() {
-            Ok(ip_addr) => {
-                match std::net::TcpStream::connect_timeout(
-                    &std::net::SocketAddr::new(ip_addr, *port as u16),
-                    std::time::Duration::from_secs(5),
-                ) {
-                    Ok(_) => { online_count += 1; "online" }
-                    Err(_) => { offline_count += 1; "offline" }
+    std::thread::scope(|s| {
+        for (id, ip, port) in &devices {
+            let db = Arc::clone(db);
+            let now = now.clone();
+            let online_ref = &online_count;
+            let offline_ref = &offline_count;
+            s.spawn(move || {
+                let new_status = match ip.parse::<std::net::IpAddr>() {
+                    Ok(ip_addr) => {
+                        match std::net::TcpStream::connect_timeout(
+                            &std::net::SocketAddr::new(ip_addr, *port as u16),
+                            std::time::Duration::from_secs(5),
+                        ) {
+                            Ok(_) => {
+                                online_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                "online"
+                            }
+                            Err(_) => {
+                                offline_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                "offline"
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        offline_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        "offline"
+                    }
+                };
+
+                if let Some(conn) = db.try_lock() {
+                    let _ = conn.execute(
+                        "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
+                        rusqlite::params![new_status, now, now, id],
+                    );
                 }
-            }
-            Err(_) => { offline_count += 1; "offline" }
-        };
-
-        if let Some(conn) = db.try_lock() {
-            let _ = conn.execute(
-                "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
-                rusqlite::params![new_status, now, now, id],
-            );
+            });
         }
+    });
+
+    tracing::info!(
+        "后台设备检测完成: {} 在线, {} 离线",
+        online_count.load(std::sync::atomic::Ordering::Relaxed),
+        offline_count.load(std::sync::atomic::Ordering::Relaxed)
+    );
+}
+
+/// Background task: check the active AI config's API health.
+async fn poll_ai_health(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
+    use crate::db::models::AiModelConfig;
+    use crate::services::crypto::CryptoService;
+
+    let config = {
+        let conn = match db.try_lock() {
+            Some(c) => c,
+            None => {
+                tracing::warn!("AI 健康检查跳过: DB 被锁定");
+                return;
+            }
+        };
+        crate::db::query::query_one(
+            &conn,
+            "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
+             is_active, created_at, updated_at \
+             FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+            &[],
+            |row| {
+                Ok(AiModelConfig {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    provider: row.get(2)?,
+                    model_id: row.get(3)?,
+                    api_key_encrypted: row.get(4)?,
+                    base_url: row.get(5)?,
+                    is_active: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            },
+        )
+    };
+
+    let config = match config {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            tracing::debug!("AI 健康检查跳过: 无激活的 AI 配置");
+            // Clear cached result since no config is active
+            if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+                *cache = None;
+            }
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("AI 健康检查跳过: 查询 AI 配置失败: {}", e);
+            return;
+        }
+    };
+
+    let api_key = match CryptoService::decrypt(&config.api_key_encrypted) {
+        Ok(k) => k,
+        Err(e) => {
+            tracing::warn!("AI 健康检查: API Key 解密失败: {}", e);
+            let result = services::ai_health::AiHealthResult {
+                reachable: false,
+                status: "error".to_string(),
+                error_type: Some("auth".to_string()),
+                message: "API Key 解密失败，请重新设置".to_string(),
+                provider: config.provider,
+                model: config.model_id,
+            };
+            if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+                *cache = Some(result);
+            }
+            return;
+        }
+    };
+
+    let base_url = config.base_url.unwrap_or_default();
+    let result = services::ai_health::check_ai_health(
+        &config.provider,
+        &api_key,
+        &config.model_id,
+        &base_url,
+    )
+    .await;
+
+    if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+        *cache = Some(result);
+    }
+}
+
+/// Manually trigger an AI health check for the active config.
+#[tauri::command]
+async fn check_ai_health(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
+    use crate::db::models::AiModelConfig;
+    use crate::services::crypto::CryptoService;
+
+    let config = {
+        let conn = state.db.lock();
+        crate::db::query::query_one(
+            &conn,
+            "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
+             is_active, created_at, updated_at \
+             FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+            &[],
+            |row| {
+                Ok(AiModelConfig {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    provider: row.get(2)?,
+                    model_id: row.get(3)?,
+                    api_key_encrypted: row.get(4)?,
+                    base_url: row.get(5)?,
+                    is_active: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            },
+        )?
+        .ok_or_else(|| "未找到激活的 AI 配置，请先在设置中配置并激活一个 AI 模型".to_string())?
+    };
+
+    let api_key = CryptoService::decrypt(&config.api_key_encrypted)?;
+    let base_url = config.base_url.unwrap_or_default();
+
+    let result = services::ai_health::check_ai_health(
+        &config.provider,
+        &api_key,
+        &config.model_id,
+        &base_url,
+    )
+    .await;
+
+    // Cache the result
+    if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+        *cache = Some(result.clone());
     }
 
-    tracing::info!("后台设备检测完成: {} 在线, {} 离线", online_count, offline_count);
+    Ok(serde_json::to_value(&result).map_err(|e| e.to_string())?)
+}
+
+/// Get the last cached AI health check result (from background poller).
+#[tauri::command]
+fn get_ai_health_status() -> Result<Option<serde_json::Value>, String> {
+    let cache = LAST_AI_HEALTH.lock().map_err(|e| e.to_string())?;
+    match &*cache {
+        Some(result) => Ok(Some(serde_json::to_value(result).map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
 }

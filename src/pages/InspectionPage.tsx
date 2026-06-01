@@ -41,7 +41,7 @@ export default function InspectionPage() {
   const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
   const [fullRecord, setFullRecord] = useState<InspectionRecord | null>(null);
   const [recordLoading, setRecordLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [batchAnalyzing, setBatchAnalyzing] = useState<number | null>(null);
   const [generating, setGenerating] = useState<number | null>(null);
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -208,17 +208,17 @@ export default function InspectionPage() {
   }, [expandedRecordId]);
 
   const handleAnalyzeRecord = (recordId: number) => {
-    setAnalyzing(true);
+    setAnalyzing(recordId);
     setErrorMsg(null);
     invoke("analyze_record", { recordId })
       .then(() => {
-        setAnalyzing(false);
+        setAnalyzing(null);
         invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
         refreshSelectedBatch();
         loadBatches();
       })
       .catch((e) => {
-        setAnalyzing(false);
+        setAnalyzing(null);
         setErrorMsg(`AI 分析失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
       });
   };
@@ -442,22 +442,53 @@ export default function InspectionPage() {
               </div>
             )}
 
-            {/* Records table */}
+            {/* Device list when batch hasn't run yet (no records) */}
+            {(!selectedBatch.records || selectedBatch.records.length === 0) && selectedBatch.device_ids && (() => {
+              try {
+                const raw = selectedBatch.device_ids;
+                const ids: number[] = typeof raw === "string" ? JSON.parse(raw) : (raw as unknown as number[]);
+                if (!Array.isArray(ids) || ids.length === 0) return null;
+                return (
+                  <div className="border border-[hsl(var(--border))] rounded-lg p-3">
+                    <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] mb-2">
+                      待执行设备 ({ids.length})
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                      {ids.map((id) => {
+                        const d = deviceMap.get(id);
+                        return (
+                          <div key={id} className="flex items-center gap-2 text-xs py-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--text-tertiary))] shrink-0" />
+                            <span className="font-medium text-[hsl(var(--text-primary))]">{d ? d.name : `设备 #${id}`}</span>
+                            {d && <span className="text-[hsl(var(--text-tertiary))]">({d.ip})</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              } catch { return null; }
+            })()}
+
+            {/* Records table (shown after batch execution) */}
+            {selectedBatch.records && selectedBatch.records.length > 0 && (
             <DataTable<InspectionRecordSummary>
+              className="table-fixed"
               columns={[
                 { key: "device_id", header: "设备", width: "160px", render: (r) => {
                   const d = deviceMap.get(r.device_id);
                   return d ? <span className="text-xs"><span className="font-medium">{d.name}</span> <span className="text-[hsl(var(--text-tertiary))]">({d.ip})</span></span> : `#${r.device_id}`;
                 }},
-                { key: "status", header: "状态", render: (r) => <StatusBadge status={batchStatusColor(r.status)} /> },
-                { key: "ai_status", header: "AI 状态", render: (r) => {
+                { key: "status", header: "状态", width: "90px", render: (r) => <StatusBadge status={batchStatusColor(r.status)} /> },
+                { key: "ai_status", header: "AI 状态", width: "90px", render: (r) => {
                   if (!r.ai_status || r.ai_status === "none") return <span className="text-[hsl(var(--text-tertiary))]">-</span>;
                   return <StatusBadge status={batchStatusColor(r.ai_status)} />;
                 }},
                 { key: "report_path", header: "报告", width: "70px", render: (r) =>
                   r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : <span className="text-[hsl(var(--text-tertiary))] text-xs">-</span>,
                 },
-                { key: "progress", header: "巡检进度", render: (r) => {
+                { key: "progress", header: "巡检进度", width: "130px", render: (r) => {
+                  if (r.ai_status === "processing") return <span className="text-xs text-[hsl(var(--info))]">AI 分析中...</span>;
                   if (r.status === "completed") return <span className="text-xs text-[hsl(var(--success))]">已完成</span>;
                   if (r.status === "running" && r.error_message) return <span className="text-xs text-[hsl(var(--info))]">{r.error_message}</span>;
                   if (r.status === "failed") return <span className="text-xs text-[hsl(var(--danger))]">{r.error_message || "执行失败"}</span>;
@@ -472,7 +503,13 @@ export default function InspectionPage() {
                       )}
                       {r.status === "completed" && (
                         <>
-                          <Button size="sm" variant="ghost" loading={analyzing} onClick={() => handleAnalyzeRecord(r.id)}>AI 分析</Button>
+                          {analyzing === r.id ? (
+                            <span className="text-xs text-[hsl(var(--info))]">AI 分析中...</span>
+                          ) : r.ai_status === "processing" ? (
+                            <Button size="sm" variant="ghost" onClick={() => loadFullRecord(r.id)}>查看进度</Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" onClick={() => handleAnalyzeRecord(r.id)}>AI 分析</Button>
+                          )}
                           <Button size="sm" variant="ghost" loading={generating === r.id} onClick={() => handleGenerateReport(r.id)}>生成报告</Button>
                         </>
                       )}
@@ -489,6 +526,7 @@ export default function InspectionPage() {
               selectedKey={expandedRecordId ?? undefined}
               emptyText="暂无记录"
             />
+            )}
 
             {/* Expanded record detail panel */}
             {expandedRecordId && fullRecord && (
@@ -499,7 +537,7 @@ export default function InspectionPage() {
                   </h3>
                   <div className="flex gap-2 items-center flex-wrap">
                     <Button size="sm" variant="ghost" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
-                    <Button size="sm" variant="ghost" loading={analyzing} onClick={() => handleAnalyzeRecord(fullRecord.id)}>AI 分析</Button>
+                    <Button size="sm" variant="ghost" loading={analyzing === fullRecord.id} onClick={() => handleAnalyzeRecord(fullRecord.id)}>AI 分析</Button>
                     <Button size="sm" variant="secondary" loading={generating === fullRecord.id} onClick={() => handleGenerateReport(fullRecord.id)}>生成报告</Button>
                     {fullRecord.report_path && (
                       <Button size="sm" variant="ghost" onClick={() => handleDownloadReport(fullRecord.id)}>下载报告</Button>
@@ -624,6 +662,14 @@ export default function InspectionPage() {
                     <p className="text-xs text-[hsl(var(--text-secondary))] font-mono bg-[hsl(var(--bg-hover))] px-2 py-1 rounded">
                       {fullRecord.report_path}
                     </p>
+                  </div>
+                )}
+
+                {/* AI analysis progress */}
+                {fullRecord.ai_status === "processing" && (
+                  <div className="mb-4 p-3 bg-[hsl(var(--info)_/_0.08)] border border-[hsl(var(--info)_/_0.2)] rounded-md flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-[hsl(var(--info))] border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm text-[hsl(var(--info))]">AI 正在分析 {(() => { const d = deviceMap.get(fullRecord.device_id); return d ? d.name : ""; })()} 的巡检数据...</span>
                   </div>
                 )}
 

@@ -1,3 +1,4 @@
+pub mod ai_health;
 pub mod ai_inspection;
 pub mod crypto;
 pub mod inspection_runner;
