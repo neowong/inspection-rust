@@ -276,12 +276,20 @@ pub async fn analyze_batch(
     }
 
     let total = record_ids.len();
+
+    // Run all records concurrently
+    let futures: Vec<_> = record_ids
+        .iter()
+        .map(|rid| async { (*rid, analyze_record_inner(&*state, *rid).await) })
+        .collect();
+    let results = futures::future::join_all(futures).await;
+
     let mut completed = 0u32;
     let mut failed = 0u32;
     let mut errors: Vec<serde_json::Value> = Vec::new();
 
-    for rid in &record_ids {
-        match analyze_record_inner(&*state, *rid).await {
+    for (rid, result) in results {
+        match result {
             Ok(_result) => {
                 completed += 1;
             }
