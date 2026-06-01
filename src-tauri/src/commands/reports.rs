@@ -513,7 +513,10 @@ pub fn generate_report(
     state: State<AppState>,
 ) -> Result<String, String> {
     let conn = state.db.lock();
-    generate_report_inner(&conn, record_id, template_id)
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        generate_report_inner(&conn, record_id, template_id)
+    }))
+    .map_err(|e| format!("生成报告时发生内部错误: {:?}", e))?
 }
 
 /// 生成批次内所有已完成记录的巡检报告
@@ -542,10 +545,15 @@ pub fn generate_batch_reports(
     let mut reports = Vec::new();
     for rid in &record_ids {
         let conn = state.db.lock();
-        match generate_report_inner(&conn, *rid, template_id) {
-            Ok(markdown) => reports.push(markdown),
-            Err(e) => {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            generate_report_inner(&conn, *rid, template_id)
+        })) {
+            Ok(Ok(markdown)) => reports.push(markdown),
+            Ok(Err(e)) => {
                 eprintln!("生成记录 {} 报告失败: {}", rid, e);
+            }
+            Err(e) => {
+                eprintln!("生成记录 {} 报告时发生内部错误: {:?}", rid, e);
             }
         }
     }
@@ -1294,7 +1302,10 @@ pub fn generate_html_report(
 ) -> Result<String, String> {
     let conn = state.db.lock();
 
-    let html = crate::services::report_builder::build_report_html(&conn, batch_id, template_id)?;
+    let html = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::services::report_builder::build_report_html(&conn, batch_id, template_id)
+    }))
+    .map_err(|e| format!("生成 HTML 报告时发生内部错误: {:?}", e))??;
 
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
