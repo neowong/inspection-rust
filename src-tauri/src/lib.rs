@@ -32,9 +32,70 @@ fn extract_webview2_loader() {
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    // Extract WebView2Loader.dll if not present
     let dll_path = exe_dir.join("WebView2Loader.dll");
     if !dll_path.exists() {
         let _ = std::fs::write(&dll_path, include_bytes!("../WebView2Loader.dll"));
+    }
+
+    // Check if WebView2 Runtime is installed by looking for registry key
+    if !is_webview2_installed() {
+        tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
+        let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.tmp.exe");
+        // Extract the bootstrapper (only on first run when runtime is missing)
+        if !setup_path.exists() {
+            let _ = std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe"));
+        }
+        // Run silent install (idempotent — exits fast if already installed)
+        match std::process::Command::new(&setup_path)
+            .args(["/silent", "/install"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Wait up to 120 seconds for install
+                match child.wait() {
+                    Ok(status) if status.success() => {
+                        tracing::info!("WebView2 Runtime 安装成功");
+                        let _ = std::fs::remove_file(&setup_path);
+                    }
+                    Ok(_) => {
+                        tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
+                    }
+                    Err(e) => {
+                        tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("无法启动 WebView2 安装程序: {}，请手动从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下载安装", e);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_webview2_installed() -> bool {
+    // Try to check via the registry (HKLM)
+    let output = std::process::Command::new("reg")
+        .args(["query", r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", "/v", "pv"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.contains("pv")
+        }
+        _ => {
+            // Fallback: check if any WebView2 runtime DLL exists in system32
+            let sys32 = std::path::Path::new(r"C:\Windows\System32");
+            // WebView2 Runtime installs edgeupdate and related files
+            // The simplest check: look for the WebView2 loader in common locations
+            sys32.join("Microsoft-Edge-WebView").exists()
+                || std::path::Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application").exists()
+        }
     }
 }
 
