@@ -65,10 +65,7 @@ export default function AppShell() {
           {/* Brand */}
           <div className={`flex items-center gap-3 h-12 border-b ${collapsed ? "px-0 justify-center" : "px-4"}`}
             style={{ borderColor: "hsl(var(--sidebar-hover))" }}>
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "hsl(var(--accent))" }}>
-              <img src="/network-internet-web-svgrepo-com.svg" alt="" className="w-5 h-5" style={{ filter: "brightness(0) invert(1)" }} />
-            </div>
+            <img src="/3636785.png" alt="" className="w-8 h-8 rounded shrink-0 object-contain" />
             {!collapsed && <span className="text-[15px] font-semibold tracking-tight" style={{ color: "hsl(var(--sidebar-text))" }}>NetInspect</span>}
           </div>
 
