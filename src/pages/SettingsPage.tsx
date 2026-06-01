@@ -20,13 +20,11 @@ interface ConfigForm {
   base_url: string;
 }
 
-const EMPTY_FORM: ConfigForm = { name: "", provider: "deepseek", model_id: "deepseek-chat", api_key: "", base_url: "" };
-const PROVIDERS = ["deepseek", "openai", "anthropic"];
-const PROVIDER_LABELS: Record<string, string> = {
-  deepseek: "DeepSeek",
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-};
+const EMPTY_FORM: ConfigForm = { name: "", provider: "openai", model_id: "", api_key: "", base_url: "" };
+const API_FORMATS = [
+  { value: "openai", label: "OpenAI 兼容", placeholder: "https://api.openai.com/v1" },
+  { value: "anthropic", label: "Anthropic", placeholder: "https://api.anthropic.com" },
+];
 
 export default function SettingsPage() {
   // System settings state
@@ -196,7 +194,7 @@ export default function SettingsPage() {
         <DataTable<AiModelConfig>
           columns={[
             { key: "name", header: "名称", render: (r) => r.name },
-            { key: "provider", header: "Provider", render: (r) => r.provider },
+            { key: "provider", header: "API 格式", render: (r) => API_FORMATS.find(f => f.value === r.provider)?.label || r.provider },
             { key: "model_id", header: "模型", render: (r) => r.model_id },
             { key: "base_url", header: "Base URL", render: (r) => r.base_url || "-" },
             {
@@ -247,14 +245,14 @@ export default function SettingsPage() {
             <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Provider</label>
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API 格式</label>
             <Select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
-              {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] || p}</option>)}
+              {API_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </Select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Model ID</label>
-            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder={form.provider === "deepseek" ? "deepseek-chat" : form.provider === "openai" ? "gpt-4o" : "claude-sonnet-4-20250514"} />
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模型名称</label>
+            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat, claude-sonnet-4-20250514" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>
@@ -262,7 +260,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Base URL（可选）</label>
-            <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
+            <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={API_FORMATS.find(f => f.value === form.provider)?.placeholder || ""} />
           </div>
         </div>
       </Modal>
