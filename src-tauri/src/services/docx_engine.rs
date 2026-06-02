@@ -308,22 +308,24 @@ fn run_text(run: &Run) -> String {
     }).collect()
 }
 
-/// 设置 Run 的文本（保留第一个 Text 节点，清空其余）
+/// 设置 Run 的文本，支持多行（用 Break 元素实现换行）
 fn set_run_text(run: &mut Run, text: &str) {
-    let mut first = true;
-    for child in run.children.iter_mut() {
-        if let RunChild::Text(ref mut t) = child {
-            if first {
-                t.text = text.to_string();
-                first = false;
-            } else {
-                t.text.clear();
-            }
+    // 清空所有现有子节点
+    run.children.clear();
+
+    // 按换行符拆分，插入 Break 元素
+    let lines: Vec<&str> = text.split('\n').collect();
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            run.children.push(RunChild::Break(Break::new(BreakType::TextWrapping)));
+        }
+        if !line.is_empty() {
+            run.children.push(RunChild::Text(Text::new(line.to_string())));
         }
     }
-    // 如果没有 Text 节点，添加一个
-    if first {
-        run.children.push(RunChild::Text(Text::new(text)));
+    // 如果完全为空，放一个空 Text
+    if run.children.is_empty() {
+        run.children.push(RunChild::Text(Text::new("")));
     }
 }
 
