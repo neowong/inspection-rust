@@ -82,5 +82,21 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 7")?;
     }
 
+    if version < 8 {
+        // 注册默认 docx 模板
+        let has_docx: bool = conn
+            .prepare("SELECT COUNT(*) FROM report_templates WHERE format = 'docx'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_docx {
+            conn.execute_batch(
+                "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer) \
+                 VALUES ('默认 DOCX 模板', '', 'data/default_template.docx', '', 'docx', 1, '系统内置的 Word 巡检报告模板', '{}', '', 'advanced', '', '', '');"
+            )?;
+        }
+        conn.execute_batch("PRAGMA user_version = 8")?;
+    }
+
     Ok(())
 }
