@@ -52,5 +52,18 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 5")?;
     }
 
+    if version < 6 {
+        // 添加设备 SN 和出厂日期字段
+        let has_sn: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'serial_number'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_sn {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN serial_number TEXT; ALTER TABLE devices ADD COLUMN manufacturing_date TEXT;")?;
+        }
+        conn.execute_batch("PRAGMA user_version = 6")?;
+    }
+
     Ok(())
 }

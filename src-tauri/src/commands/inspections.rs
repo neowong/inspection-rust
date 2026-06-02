@@ -319,6 +319,36 @@ pub fn get_batch(
 // Batch Mutate Commands
 // ============================================================
 
+/// 校验设备是否都配置了模板和 SSH 密码
+fn validate_devices_ready(
+    conn: &rusqlite::Connection,
+    device_ids: &[i64],
+) -> Result<(), String> {
+    let mut no_password: Vec<String> = Vec::new();
+    for &id in device_ids {
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        if let Ok(Some(device)) = crate::db::query::query_one(
+            conn, &sql, rusqlite::params![id], device_from_row,
+        ) {
+            let has_pwd = device
+                .ssh_password_encrypted
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            if !has_pwd {
+                no_password.push(format!("{} ({})", device.name, device.ip));
+            }
+        }
+    }
+    if !no_password.is_empty() {
+        return Err(format!(
+            "以下设备未配置 SSH 密码: {}",
+            no_password.join("、")
+        ));
+    }
+    Ok(())
+}
+
 /// 创建巡检批次。若 auto_start = true，则为每台设备创建记录并立即执行 SSH 巡检。
 #[tauri::command]
 pub async fn create_batch(
@@ -333,38 +363,7 @@ pub async fn create_batch(
     // 前置校验：检查所有设备是否有模板和 SSH 密码
     {
         let conn = state.db.lock();
-        let mut no_template: Vec<String> = Vec::new();
-        let mut no_password: Vec<String> = Vec::new();
-        for &id in &parsed_ids {
-            let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-            if let Ok(Some(device)) = crate::db::query::query_one(
-                &conn, &sql, rusqlite::params![id], device_from_row,
-            ) {
-                if device.template_id.is_none() {
-                    no_template.push(format!("{} ({})", device.name, device.ip));
-                }
-                let has_pwd = device
-                    .ssh_password_encrypted
-                    .as_ref()
-                    .map(|s| !s.is_empty())
-                    .unwrap_or(false);
-                if !has_pwd {
-                    no_password.push(format!("{} ({})", device.name, device.ip));
-                }
-            }
-        }
-        if !no_template.is_empty() {
-            return Err(format!(
-                "以下设备未关联巡检模板: {}",
-                no_template.join("、")
-            ));
-        }
-        if !no_password.is_empty() {
-            return Err(format!(
-                "以下设备未配置 SSH 密码: {}",
-                no_password.join("、")
-            ));
-        }
+        validate_devices_ready(&conn, &parsed_ids)?;
     }
 
     // 插入批次记录（短暂获锁）
@@ -519,37 +518,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         }
 
         // 前置校验：设备是否配置了模板和 SSH 密码
-        let mut no_template: Vec<String> = Vec::new();
-        let mut no_password: Vec<String> = Vec::new();
-        for &id in &ids {
-            let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-            if let Ok(Some(device)) = crate::db::query::query_one(
-                &conn, &sql, rusqlite::params![id], device_from_row,
-            ) {
-                if device.template_id.is_none() {
-                    no_template.push(format!("{} ({})", device.name, device.ip));
-                }
-                let has_pwd = device.ssh_password_encrypted
-                    .as_ref()
-                    .map(|s| !s.is_empty())
-                    .unwrap_or(false);
-                if !has_pwd {
-                    no_password.push(format!("{} ({})", device.name, device.ip));
-                }
-            }
-        }
-        if !no_template.is_empty() {
-            return Err(format!(
-                "以下设备未关联巡检模板，请先给设备分配巡检模板: {}",
-                no_template.join("、")
-            ));
-        }
-        if !no_password.is_empty() {
-            return Err(format!(
-                "以下设备未配置 SSH 密码，请先编辑设备添加密码: {}",
-                no_password.join("、")
-            ));
-        }
+        validate_devices_ready(&conn, &ids)?;
 
         // 更新批次状态为 running
         let now = now_str();

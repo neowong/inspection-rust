@@ -4,11 +4,14 @@ import { save } from "@tauri-apps/plugin-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { InspectionBatch, Device, InspectionRecordSummary, InspectionRecord, ReportTemplate } from "../types";
+import { useShakeValidation } from "../hooks/useShakeValidation";
+import { parseCommandOutputs, parseAiResult } from "../lib/utils";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
+import StatBadge from "../components/StatBadge";
 import StatusBadge from "../components/StatusBadge";
 import { batchStatusColor } from "../lib/status";
 
@@ -35,7 +38,6 @@ export default function InspectionPage() {
   const [retrying, setRetrying] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
 
   // Report/analysis state
   const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
@@ -51,14 +53,7 @@ export default function InspectionPage() {
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
 
-  const triggerShake = (field: string) => {
-    setShakeFields((prev) => new Set(prev).add(field));
-    setTimeout(() => setShakeFields((prev) => {
-      const next = new Set(prev);
-      next.delete(field);
-      return next;
-    }), 600);
-  };
+  const { shakeFields, triggerShake } = useShakeValidation();
 
   const loadBatches = useCallback(() => {
     invoke<InspectionBatch[]>("list_batches", { status: undefined })
@@ -304,31 +299,15 @@ export default function InspectionPage() {
   };
 
   // Memoized parsers for expanded record detail
-  const parsedOutputs = useMemo(() => {
-    if (!fullRecord?.command_outputs) return [];
-    try {
-      const parsed = JSON.parse(fullRecord.command_outputs);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return Object.entries(parsed).map(([command, content]) => ({
-          command,
-          content: typeof content === "string" ? content : JSON.stringify(content),
-        }));
-      }
-      if (Array.isArray(parsed)) return parsed;
-      return [{ command: "output", content: fullRecord.command_outputs }];
-    } catch {
-      return [{ command: "output", content: fullRecord.command_outputs }];
-    }
-  }, [fullRecord?.command_outputs]);
+  const parsedOutputs = useMemo(
+    () => parseCommandOutputs(fullRecord?.command_outputs),
+    [fullRecord?.command_outputs],
+  );
 
-  const aiResult = useMemo(() => {
-    if (!fullRecord?.ai_result) return null;
-    try {
-      return JSON.parse(fullRecord.ai_result);
-    } catch {
-      return null;
-    }
-  }, [fullRecord?.ai_result]);
+  const aiResult = useMemo(
+    () => parseAiResult(fullRecord?.ai_result),
+    [fullRecord?.ai_result],
+  );
 
   const deviceMap = useMemo(() => {
     const m = new Map<number, Device>();
@@ -774,13 +753,3 @@ export default function InspectionPage() {
   );
 }
 
-function StatBadge({ label, value, color }: { label: string; value: string; color: string }) {
-  const c = `hsl(var(--${color}))`;
-  const bg = color.startsWith("text") ? "bg-[hsl(var(--bg-hover))]" : `bg-[hsl(var(--${color})_/_0.1)]`;
-  return (
-    <div className={`rounded-lg ${bg} px-3 py-2 text-center`}>
-      <div className="text-lg font-bold" style={{ color: c }}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: c, opacity: 0.7 }}>{label}</div>
-    </div>
-  );
-}

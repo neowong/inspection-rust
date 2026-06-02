@@ -108,45 +108,29 @@ pub fn update_ai_config(
     .ok_or_else(|| format!("AI 配置 ID {} 不存在", config_id))?;
 
     // Build dynamic UPDATE
-    let mut set_parts: Vec<String> = Vec::new();
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    let mut idx = 1i32;
-
-    macro_rules! push_field {
-        ($field:ident, $col:expr) => {
-            if let Some(ref val) = data.$field {
-                set_parts.push(format!("{} = ?{}", $col, idx));
-                params.push(Box::new(val.clone()));
-                idx += 1;
-            }
-        };
-    }
-
-    push_field!(name, "name");
-    push_field!(provider, "provider");
-    push_field!(model_id, "model_id");
-    push_field!(base_url, "base_url");
+    let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+    updater.push_opt("name", &data.name);
+    updater.push_opt("provider", &data.provider);
+    updater.push_opt("model_id", &data.model_id);
+    updater.push_opt("base_url", &data.base_url);
 
     // Handle API key encryption
     if let Some(ref api_key) = data.api_key_encrypted {
         if !api_key.is_empty() {
             let encrypted = CryptoService::encrypt(api_key)?;
-            set_parts.push(format!("api_key_encrypted = ?{}", idx));
-            params.push(Box::new(encrypted));
-            idx += 1;
+            updater.push_raw("api_key_encrypted", encrypted);
         }
     }
 
     // Handle is_active
-    if let Some(ref is_active) = data.is_active {
-        set_parts.push(format!("is_active = ?{}", idx));
-        params.push(Box::new(*is_active));
-        idx += 1;
-    }
+    updater.push_opt("is_active", &data.is_active);
 
-    if set_parts.is_empty() {
+    if updater.is_empty() {
         return Ok(existing);
     }
+
+    let (mut set_parts, mut params) = updater.finish();
+    let idx = params.len() as i32 + 1;
 
     set_parts.push("updated_at = datetime('now')".to_string());
 

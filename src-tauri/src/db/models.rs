@@ -20,6 +20,8 @@ pub struct Device {
     pub template_id: Option<i64>,
     pub status: String,
     pub last_checked_at: Option<String>,
+    pub serial_number: Option<String>,
+    pub manufacturing_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -38,6 +40,8 @@ pub struct DeviceCreate {
     pub template_id: Option<i64>,
     pub status: Option<String>,
     pub last_checked_at: Option<String>,
+    pub serial_number: Option<String>,
+    pub manufacturing_date: Option<String>,
 }
 
 /// 更新设备 - 前端请求 DTO（全部可选）
@@ -54,6 +58,8 @@ pub struct DeviceUpdate {
     pub template_id: Option<i64>,
     pub status: Option<String>,
     pub last_checked_at: Option<String>,
+    pub serial_number: Option<String>,
+    pub manufacturing_date: Option<String>,
 }
 
 // ============================
@@ -309,7 +315,8 @@ pub fn now_str() -> String {
 
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
-     ssh_port, template_id, status, last_checked_at, created_at, updated_at";
+     ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, \
+     created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
     "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
@@ -347,8 +354,10 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         template_id: row.get(9)?,
         status: row.get(10)?,
         last_checked_at: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        serial_number: row.get(12)?,
+        manufacturing_date: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 

@@ -49,13 +49,3 @@ where
     }
 }
 
-/// 查询记录数
-///
-/// # Arguments
-/// * `conn` - 数据库连接
-/// * `sql` - SQL 计数查询语句
-/// * `params` - 查询参数
-pub fn count(conn: &Connection, sql: &str, params: &[&dyn ToSql]) -> Result<i64, String> {
-    conn.query_row(sql, params, |row| row.get(0))
-        .map_err(|e| e.to_string())
-}

@@ -10,6 +10,8 @@ export interface Device {
   template_id: number | null;
   status: "online" | "offline" | "unknown";
   last_checked_at: string | null;
+  serial_number: string | null;
+  manufacturing_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -119,29 +121,6 @@ export interface ReportTemplate {
   updated_at: string;
 }
 
-export interface ReportTemplateCreate {
-  name: string;
-  vendor?: string | null;
-  content?: string;
-  format?: "markdown" | "html";
-  description?: string;
-  sample_data?: string;
-  config_json?: string;
-  mode?: "visual" | "advanced";
-}
-
-export interface ReportTemplateUpdate {
-  name?: string;
-  vendor?: string | null;
-  content?: string;
-  format?: "markdown" | "html";
-  is_default?: boolean;
-  description?: string;
-  sample_data?: string;
-  config_json?: string;
-  mode?: "visual" | "advanced";
-}
-
 export interface TemplateSection {
   type: "title" | "basic_info" | "inspection_results" | "ai_analysis" | "overall_assessment";
   enabled: boolean;
@@ -151,13 +130,6 @@ export interface TemplateSection {
 
 export interface TemplateConfig {
   sections: TemplateSection[];
-}
-
-export interface VariableDef {
-  name: string;
-  category: string;
-  description: string;
-  example: string;
 }
 
 export interface Stats {
@@ -171,6 +143,3 @@ export interface Stats {
   completed_batch_count: number;
 }
 
-export interface SystemSettings {
-  report_max_output_lines: number;
-}

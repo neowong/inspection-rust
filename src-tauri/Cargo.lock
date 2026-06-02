@@ -1639,7 +1639,6 @@ dependencies = [
 name = "inspection-rust"
 version = "3.0.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "chrono",
  "dirs",
@@ -1652,7 +1651,6 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "serde_yml",
  "ssh2",
  "tauri",
  "tauri-build",
@@ -1660,7 +1658,6 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-process",
  "tauri-plugin-shell",
- "thiserror 1.0.69",
  "tokio",
  "toml 0.8.2",
  "tracing",
@@ -1905,16 +1902,6 @@ dependencies = [
  "openssl-sys",
  "pkg-config",
  "vcpkg",
-]
-
-[[package]]
-name = "libyml"
-version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3302702afa434ffa30847a83305f0a69d6abd74293b6554c18ec85c7ef30c980"
-dependencies = [
- "anyhow",
- "version_check",
 ]
 
 [[package]]
@@ -3265,21 +3252,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "serde_yml"
-version = "0.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59e2dd588bf1597a252c3b920e0143eb99b0f76e4e082f4c92ce34fbc9e71ddd"
-dependencies = [
- "indexmap 2.14.0",
- "itoa",
- "libyml",
- "memchr",
- "ryu",
- "serde",
- "version_check",
 ]
 
 [[package]]

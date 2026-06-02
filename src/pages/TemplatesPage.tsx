@@ -4,6 +4,8 @@ import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { InspectionTemplate, CommandPool, ReportTemplate, TemplateSection, TemplateConfig } from "../types";
+import { useShakeValidation } from "../hooks/useShakeValidation";
+import { friendlyError } from "../lib/utils";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
 import DataTable from "../components/DataTable";
@@ -98,16 +100,7 @@ export default function TemplatesPage() {
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
-
-  const triggerShake = (field: string) => {
-    setShakeFields((prev) => new Set(prev).add(field));
-    setTimeout(() => setShakeFields((prev) => {
-      const next = new Set(prev);
-      next.delete(field);
-      return next;
-    }), 600);
-  };
+  const { shakeFields, triggerShake } = useShakeValidation();
 
   // Command pool state
   const [commands, setCommands] = useState<CommandPool[]>([]);
@@ -211,7 +204,7 @@ export default function TemplatesPage() {
 
     promise
       .then(() => { setTemplateModal(false); loadTemplates(); })
-      .catch((e) => { setSaveError(typeof e === "string" ? e : JSON.stringify(e)); })
+      .catch((e) => { setSaveError(friendlyError(e)); triggerShake("template_name"); })
       .finally(() => setSaving(false));
   };
 
@@ -250,7 +243,10 @@ export default function TemplatesPage() {
       : invoke<CommandPool>("create_command", { data: { ...cmdForm } });
     promise
       .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); setEditingCmd(null); loadCommands(); })
-      .catch((e) => setCmdSaveError(typeof e === "string" ? e : JSON.stringify(e)))
+      .catch((e) => {
+        setCmdSaveError(friendlyError(e));
+        triggerShake("cmd_command");
+      })
       .finally(() => setCmdSaving(false));
   };
 
@@ -355,7 +351,7 @@ export default function TemplatesPage() {
 
     promise
       .then(() => { setReportModalOpen(false); loadReportTemplates(); })
-      .catch((e) => setReportSaveError(typeof e === "string" ? e : JSON.stringify(e)))
+      .catch((e) => { setReportSaveError(friendlyError(e)); triggerShake("report_name"); })
       .finally(() => setReportSaving(false));
   };
 
@@ -596,15 +592,11 @@ export default function TemplatesPage() {
           }
         >
           <div className="space-y-3">
-            {saveError && (
-              <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-                {saveError}
-              </div>
-            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
                 <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
+                {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
@@ -707,11 +699,6 @@ export default function TemplatesPage() {
           }
         >
           <div className="space-y-3">
-            {cmdSaveError && (
-              <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-                {cmdSaveError}
-              </div>
-            )}
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
               <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
@@ -720,7 +707,18 @@ export default function TemplatesPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
-              <Input value={cmdForm.command} className={shakeFields.has("cmd_command") ? "animate-shake" : ""} onChange={(e) => setCmdForm({ ...cmdForm, command: e.target.value })} placeholder="display version" />
+              <Input
+                value={cmdForm.command}
+                className={shakeFields.has("cmd_command") ? "animate-shake" : ""}
+                onChange={(e) => {
+                  setCmdForm({ ...cmdForm, command: e.target.value });
+                  if (cmdSaveError) setCmdSaveError(null);
+                }}
+                placeholder="display version"
+              />
+              {cmdSaveError && (
+                <p className="mt-1 text-xs text-[hsl(var(--danger))]">{cmdSaveError}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
@@ -773,17 +771,12 @@ export default function TemplatesPage() {
         }
       >
         <div className="space-y-3" style={{ maxHeight: "72vh", overflowY: "auto" }}>
-          {reportSaveError && (
-            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-              {reportSaveError}
-            </div>
-          )}
-
           {/* Top row: name + vendor + format + mode */}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模板名称</label>
-              <Input value={reportForm.name} onChange={(e) => { setReportForm({ ...reportForm, name: e.target.value }); setReportSaveError(null); }} placeholder="如：标准巡检报告" />
+              <Input value={reportForm.name} className={shakeFields.has("report_name") ? "animate-shake" : ""} onChange={(e) => { setReportForm({ ...reportForm, name: e.target.value }); setReportSaveError(null); }} placeholder="如：标准巡检报告" />
+              {reportSaveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{reportSaveError}</p>}
             </div>
             <div className="w-28">
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
@@ -1194,6 +1187,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   vlan: "VLAN",
   log: "日志",
   protocol: "协议",
+  wireless: "无线",
   general: "通用",
 };
 

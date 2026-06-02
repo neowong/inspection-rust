@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Upload, Search, FileText } from "lucide-react";
 import Button from "../components/ui/Button";
 import { Select } from "../components/ui/Input";
+import StatBadge from "../components/StatBadge";
 
 interface LogEntry {
   timestamp: string;
@@ -198,13 +199,3 @@ export default function LogAnalysisPage() {
   );
 }
 
-function StatBadge({ label, value, color }: { label: string; value: number; color: string }) {
-  const c = color.startsWith("text") ? `hsl(var(--${color}))` : `hsl(var(--${color}))`;
-  const bg = color.startsWith("text") ? "bg-[hsl(var(--bg-hover))]" : `bg-[hsl(var(--${color})_/_0.1)]`;
-  return (
-    <div className={`rounded-lg ${bg} px-3 py-2 text-center`}>
-      <div className="text-lg font-bold" style={{ color: c }}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: c, opacity: 0.7 }}>{label}</div>
-    </div>
-  );
-}

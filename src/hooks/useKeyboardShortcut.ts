@@ -3,11 +3,6 @@ import { useEffect } from "react";
 type ShortcutHandler = () => void;
 const shortcuts = new Map<string, ShortcutHandler>();
 
-export function registerShortcut(key: string, handler: ShortcutHandler) {
-  shortcuts.set(key, handler);
-  return () => shortcuts.delete(key);
-}
-
 export function useGlobalShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

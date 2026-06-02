@@ -24,7 +24,6 @@ pub fn generate_template(
     db: &rusqlite::Connection,
     vendor: &str,
     model: Option<&str>,
-    _device_type: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     // Build base query
     let mut sql = String::from(
@@ -42,8 +41,8 @@ pub fn generate_template(
     sql.push_str(" ORDER BY category, id");
 
     info!(
-        "Generating template for vendor={}, model={:?}, device_type={:?}",
-        vendor, model, _device_type
+        "Generating template for vendor={}, model={:?}",
+        vendor, model
     );
 
     // Prepare and execute query

@@ -5,9 +5,11 @@ import DataTable from "../components/DataTable";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import StatusBadge from "../components/StatusBadge";
+import StatBadge from "../components/StatBadge";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { batchStatusColor } from "../lib/status";
+import { parseCommandOutputs, parseAiResult } from "../lib/utils";
 
 export default function ReportsPage() {
   const [batches, setBatches] = useState<InspectionBatch[]>([]);
@@ -19,6 +21,7 @@ export default function ReportsPage() {
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
   const [htmlExporting, setHtmlExporting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
 
@@ -44,31 +47,35 @@ export default function ReportsPage() {
 
   const handleAnalyze = (recordId: number) => {
     setAnalyzing(true);
+    setErrorMsg(null);
     invoke("analyze_record", { recordId })
       .then(() => {
-        loadRecord(recordId); // reload full record with AI data
-        setAnalyzing(false);
+        loadRecord(recordId);
         loadBatches();
       })
-      .catch(() => setAnalyzing(false));
+      .catch((e) => setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setAnalyzing(false));
   };
 
   const handleGenerateReport = (recordId: number) => {
     setGenerating(true);
+    setErrorMsg(null);
     invoke<string>("generate_report", { recordId, templateId: selectedTemplateId })
       .then(() => {
-        setGenerating(false);
         loadRecord(recordId);
         loadBatches();
       })
-      .catch(() => setGenerating(false));
+      .catch((e) => setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setGenerating(false));
   };
 
   const handleDownloadReport = (recordId: number) => {
     setDownloading(true);
+    setErrorMsg(null);
     invoke<void>("download_report", { recordId })
-      .then(() => setDownloading(false))
-      .catch(() => setDownloading(false));
+      .then(() => {})
+      .catch((e) => setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setDownloading(false));
   };
 
   const handleHtmlExport = (batchId: number) => {
@@ -94,40 +101,28 @@ export default function ReportsPage() {
   };
 
   // Parse command outputs (HashMap<string, string> → array of {command, content})
-  const parsedOutputs = useMemo(() => {
-    if (!selectedRecord?.command_outputs) return [];
-    try {
-      const parsed = JSON.parse(selectedRecord.command_outputs);
-      // Object form: { "display version": "output...", ... }
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return Object.entries(parsed).map(([command, content]) => ({
-          command,
-          content: typeof content === "string" ? content : JSON.stringify(content),
-        }));
-      }
-      // Array form fallback
-      if (Array.isArray(parsed)) return parsed;
-      return [{ command: "output", content: selectedRecord.command_outputs }];
-    } catch {
-      return [{ command: "output", content: selectedRecord.command_outputs }];
-    }
-  }, [selectedRecord?.command_outputs]);
+  const parsedOutputs = useMemo(
+    () => parseCommandOutputs(selectedRecord?.command_outputs),
+    [selectedRecord?.command_outputs],
+  );
 
   // Parse AI result
-  const aiResult = useMemo(() => {
-    if (!selectedRecord?.ai_result) return null;
-    try {
-      return JSON.parse(selectedRecord.ai_result);
-    } catch {
-      return null;
-    }
-  }, [selectedRecord?.ai_result]);
+  const aiResult = useMemo(
+    () => parseAiResult(selectedRecord?.ai_result),
+    [selectedRecord?.ai_result],
+  );
 
   return (
     <div className="space-y-6">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检报告</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">查看巡检结果、AI 分析和生成报告</p>
+        {errorMsg && (
+          <div className="mt-2 p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))] flex items-center justify-between">
+            <span>{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="ml-2 text-[hsl(var(--danger))] hover:opacity-70">✕</button>
+          </div>
+        )}
       </div>
 
       {/* Batch list */}
@@ -343,13 +338,3 @@ export default function ReportsPage() {
   );
 }
 
-function StatBadge({ label, value, color }: { label: string; value: string; color: string }) {
-  const c = color.startsWith("text") ? `hsl(var(--${color}))` : `hsl(var(--${color}))`;
-  const bg = color.startsWith("text") ? "bg-[hsl(var(--bg-hover))]" : `bg-[hsl(var(--${color})_/_0.1)]`;
-  return (
-    <div className={`rounded-lg ${bg} px-3 py-2 text-center`}>
-      <div className="text-lg font-bold" style={{ color: c }}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide" style={{ color: c, opacity: 0.7 }}>{label}</div>
-    </div>
-  );
-}

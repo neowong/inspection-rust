@@ -150,7 +150,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -163,6 +163,8 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.template_id,
             status,
             data.last_checked_at,
+            data.serial_number,
+            data.manufacturing_date,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -207,44 +209,34 @@ pub fn update_device(
     }
 
     // 构建动态 UPDATE
-    let mut set_parts: Vec<String> = Vec::new();
-    let mut params: Vec<Box<dyn ToSql>> = Vec::new();
-    let mut idx = 1i32;
-
-    macro_rules! push_field {
-        ($field:ident, $col:expr) => {
-            if let Some(ref val) = data.$field {
-                set_parts.push(format!("{} = ?{}", $col, idx));
-                params.push(Box::new(val.clone()));
-                idx += 1;
-            }
-        };
-    }
-
-    push_field!(name, "name");
-    push_field!(ip, "ip");
-    push_field!(device_type, "device_type");
-    push_field!(vendor, "vendor");
-    push_field!(model, "model");
-    push_field!(ssh_username, "ssh_username");
-    push_field!(ssh_port, "ssh_port");
-    push_field!(template_id, "template_id");
-    push_field!(status, "status");
-    push_field!(last_checked_at, "last_checked_at");
+    let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+    updater.push_opt("name", &data.name);
+    updater.push_opt("ip", &data.ip);
+    updater.push_opt("device_type", &data.device_type);
+    updater.push_opt("vendor", &data.vendor);
+    updater.push_opt("model", &data.model);
+    updater.push_opt("ssh_username", &data.ssh_username);
+    updater.push_opt("ssh_port", &data.ssh_port);
+    updater.push_opt("template_id", &data.template_id);
+    updater.push_opt("status", &data.status);
+    updater.push_opt("last_checked_at", &data.last_checked_at);
+    updater.push_opt("serial_number", &data.serial_number);
+    updater.push_opt("manufacturing_date", &data.manufacturing_date);
 
     // 处理密码加密
     if let Some(ref pass) = data.ssh_password_encrypted {
         if !pass.is_empty() {
             let encrypted = CryptoService::encrypt(pass)?;
-            set_parts.push(format!("ssh_password_encrypted = ?{}", idx));
-            params.push(Box::new(encrypted));
-            idx += 1;
+            updater.push_raw("ssh_password_encrypted", encrypted);
         }
     }
 
-    if set_parts.is_empty() {
+    if updater.is_empty() {
         return Ok(existing);
     }
+
+    let (mut set_parts, mut params) = updater.finish();
+    let idx = params.len() as i32 + 1;
 
     set_parts.push("updated_at = datetime('now')".to_string());
 
@@ -481,4 +473,109 @@ pub fn get_device_status_log(
         rusqlite::params![device_id],
         status_log_from_row,
     )
+}
+
+/// 自动检测设备型号（通过 SSH 登录执行厂商命令）
+#[tauri::command]
+pub async fn detect_device_model(
+    ip: String,
+    ssh_port: u16,
+    ssh_username: String,
+    ssh_password: String,
+    vendor: String,
+) -> Result<String, String> {
+    use crate::services::inspection_runner::{self, SSHSessionSource};
+
+    // 仅支持 H3C
+    let cmd = match vendor.as_str() {
+        "H3C" | "华三" => "display device manuinfo",
+        _ => return Err("当前仅支持 H3C 设备自动检测型号".to_string()),
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let source = SSHSessionSource {
+            host: ip,
+            port: ssh_port,
+            username: ssh_username,
+            password: ssh_password.clone(),
+        };
+
+        let session = inspection_runner::connect_session(&source)?;
+        let (base_prompt, mut channel) = inspection_runner::open_shell_session(
+            &session,
+            &vendor,
+            &source.password,
+            &source.host,
+        )?;
+
+        let output = inspection_runner::send_command(
+            &mut channel,
+            cmd,
+            &base_prompt,
+            &source.password,
+            &source.host,
+            &vendor,
+        )?;
+
+        let _ = channel.close();
+        let _ = session.disconnect(None, "done", None);
+
+        // 从输出中提取信息
+        let cleaned = inspection_runner::clean_output(&output, &base_prompt);
+        let info = parse_h3c_device_info(&cleaned);
+        Ok(serde_json::json!(info).to_string())
+    })
+    .await
+    .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
+/// H3C 设备信息
+#[derive(serde::Serialize)]
+struct H3cDeviceInfo {
+    model: Option<String>,
+    serial_number: Option<String>,
+    manufacturing_date: Option<String>,
+}
+
+/// 从 H3C display device manuinfo 输出中解析设备信息
+fn parse_h3c_device_info(output: &str) -> H3cDeviceInfo {
+    let mut model = None;
+    let mut serial_number = None;
+    let mut manufacturing_date = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if model.is_none() {
+            if let Some(v) = extract_h3c_field(trimmed, &["DEVICE_NAME", "PRODUCT_NAME"]) {
+                model = Some(v);
+            }
+        }
+        if serial_number.is_none() {
+            if let Some(v) = extract_h3c_field(trimmed, &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER"]) {
+                serial_number = Some(v);
+            }
+        }
+        if manufacturing_date.is_none() {
+            if let Some(v) = extract_h3c_field(trimmed, &["MANUFACTURING_DATE"]) {
+                manufacturing_date = Some(v);
+            }
+        }
+    }
+
+    H3cDeviceInfo { model, serial_number, manufacturing_date }
+}
+
+/// 从 H3C 键值行中提取值，格式: "KEY          : VALUE"
+fn extract_h3c_field(line: &str, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(rest) = line.strip_prefix(key) {
+            // rest = "          : VALUE" 或 ": VALUE"
+            let after_colon = rest.trim_start().strip_prefix(':')?;
+            let value = after_colon.trim();
+            if !value.is_empty() && !value.contains("----") && !value.contains("----") {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }

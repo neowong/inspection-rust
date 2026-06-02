@@ -118,7 +118,7 @@ fn run_commands_libssh2(
 // ---------------------------------------------------------------------------
 
 /// Establish TCP connection, SSH handshake, and password authentication.
-fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
+pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
     let addr = format!("{}:{}", source.host, source.port)
         .to_socket_addrs()
         .map_err(|e| format!("地址解析失败: {}", e))?
@@ -161,7 +161,7 @@ fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
 /// Open an interactive shell channel, detect the device prompt,
 /// and run session preparation (disable paging).
 /// Returns the detected prompt string and the open channel.
-fn open_shell_session<'s>(
+pub fn open_shell_session<'s>(
     session: &'s Session,
     vendor: &str,
     password: &str,
@@ -456,7 +456,7 @@ fn clear_channel_buffer(channel: &mut ssh2::Channel) {
 /// Send a single command through the shell channel and return the cleaned output.
 /// Implements netmiko's send_command flow: clear buffer → write command →
 /// read until prompt → clean output.
-fn send_command(
+pub fn send_command(
     channel: &mut ssh2::Channel,
     cmd: &str,
     prompt: &str,
@@ -501,7 +501,7 @@ fn strip_ansi(raw: &str) -> String {
 /// Clean command output: strip ANSI codes, the echoed command line,
 /// and the trailing device prompt.
 /// `base_prompt` is the prompt without its terminator (netmiko-style).
-fn clean_output(raw: &str, base_prompt: &str) -> String {
+pub fn clean_output(raw: &str, base_prompt: &str) -> String {
     let cleaned = strip_ansi(raw);
     let lines: Vec<&str> = cleaned.lines().collect();
     if lines.is_empty() {
@@ -568,13 +568,6 @@ fn check_unrecognized_command(output: &str) -> Option<String> {
     None
 }
 
-/// Returns true if the given vendor string corresponds to a known network device vendor.
-pub fn is_network_vendor(vendor: &str) -> bool {
-    matches!(
-        vendor.to_lowercase().as_str(),
-        "huawei" | "cisco" | "思科" | "h3c" | "华三" | "ruijie" | "锐捷" | "其它"
-    )
-}
 
 #[cfg(test)]
 mod tests {

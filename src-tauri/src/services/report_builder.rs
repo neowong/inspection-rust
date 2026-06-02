@@ -164,6 +164,8 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id
             template_id: None,
             status: "unknown".into(),
             last_checked_at: None,
+            serial_number: None,
+            manufacturing_date: None,
             created_at: "".into(),
             updated_at: "".into(),
         });

@@ -197,6 +197,7 @@ pub fn run() {
             commands::devices::check_device_status,
             commands::devices::check_all_devices_status,
             commands::devices::get_device_status_log,
+            commands::devices::detect_device_model,
             // Templates
             commands::templates::list_templates,
             commands::templates::get_template,
@@ -376,12 +377,50 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     );
 }
 
-/// Background task: check the active AI config's API health.
-async fn poll_ai_health(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
+/// 查询激活的 AI 配置并解密 API Key，返回 (config, api_key, base_url)
+fn get_active_ai_config(
+    conn: &rusqlite::Connection,
+) -> Result<
+    Option<(crate::db::models::AiModelConfig, String, String)>,
+    String,
+> {
     use crate::db::models::AiModelConfig;
     use crate::services::crypto::CryptoService;
 
-    let config = {
+    let config: Option<AiModelConfig> = crate::db::query::query_one(
+        conn,
+        "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
+         is_active, created_at, updated_at \
+         FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+        &[],
+        |row| {
+            Ok(AiModelConfig {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider: row.get(2)?,
+                model_id: row.get(3)?,
+                api_key_encrypted: row.get(4)?,
+                base_url: row.get(5)?,
+                is_active: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        },
+    )?;
+
+    match config {
+        Some(c) => {
+            let api_key = CryptoService::decrypt(&c.api_key_encrypted)?;
+            let base_url = c.base_url.clone().unwrap_or_default();
+            Ok(Some((c, api_key, base_url)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Background task: check the active AI config's API health.
+async fn poll_ai_health(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
+    let config_data = {
         let conn = match db.try_lock() {
             Some(c) => c,
             None => {
@@ -389,110 +428,45 @@ async fn poll_ai_health(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                 return;
             }
         };
-        crate::db::query::query_one(
-            &conn,
-            "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
-             is_active, created_at, updated_at \
-             FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
-            &[],
-            |row| {
-                Ok(AiModelConfig {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    provider: row.get(2)?,
-                    model_id: row.get(3)?,
-                    api_key_encrypted: row.get(4)?,
-                    base_url: row.get(5)?,
-                    is_active: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                })
-            },
+        match get_active_ai_config(&conn) {
+            Ok(Some(d)) => Some(d),
+            Ok(None) => {
+                tracing::debug!("AI 健康检查跳过: 无激活的 AI 配置");
+                if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+                    *cache = None;
+                }
+                return;
+            }
+            Err(e) => {
+                tracing::warn!("AI 健康检查跳过: {}", e);
+                return;
+            }
+        }
+    };
+
+    if let Some((config, api_key, base_url)) = config_data {
+        let result = services::ai_health::check_ai_health(
+            &config.provider,
+            &api_key,
+            &config.model_id,
+            &base_url,
         )
-    };
+        .await;
 
-    let config = match config {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            tracing::debug!("AI 健康检查跳过: 无激活的 AI 配置");
-            // Clear cached result since no config is active
-            if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-                *cache = None;
-            }
-            return;
+        if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
+            *cache = Some(result);
         }
-        Err(e) => {
-            tracing::warn!("AI 健康检查跳过: 查询 AI 配置失败: {}", e);
-            return;
-        }
-    };
-
-    let api_key = match CryptoService::decrypt(&config.api_key_encrypted) {
-        Ok(k) => k,
-        Err(e) => {
-            tracing::warn!("AI 健康检查: API Key 解密失败: {}", e);
-            let result = services::ai_health::AiHealthResult {
-                reachable: false,
-                status: "error".to_string(),
-                error_type: Some("auth".to_string()),
-                message: "API Key 解密失败，请重新设置".to_string(),
-                provider: config.provider,
-                model: config.model_id,
-            };
-            if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-                *cache = Some(result);
-            }
-            return;
-        }
-    };
-
-    let base_url = config.base_url.unwrap_or_default();
-    let result = services::ai_health::check_ai_health(
-        &config.provider,
-        &api_key,
-        &config.model_id,
-        &base_url,
-    )
-    .await;
-
-    if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-        *cache = Some(result);
     }
 }
 
 /// Manually trigger an AI health check for the active config.
 #[tauri::command]
 async fn check_ai_health(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
-    use crate::db::models::AiModelConfig;
-    use crate::services::crypto::CryptoService;
-
-    let config = {
+    let (config, api_key, base_url) = {
         let conn = state.db.lock();
-        crate::db::query::query_one(
-            &conn,
-            "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
-             is_active, created_at, updated_at \
-             FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
-            &[],
-            |row| {
-                Ok(AiModelConfig {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    provider: row.get(2)?,
-                    model_id: row.get(3)?,
-                    api_key_encrypted: row.get(4)?,
-                    base_url: row.get(5)?,
-                    is_active: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
-                })
-            },
-        )?
-        .ok_or_else(|| "未找到激活的 AI 配置，请先在设置中配置并激活一个 AI 模型".to_string())?
+        get_active_ai_config(&conn)?
+            .ok_or_else(|| "未找到激活的 AI 配置，请先在设置中配置并激活一个 AI 模型".to_string())?
     };
-
-    let api_key = CryptoService::decrypt(&config.api_key_encrypted)?;
-    let base_url = config.base_url.unwrap_or_default();
 
     let result = services::ai_health::check_ai_health(
         &config.provider,
@@ -502,7 +476,6 @@ async fn check_ai_health(state: tauri::State<'_, AppState>) -> Result<serde_json
     )
     .await;
 
-    // Cache the result
     if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
         *cache = Some(result.clone());
     }

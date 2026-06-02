@@ -142,32 +142,22 @@ pub fn update_template(
     .ok_or_else(|| format!("巡检模板 ID {} 不存在", template_id))?;
 
     // 构建动态 UPDATE
-    let mut set_parts: Vec<String> = Vec::new();
-    let mut params: Vec<Box<dyn ToSql>> = Vec::new();
-    let mut idx = 1i32;
+    let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+    updater.push_opt("name", &data.name);
+    updater.push_opt("vendor", &data.vendor);
+    updater.push_opt("model", &data.model);
+    updater.push_opt("device_type", &data.device_type);
+    updater.push_opt("config", &data.config);
+    updater.push_opt("description", &data.description);
+    updater.push_opt("report_template_id", &data.report_template_id);
+    updater.push_opt("template_type", &data.template_type);
 
-    macro_rules! push_field {
-        ($field:ident, $col:expr) => {
-            if let Some(ref val) = data.$field {
-                set_parts.push(format!("{} = ?{}", $col, idx));
-                params.push(Box::new(val.clone()));
-                idx += 1;
-            }
-        };
-    }
-
-    push_field!(name, "name");
-    push_field!(vendor, "vendor");
-    push_field!(model, "model");
-    push_field!(device_type, "device_type");
-    push_field!(config, "config");
-    push_field!(description, "description");
-    push_field!(report_template_id, "report_template_id");
-    push_field!(template_type, "template_type");
-
-    if set_parts.is_empty() {
+    if updater.is_empty() {
         return Ok(existing);
     }
+
+    let (mut set_parts, mut params) = updater.finish();
+    let idx = params.len() as i32 + 1;
 
     set_parts.push("updated_at = datetime('now')".to_string());
 
@@ -235,12 +225,11 @@ pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(
     Ok(())
 }
 
-/// 自动生成巡检模板（根据厂商/型号/设备类型，从命令池选取命令）
+/// 自动生成巡检模板（根据厂商/型号，从命令池选取命令）
 #[tauri::command]
 pub fn auto_generate_template(
     vendor: String,
     model: Option<String>,
-    device_type: Option<String>,
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
     let conn = state.db.lock();
@@ -249,7 +238,6 @@ pub fn auto_generate_template(
         &conn,
         &vendor,
         model.as_deref(),
-        device_type.as_deref(),
     )?;
 
     let template_name = generated["name"]
@@ -270,7 +258,7 @@ pub fn auto_generate_template(
             template_name,
             vendor,
             model,
-            device_type,
+            None::<String>,
             Some(config_str),
             None::<String>,
         ],

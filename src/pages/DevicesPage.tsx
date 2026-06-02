@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Search } from "lucide-react";
 import type { Device, InspectionTemplate } from "../types";
+import { useShakeValidation } from "../hooks/useShakeValidation";
+import { friendlyError } from "../lib/utils";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
 import DataTable from "../components/DataTable";
@@ -20,11 +23,14 @@ interface DeviceForm {
   ssh_password: string;
   ssh_port: number;
   template_id: number | null;
+  serial_number: string;
+  manufacturing_date: string;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
+  serial_number: "", manufacturing_date: "",
 };
 
 export default function DevicesPage() {
@@ -42,16 +48,11 @@ export default function DevicesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+  const { shakeFields, triggerShake } = useShakeValidation();
 
-  const triggerShake = (field: string) => {
-    setShakeFields((prev) => new Set(prev).add(field));
-    setTimeout(() => setShakeFields((prev) => {
-      const next = new Set(prev);
-      next.delete(field);
-      return next;
-    }), 600);
-  };
+  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && form.ssh_password.trim() && (form.vendor === "H3C" || form.vendor === "华三"));
 
   const isValidIp = (ip: string) => {
     const p = ip.trim();
@@ -86,11 +87,14 @@ export default function DevicesPage() {
   const openAdd = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setSaveError(null);
+    setDetectError(null);
     setModalOpen(true);
   };
 
   const openEdit = (d: Device) => {
     setEditing(d);
+    setDetectError(null);
     setForm({
       name: d.name,
       ip: d.ip,
@@ -100,8 +104,38 @@ export default function DevicesPage() {
       ssh_password: "",
       ssh_port: d.ssh_port,
       template_id: d.template_id,
+      serial_number: d.serial_number || "",
+      manufacturing_date: d.manufacturing_date || "",
     });
     setModalOpen(true);
+  };
+
+  const handleDetect = () => {
+    setDetecting(true);
+    setDetectError(null);
+    invoke<string>("detect_device_model", {
+      ip: form.ip.trim(),
+      sshPort: form.ssh_port,
+      sshUsername: form.ssh_username.trim(),
+      sshPassword: form.ssh_password,
+      vendor: form.vendor,
+    })
+      .then((json) => {
+        try {
+          const info = JSON.parse(json);
+          setForm({
+            ...form,
+            model: info.model || form.model,
+            serial_number: info.serial_number || form.serial_number,
+            manufacturing_date: info.manufacturing_date || form.manufacturing_date,
+          });
+        } catch {
+          // 兼容旧格式（纯字符串）
+          setForm({ ...form, model: json });
+        }
+      })
+      .catch((e) => setDetectError(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setDetecting(false));
   };
 
   const handleSave = () => {
@@ -109,6 +143,7 @@ export default function DevicesPage() {
     if (!isValidIp(form.ip)) { triggerShake("ip"); return; }
     if (!form.ssh_username.trim()) { triggerShake("ssh_username"); return; }
     if (!editing && !form.ssh_password.trim()) { triggerShake("ssh_password"); return; }
+    if (form.template_id === null) { triggerShake("template_id"); return; }
 
     const data: Record<string, unknown> = {
       name: form.name,
@@ -121,6 +156,8 @@ export default function DevicesPage() {
     if (form.ssh_username) data.ssh_username = form.ssh_username;
     if (form.ssh_password) data.ssh_password_encrypted = form.ssh_password;
     if (form.template_id !== null) data.template_id = form.template_id;
+    if (form.serial_number) data.serial_number = form.serial_number;
+    if (form.manufacturing_date) data.manufacturing_date = form.manufacturing_date;
 
     setSaving(true);
     setSaveError(null);
@@ -130,12 +167,45 @@ export default function DevicesPage() {
       : invoke<Device>("create_device", { data });
 
     promise
-      .then(() => {
+      .then((saved) => {
         setModalOpen(false);
         loadDevices();
+        if (!saved?.id) return;
+        const devId = saved.id;
+
+        // 静默检测在线状态
+        invoke("check_device_status", { deviceId: devId }).then(() => loadDevices()).catch(() => {});
+
+        // 静默补全型号/SN/出厂日期（H3C 且有 SSH 凭据时）
+        const needModel = !form.model.trim();
+        const needSn = !form.serial_number.trim();
+        const needDate = !form.manufacturing_date.trim();
+        const canDetect = form.ssh_username.trim() && form.ssh_password.trim()
+          && (form.vendor === "H3C" || form.vendor === "华三");
+        if ((needModel || needSn || needDate) && canDetect) {
+          invoke<string>("detect_device_model", {
+            ip: form.ip.trim(), sshPort: form.ssh_port,
+            sshUsername: form.ssh_username.trim(), sshPassword: form.ssh_password,
+            vendor: form.vendor,
+          }).then((json) => {
+            try {
+              const info = JSON.parse(json);
+              const patch: Record<string, unknown> = {};
+              if (needModel && info.model) patch.model = info.model;
+              if (needSn && info.serial_number) patch.serial_number = info.serial_number;
+              if (needDate && info.manufacturing_date) patch.manufacturing_date = info.manufacturing_date;
+              if (Object.keys(patch).length > 0) {
+                invoke("update_device", { deviceId: devId, data: patch }).then(() => loadDevices());
+              }
+            } catch { /* 忽略 */ }
+          }).catch(() => {});
+        }
       })
       .catch((e) => {
-        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
+        const msg = friendlyError(e);
+        setSaveError(msg);
+        if (msg.includes("IP")) triggerShake("ip");
+        else triggerShake("name");
       })
       .finally(() => setSaving(false));
   };
@@ -318,19 +388,16 @@ export default function DevicesPage() {
         }
       >
         <div className="space-y-3">
-          {saveError && (
-            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-              {saveError}
-            </div>
-          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
               <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
+              {saveError && shakeFields.has("name") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP <span className="text-[hsl(var(--danger))]">*</span></label>
               <Input value={form.ip} className={shakeFields.has("ip") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
+              {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -342,7 +409,26 @@ export default function DevicesPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号</label>
-              <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="S5560X" />
+              <div className="flex gap-1">
+                <Input
+                  value={form.model}
+                  onChange={(e) => { setForm({ ...form, model: e.target.value }); setDetectError(null); }}
+                  placeholder="自动检测"
+                  className={shakeFields.has("model") ? "animate-shake" : ""}
+                />
+                {canDetect && (
+                  <button
+                    type="button"
+                    onClick={handleDetect}
+                    disabled={detecting}
+                    title="自动检测型号"
+                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] disabled:opacity-50 transition-colors"
+                  >
+                    <Search className={`w-4 h-4 ${detecting ? "animate-spin" : ""}`} />
+                  </button>
+                )}
+              </div>
+              {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -361,11 +447,25 @@ export default function DevicesPage() {
               <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) })} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板</label>
-              <Select value={form.template_id ?? ""} onChange={(e) => setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null })}>
-                <option value="">无模板</option>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
+              <Select
+                value={form.template_id ?? ""}
+                className={shakeFields.has("template_id") ? "animate-shake" : ""}
+                onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
+              >
+                <option value="">请选择模板</option>
                 {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
+              <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
+              <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
             </div>
           </div>
         </div>

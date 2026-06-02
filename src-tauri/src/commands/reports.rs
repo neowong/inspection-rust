@@ -781,17 +781,14 @@ pub fn upload_template(
     .ok_or_else(|| "上传模板后查询失败".to_string())
 }
 
-/// 下载报告模板（返回文件内容）
-#[tauri::command]
-pub fn download_template(template_id: i64, state: State<AppState>) -> Result<String, String> {
-    let conn = state.db.lock();
-
+/// 读取报告模板文件内容（内部辅助函数）
+fn read_template_file(conn: &rusqlite::Connection, template_id: i64) -> Result<String, String> {
     let sql = format!(
         "SELECT {} FROM report_templates WHERE id = ?1",
         REPORT_TEMPLATE_COLUMNS
     );
     let template = crate::db::query::query_one(
-        &conn,
+        conn,
         &sql,
         rusqlite::params![template_id],
         report_template_from_row,
@@ -802,25 +799,18 @@ pub fn download_template(template_id: i64, state: State<AppState>) -> Result<Str
         .map_err(|e| format!("读取模板文件失败: {}", e))
 }
 
+/// 下载报告模板（返回文件内容）
+#[tauri::command]
+pub fn download_template(template_id: i64, state: State<AppState>) -> Result<String, String> {
+    let conn = state.db.lock();
+    read_template_file(&conn, template_id)
+}
+
 /// 预览报告模板内容
 #[tauri::command]
 pub fn preview_template(template_id: i64, state: State<AppState>) -> Result<String, String> {
     let conn = state.db.lock();
-
-    let sql = format!(
-        "SELECT {} FROM report_templates WHERE id = ?1",
-        REPORT_TEMPLATE_COLUMNS
-    );
-    let template = crate::db::query::query_one(
-        &conn,
-        &sql,
-        rusqlite::params![template_id],
-        report_template_from_row,
-    )?
-    .ok_or_else(|| format!("报告模板 ID {} 不存在", template_id))?;
-
-    std::fs::read_to_string(&template.file_path)
-        .map_err(|e| format!("读取模板文件失败: {}", e))
+    read_template_file(&conn, template_id)
 }
 
 /// 预览报告模板上下文信息（返回元数据字符串）
@@ -1275,6 +1265,8 @@ pub fn export_batch_csv(batch_id: i64, save_path: Option<String>, state: State<A
                 template_id: None,
                 status: "unknown".into(),
                 last_checked_at: None,
+                serial_number: None,
+                manufacturing_date: None,
                 created_at: "".into(),
                 updated_at: "".into(),
             });

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiModelConfig } from "../types";
+import { useShakeValidation } from "../hooks/useShakeValidation";
+import { friendlyError } from "../lib/utils";
 import Card from "../components/ui/Card";
 import Input, { Select } from "../components/ui/Input";
 import Button from "../components/ui/Button";
@@ -40,16 +42,7 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [shakeFields, setShakeFields] = useState<Set<string>>(new Set());
-
-  const triggerShake = (field: string) => {
-    setShakeFields((prev) => new Set(prev).add(field));
-    setTimeout(() => setShakeFields((prev) => {
-      const next = new Set(prev);
-      next.delete(field);
-      return next;
-    }), 600);
-  };
+  const { shakeFields, triggerShake } = useShakeValidation();
 
   // Load system settings
   useEffect(() => {
@@ -125,7 +118,8 @@ export default function SettingsPage() {
         loadConfigs();
       })
       .catch((e) => {
-        setSaveError(typeof e === "string" ? e : JSON.stringify(e));
+        setSaveError(friendlyError(e));
+        triggerShake("name");
       })
       .finally(() => setSaving(false));
   };
@@ -235,14 +229,10 @@ export default function SettingsPage() {
         }
       >
         <div className="space-y-3">
-          {saveError && (
-            <div className="p-2 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded text-sm text-[hsl(var(--danger))]">
-              {saveError}
-            </div>
-          )}
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
             <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
+            {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API 格式</label>
