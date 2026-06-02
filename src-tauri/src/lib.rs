@@ -106,18 +106,33 @@ fn ensure_webview2_runtime() {}
 pub fn run() {
     ensure_webview2_runtime();
 
-    let app_data_dir = dirs::data_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("inspection-rust");
-
-    std::fs::create_dir_all(&app_data_dir).ok();
-
-    // Logging: stdout + rolling daily file in ./logs/ next to the exe
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let log_dir = exe_dir.join("logs");
+
+    // Load optional config file (inspection.toml next to exe → portable mode)
+    let config = load_config(&exe_dir);
+
+    // Determine data & log directories
+    let app_data_dir = config
+        .get("data_dir")
+        .and_then(|v| v.as_str())
+        .map(|p| resolve_path(&exe_dir, p))
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("inspection-rust")
+        });
+
+    std::fs::create_dir_all(&app_data_dir).ok();
+
+    // Logging: stdout + rolling daily file
+    let log_dir = config
+        .get("log_dir")
+        .and_then(|v| v.as_str())
+        .map(|p| resolve_path(&exe_dir, p))
+        .unwrap_or_else(|| exe_dir.join("logs"));
     std::fs::create_dir_all(&log_dir).ok();
     let file_appender = tracing_appender::rolling::daily(&log_dir, "inspection.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
@@ -131,8 +146,10 @@ pub fn run() {
         .init();
 
     // Keep the guard alive so logs are flushed on exit
-    // We leak it intentionally — it lives for the process lifetime
     std::mem::forget(_guard);
+
+    tracing::info!("数据目录: {}", app_data_dir.display());
+    tracing::info!("日志目录: {}", log_dir.display());
 
     let db_path = app_data_dir.join("inspection.db");
     let state = AppState::new(db_path.to_str().unwrap());
@@ -500,5 +517,78 @@ fn get_ai_health_status() -> Result<Option<serde_json::Value>, String> {
     match &*cache {
         Some(result) => Ok(Some(serde_json::to_value(result).map_err(|e| e.to_string())?)),
         None => Ok(None),
+    }
+}
+
+/// Load optional config from `inspection.toml` next to the exe.
+/// If the file doesn't exist or can't be parsed, returns empty map.
+///
+/// Example `inspection.toml`:
+/// ```toml
+/// # 数据目录（数据库、报告、模板等），留空则用系统默认目录
+/// data_dir = ".\\data"
+/// # 日志目录，留空则用 exe 同目录下的 logs/
+/// log_dir = ".\\logs"
+/// ```
+fn load_config(exe_dir: &std::path::Path) -> serde_json::Map<String, serde_json::Value> {
+    let config_path = exe_dir.join("inspection.toml");
+    if !config_path.exists() {
+        return serde_json::Map::new();
+    }
+
+    match std::fs::read_to_string(&config_path) {
+        Ok(content) => {
+            match content.parse::<toml::Table>() {
+                Ok(table) => {
+                    // Convert toml to serde_json::Value for uniform access
+                    let val = toml_to_json(table);
+                    val.as_object().cloned().unwrap_or_default()
+                }
+                Err(e) => {
+                    tracing::warn!("配置文件解析失败 {}: {}", config_path.display(), e);
+                    serde_json::Map::new()
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("无法读取配置文件 {}: {}", config_path.display(), e);
+            serde_json::Map::new()
+        }
+    }
+}
+
+/// Resolve a path from config: if absolute, use as-is; if relative, resolve against exe_dir.
+fn resolve_path(exe_dir: &std::path::Path, path: &str) -> std::path::PathBuf {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        exe_dir.join(p)
+    }
+}
+
+fn toml_to_json(table: toml::Table) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (k, v) in table {
+        map.insert(k, toml_value_to_json(v));
+    }
+    serde_json::Value::Object(map)
+}
+
+fn toml_value_to_json(value: toml::Value) -> serde_json::Value {
+    match value {
+        toml::Value::String(s) => serde_json::Value::String(s),
+        toml::Value::Integer(i) => serde_json::Value::Number((i).into()),
+        toml::Value::Float(f) => {
+            serde_json::Number::from_f64(f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::String(f.to_string()))
+        }
+        toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+        toml::Value::Table(t) => toml_to_json(t),
+        toml::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(toml_value_to_json).collect())
+        }
+        _ => serde_json::Value::Null,
     }
 }
