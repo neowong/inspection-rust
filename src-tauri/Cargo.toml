@@ -33,6 +33,7 @@ parking_lot = "0.12"
 open = "5"
 regex = "1"
 toml = "0.8"
+docx-rs = "0.4"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

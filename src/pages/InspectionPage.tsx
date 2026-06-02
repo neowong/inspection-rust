@@ -283,6 +283,21 @@ export default function InspectionPage() {
       });
   };
 
+  const handleGenerateDocx = (recordId: number) => {
+    setGenerating(recordId);
+    setErrorMsg(null);
+    invoke<string>("generate_docx_report", { recordId, templateId: selectedTemplateId })
+      .then(() => {
+        setGenerating(null);
+        invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
+        refreshSelectedBatch();
+      })
+      .catch((e) => {
+        setGenerating(null);
+        setErrorMsg(`生成 DOCX 报告失败: ${typeof e === "string" ? e : JSON.stringify(e)}`);
+      });
+  };
+
   const handleLogAnalyze = (recordId: number) => {
     setLogAnalyzing(true);
     setLogResult(null);
@@ -490,6 +505,7 @@ export default function InspectionPage() {
                             <Button size="sm" variant="ghost" onClick={() => handleAnalyzeRecord(r.id)}>AI 分析</Button>
                           )}
                           <Button size="sm" variant="ghost" loading={generating === r.id} onClick={() => handleGenerateReport(r.id)}>生成报告</Button>
+                          <Button size="sm" variant="ghost" loading={generating === r.id} onClick={() => handleGenerateDocx(r.id)}>DOCX</Button>
                         </>
                       )}
                       {r.report_path && (
@@ -518,6 +534,7 @@ export default function InspectionPage() {
                     <Button size="sm" variant="ghost" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
                     <Button size="sm" variant="ghost" loading={analyzing === fullRecord.id} onClick={() => handleAnalyzeRecord(fullRecord.id)}>AI 分析</Button>
                     <Button size="sm" variant="secondary" loading={generating === fullRecord.id} onClick={() => handleGenerateReport(fullRecord.id)}>生成报告</Button>
+                    <Button size="sm" variant="secondary" loading={generating === fullRecord.id} onClick={() => handleGenerateDocx(fullRecord.id)}>生成 DOCX</Button>
                     {fullRecord.report_path && (
                       <Button size="sm" variant="ghost" onClick={() => handleDownloadReport(fullRecord.id)}>下载报告</Button>
                     )}

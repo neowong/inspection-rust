@@ -69,6 +69,18 @@ export default function ReportsPage() {
       .finally(() => setGenerating(false));
   };
 
+  const handleGenerateDocx = (recordId: number) => {
+    setGenerating(true);
+    setErrorMsg(null);
+    invoke<string>("generate_docx_report", { recordId, templateId: selectedTemplateId })
+      .then(() => {
+        loadRecord(recordId);
+        loadBatches();
+      })
+      .catch((e) => setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)))
+      .finally(() => setGenerating(false));
+  };
+
   const handleDownloadReport = (recordId: number) => {
     setDownloading(true);
     setErrorMsg(null);
@@ -193,6 +205,9 @@ export default function ReportsPage() {
               </Button>
               <Button size="sm" variant="secondary" onClick={() => handleGenerateReport(selectedRecord.id)} loading={generating}>
                 生成报告
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => handleGenerateDocx(selectedRecord.id)} loading={generating}>
+                生成 DOCX
               </Button>
               <Button size="sm" variant="primary" onClick={() => selectedBatch && handleHtmlExport(selectedBatch.id)} loading={htmlExporting}>
                 导出 HTML 报告

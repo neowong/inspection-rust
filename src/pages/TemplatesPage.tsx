@@ -133,7 +133,7 @@ export default function TemplatesPage() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<ReportTemplate | null>(null);
   const [reportForm, setReportForm] = useState({
-    name: "", vendor: "", format: "markdown" as "markdown" | "html",
+    name: "", vendor: "", format: "markdown" as "markdown" | "html" | "docx",
     description: "", mode: "visual" as "visual" | "advanced",
     sections: cloneSections(),
     content: "",

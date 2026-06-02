@@ -1204,6 +1204,82 @@ pub fn list_recent_records(
     crate::db::query::query_all(&conn, &sql, rusqlite::params![limit], record_from_row)
 }
 
+/// 生成 DOCX 巡检报告
+#[tauri::command]
+pub fn generate_docx_report(
+    record_id: i64,
+    template_id: Option<i64>,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock();
+
+    // 1. 加载巡检记录
+    let rec_sql = format!("SELECT {} FROM inspection_records WHERE id = ?1", RECORD_COLUMNS);
+    let record = crate::db::query::query_one(&conn, &rec_sql, rusqlite::params![record_id], record_from_row)?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+    // 2. 加载设备
+    let dev_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+    let device = crate::db::query::query_one(&conn, &dev_sql, rusqlite::params![record.device_id], device_from_row)?
+        .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
+
+    // 3. 加载命令描述
+    let cmd_descs = crate::services::report_builder::load_command_descriptions(&conn);
+
+    // 4. 解析模板路径
+    let template_path = if let Some(tid) = template_id {
+        let tpl_sql = format!("SELECT {} FROM report_templates WHERE id = ?1", REPORT_TEMPLATE_COLUMNS);
+        crate::db::query::query_one(&conn, &tpl_sql, rusqlite::params![tid], report_template_from_row)?
+            .ok_or_else(|| format!("报告模板 ID {} 不存在", tid))?
+            .file_path
+    } else {
+        // 尝试找默认 docx 模板
+        let default_sql = format!(
+            "SELECT {} FROM report_templates WHERE format = 'docx' AND is_default = 1 LIMIT 1",
+            REPORT_TEMPLATE_COLUMNS
+        );
+        if let Ok(Some(t)) = crate::db::query::query_one(&conn, &default_sql, &[], report_template_from_row) {
+            t.file_path
+        } else {
+            // 使用内置默认模板
+            let default_path = std::path::Path::new("data").join("default_template.docx");
+            if default_path.exists() {
+                default_path.to_string_lossy().to_string()
+            } else {
+                return Err("未找到 docx 模板，请上传一个 docx 模板或创建默认模板".into());
+            }
+        }
+    };
+
+    if template_path.is_empty() {
+        return Err("模板文件路径为空".into());
+    }
+
+    // 5. 确保输出目录存在
+    let reports_dir = ensure_reports_dir()?;
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("report_{}_{}.docx", record_id, timestamp);
+    let output_path = reports_dir.join(&filename);
+
+    // 6. 生成 docx
+    crate::services::docx_engine::generate_docx_report(
+        &template_path,
+        &output_path.to_string_lossy(),
+        &device,
+        &record,
+        &cmd_descs,
+    )?;
+
+    // 7. 更新记录的 report_path
+    let output_str = output_path.to_string_lossy().to_string();
+    conn.execute(
+        "UPDATE inspection_records SET report_path = ?1 WHERE id = ?2",
+        rusqlite::params![output_str, record_id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(output_str)
+}
+
 // ============================================================
 // AI Config Helper
 // ============================================================

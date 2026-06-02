@@ -111,7 +111,7 @@ export interface ReportTemplate {
   vendor: string | null;
   file_path: string;
   content: string;
-  format: "markdown" | "html";
+  format: "markdown" | "html" | "docx";
   is_default: boolean;
   description: string;
   sample_data: string;
