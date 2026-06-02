@@ -729,33 +729,64 @@ export default function TemplatesPage() {
               </Select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">选择命令 ({templateForm.vendor})</label>
-              <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
-                {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
-                {vendorFilteredCommands.map((cmd) => {
-                  const checked = templateForm.command_ids.includes(cmd.id);
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
+                已选命令 ({templateForm.command_ids.length}) <span className="text-[10px] text-[hsl(var(--text-tertiary))]">拖拽排序</span>
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3">
+                {templateForm.command_ids.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
+                {templateForm.command_ids.map((cmdId, idx) => {
+                  const cmd = commands.find(c => c.id === cmdId);
+                  if (!cmd) return null;
                   return (
-                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          setTemplateForm({
-                            ...templateForm,
-                            command_ids: checked
-                              ? templateForm.command_ids.filter((id) => id !== cmd.id)
-                              : [...templateForm.command_ids, cmd.id],
-                          });
-                        }}
-                        className="accent-[hsl(var(--accent))]"
-                      />
-                      <span className="text-xs">
-                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
-                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
-                      </span>
-                    </label>
+                    <div
+                      key={cmdId}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); e.currentTarget.style.opacity = "0.4"; }}
+                      onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
+                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
+                      onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.style.borderColor = "";
+                        const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
+                        if (isNaN(fromIdx) || fromIdx === idx) return;
+                        const newIds = [...templateForm.command_ids];
+                        const moved = newIds.splice(fromIdx, 1)[0];
+                        if (moved !== undefined) newIds.splice(idx, 0, moved);
+                        setTemplateForm({ ...templateForm, command_ids: newIds });
+                      }}
+                      className="flex items-center gap-2 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1 cursor-grab active:cursor-grabbing"
+                    >
+                      <GripVertical size={14} className="text-[hsl(var(--text-tertiary))] shrink-0" />
+                      <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-5 text-right">{idx + 1}</span>
+                      <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
+                      {cmd.description && <span className="text-[11px] text-[hsl(var(--text-tertiary))] truncate">— {cmd.description}</span>}
+                      <button
+                        type="button"
+                        onClick={() => setTemplateForm({ ...templateForm, command_ids: templateForm.command_ids.filter(id => id !== cmdId) })}
+                        className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs"
+                      >×</button>
+                    </div>
                   );
                 })}
+              </div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">可选命令 ({templateForm.vendor})</label>
+              <div className="max-h-36 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
+                {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
+                {vendorFilteredCommands.filter(cmd => !templateForm.command_ids.includes(cmd.id)).map((cmd) => (
+                  <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      onChange={() => setTemplateForm({ ...templateForm, command_ids: [...templateForm.command_ids, cmd.id] })}
+                      className="accent-[hsl(var(--accent))]"
+                    />
+                    <span className="text-xs">
+                      <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
+                      {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
           </div>
