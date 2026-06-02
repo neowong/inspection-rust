@@ -1,5 +1,6 @@
 use crate::db::models::{InspectionBatch, InspectionRecord, Device, now_str, BATCH_COLUMNS, RECORD_COLUMNS, DEVICE_COLUMNS, REPORT_TEMPLATE_COLUMNS, batch_from_row, record_from_row, device_from_row, report_template_from_row};
 use super::template_engine;
+use super::html_util::html_escape;
 use std::collections::HashMap;
 
 /// Load command→description mapping from the command pool.
@@ -185,30 +186,49 @@ pub fn build_report_html(conn: &rusqlite::Connection, batch_id: i64, template_id
     );
 
     // 5. Load template if specified
-    let template_content: Option<(String, String)> = if let Some(tid) = template_id {
+    let template_obj: Option<crate::db::models::ReportTemplate> = if let Some(tid) = template_id {
         let rt_sql = format!("SELECT {} FROM report_templates WHERE id = ?1", REPORT_TEMPLATE_COLUMNS);
         crate::db::query::query_one(conn, &rt_sql, rusqlite::params![tid], report_template_from_row)
             .ok()
             .flatten()
-            .filter(|t| !t.content.is_empty())
-            .map(|t| (t.content, t.format))
+            .filter(|t| !t.content.is_empty() || !t.config_json.is_empty())
     } else {
         None
     };
 
     // 6. Assemble: use template if available, otherwise use hardcoded HTML
-    let html = if let Some((content, format)) = template_content {
+    let mut html = if let Some(ref t) = template_obj {
         let mut ctx: HashMap<String, serde_json::Value> = HashMap::new();
-        ctx.insert("report_title".into(), serde_json::Value::String(report_title));
-        ctx.insert("report_meta".into(), serde_json::Value::String(report_meta));
-        ctx.insert("device_sections".into(), serde_json::Value::String(device_sections));
-        template_engine::render_template(&content, &ctx, &format)
+        ctx.insert("report_title".into(), serde_json::Value::String(report_title.clone()));
+        ctx.insert("report_meta".into(), serde_json::Value::String(report_meta.clone()));
+        ctx.insert("device_sections".into(), serde_json::Value::String(device_sections.clone()));
+        template_engine::render_template(&t.content, &ctx, &t.format)
     } else {
         REPORT_HTML
             .replace("{{report_title}}", &report_title)
             .replace("{{report_meta}}", &report_meta)
             .replace("{{device_sections}}", &device_sections)
     };
+
+    // 7. Inject custom CSS and page header/footer if template has them
+    if let Some(ref t) = template_obj {
+        if !t.custom_css.is_empty() {
+            // Sanitize: strip </style> to prevent injection
+            let safe_css = t.custom_css.replace("</style>", "");
+            html = html.replace("</head>", &format!("<style>/* custom CSS */\n{}\n</style>\n</head>", safe_css));
+        }
+        if !t.page_header.is_empty() || !t.page_footer.is_empty() {
+            let ctx: HashMap<String, serde_json::Value> = HashMap::new();
+            if !t.page_header.is_empty() {
+                let header_html = template_engine::render_template(&t.page_header, &ctx, "html");
+                html = html.replace("<h1 class=\"report-title\">", &format!("<header class=\"report-header\">{}</header>\n<h1 class=\"report-title\">", header_html));
+            }
+            if !t.page_footer.is_empty() {
+                let footer_html = template_engine::render_template(&t.page_footer, &ctx, "html");
+                html = html.replace("</div>\n</body>", &format!("\n<footer class=\"report-footer\">{}</footer>\n</div>\n</body>", footer_html));
+            }
+        }
+    }
 
     Ok(html)
 }
@@ -387,10 +407,4 @@ fn parse_json_object(json_str: &Option<String>) -> serde_json::Map<String, serde
     val.as_object().cloned().unwrap_or_default()
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
+// html_escape 已迁移到 html_util 模块，通过 use super::html_util::html_escape 导入

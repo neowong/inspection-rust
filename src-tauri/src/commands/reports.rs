@@ -363,12 +363,15 @@ pub fn get_record(
 // Report Generation — Inner (sync, takes &Connection)
 // ============================================================
 
-/// Resolved template data: config_json, content, mode, format
+/// Resolved template data: config_json, content, mode, format + custom styling
 struct ResolvedTemplate {
     config_json: String,
     content: String,
     mode: String,
     format: String,
+    custom_css: String,
+    page_header: String,
+    page_footer: String,
 }
 
 /// Resolve the report template to use for a record.
@@ -390,6 +393,9 @@ fn resolve_report_template(
                 content: t.content,
                 mode: t.mode,
                 format: t.format,
+                custom_css: t.custom_css,
+                page_header: t.page_header,
+                page_footer: t.page_footer,
             })
     };
 
@@ -402,9 +408,10 @@ fn resolve_report_template(
 
     // Walk the chain: record -> device -> template_id -> inspection_template -> report_template_id
     let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    if let Ok(Some(device)) = crate::db::query::query_one(
+    let device_vendor: Option<String> = if let Ok(Some(device)) = crate::db::query::query_one(
         conn, &device_sql, rusqlite::params![record.device_id], device_from_row,
     ) {
+        let vendor = device.vendor.clone();
         if let Some(tid) = device.template_id {
             let tpl_sql = format!("SELECT {} FROM inspection_templates WHERE id = ?1", crate::db::models::TEMPLATE_COLUMNS);
             if let Ok(Some(tpl)) = crate::db::query::query_one(
@@ -415,6 +422,32 @@ fn resolve_report_template(
                     if let Some(t) = try_load(rt_id) {
                         return Ok(Some(t));
                     }
+                }
+            }
+        }
+        Some(vendor)
+    } else {
+        None
+    };
+
+    // Vendor-based auto-selection: find a report template matching the device vendor
+    if let Some(ref vendor) = device_vendor {
+        if !vendor.is_empty() {
+            let vendor_sql = format!(
+                "SELECT {} FROM report_templates WHERE vendor = ?1 LIMIT 1",
+                REPORT_TEMPLATE_COLUMNS
+            );
+            if let Ok(Some(t)) = crate::db::query::query_one(conn, &vendor_sql, rusqlite::params![vendor], report_template_from_row) {
+                if !t.config_json.is_empty() || !t.content.is_empty() {
+                    return Ok(Some(ResolvedTemplate {
+                        config_json: t.config_json,
+                        content: t.content,
+                        mode: t.mode,
+                        format: t.format,
+                        custom_css: t.custom_css,
+                        page_header: t.page_header,
+                        page_footer: t.page_footer,
+                    }));
                 }
             }
         }
@@ -432,6 +465,9 @@ fn resolve_report_template(
                 content: t.content,
                 mode: t.mode,
                 format: t.format,
+                custom_css: t.custom_css,
+                page_header: t.page_header,
+                page_footer: t.page_footer,
             }));
         }
     }
@@ -474,7 +510,13 @@ fn generate_report_inner(
             &t.config_json, &t.content, &t.mode, &ctx, &t.format,
         );
         let ext = if t.format == "html" { "html" } else { "md" };
-        (rendered, ext)
+        // HTML 格式包装 CSS + 页眉页脚
+        let final_output = if t.format == "html" && (!t.custom_css.is_empty() || !t.page_header.is_empty() || !t.page_footer.is_empty()) {
+            template_engine::wrap_html_output(&rendered, &t.custom_css, &t.page_header, &t.page_footer, &ctx)
+        } else {
+            rendered
+        };
+        (final_output, ext)
     } else {
         // Load command descriptions for friendly labels
         let cmd_descs = report_builder::load_command_descriptions(conn);
@@ -949,11 +991,14 @@ pub fn create_report_template(
     let content = data.content.unwrap_or_default();
     let config_json = data.config_json.unwrap_or_default();
     let mode = data.mode.unwrap_or_else(|| "visual".to_string());
+    let custom_css = data.custom_css.unwrap_or_default();
+    let page_header = data.page_header.unwrap_or_default();
+    let page_footer = data.page_footer.unwrap_or_default();
 
     conn.execute(
-        "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode) \
-         VALUES (?1, ?2, '', ?3, ?4, 0, ?5, ?6, ?7, ?8)",
-        rusqlite::params![data.name, data.vendor, content, format, description, sample_data, config_json, mode],
+        "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer) \
+         VALUES (?1, ?2, '', ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![data.name, data.vendor, content, format, description, sample_data, config_json, mode, custom_css, page_header, page_footer],
     )
     .map_err(|e| e.to_string())?;
 
@@ -1016,6 +1061,18 @@ pub fn update_report_template(
         sets.push("mode = ?");
         params.push(Box::new(mode.clone()));
     }
+    if let Some(ref custom_css) = data.custom_css {
+        sets.push("custom_css = ?");
+        params.push(Box::new(custom_css.clone()));
+    }
+    if let Some(ref page_header) = data.page_header {
+        sets.push("page_header = ?");
+        params.push(Box::new(page_header.clone()));
+    }
+    if let Some(ref page_footer) = data.page_footer {
+        sets.push("page_footer = ?");
+        params.push(Box::new(page_footer.clone()));
+    }
 
     if sets.is_empty() {
         return Err("未提供任何更新字段".to_string());
@@ -1074,9 +1131,77 @@ pub fn render_template_preview(
     .ok_or_else(|| format!("报告模板 ID {} 不存在", template_id))?;
 
     let ctx = template_variables::build_sample_context();
-    Ok(template_engine::render_template_from_config(
+    let rendered = template_engine::render_template_from_config(
         &template.config_json, &template.content, &template.mode, &ctx, &template.format,
-    ))
+    );
+
+    // 如果是 HTML 格式且有自定义 CSS/页眉/页脚，包装输出
+    if template.format == "html" && (!template.custom_css.is_empty() || !template.page_header.is_empty() || !template.page_footer.is_empty()) {
+        Ok(template_engine::wrap_html_output(
+            &rendered, &template.custom_css, &template.page_header, &template.page_footer, &ctx,
+        ))
+    } else {
+        Ok(rendered)
+    }
+}
+
+/// 用真实巡检记录数据预览报告模板
+#[tauri::command]
+pub fn render_template_preview_with_record(
+    template_id: i64,
+    record_id: i64,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock();
+
+    // 加载模板
+    let tpl_sql = format!("SELECT {} FROM report_templates WHERE id = ?1", REPORT_TEMPLATE_COLUMNS);
+    let template = crate::db::query::query_one(
+        &conn, &tpl_sql, rusqlite::params![template_id], report_template_from_row,
+    )?
+    .ok_or_else(|| format!("报告模板 ID {} 不存在", template_id))?;
+
+    // 加载巡检记录
+    let rec_sql = format!("SELECT {} FROM inspection_records WHERE id = ?1", RECORD_COLUMNS);
+    let record = crate::db::query::query_one(
+        &conn, &rec_sql, rusqlite::params![record_id], record_from_row,
+    )?
+    .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+    // 加载设备
+    let dev_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+    let device = crate::db::query::query_one(
+        &conn, &dev_sql, rusqlite::params![record.device_id], device_from_row,
+    )?
+    .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
+
+    let ctx = template_variables::build_template_context(&conn, &device, &record)?;
+    let rendered = template_engine::render_template_from_config(
+        &template.config_json, &template.content, &template.mode, &ctx, &template.format,
+    );
+
+    if template.format == "html" && (!template.custom_css.is_empty() || !template.page_header.is_empty() || !template.page_footer.is_empty()) {
+        Ok(template_engine::wrap_html_output(
+            &rendered, &template.custom_css, &template.page_header, &template.page_footer, &ctx,
+        ))
+    } else {
+        Ok(rendered)
+    }
+}
+
+/// 列出最近的巡检记录（供前端选择真实数据预览）
+#[tauri::command]
+pub fn list_recent_records(
+    limit: Option<i64>,
+    state: State<AppState>,
+) -> Result<Vec<InspectionRecord>, String> {
+    let conn = state.db.lock();
+    let limit = limit.unwrap_or(20);
+    let sql = format!(
+        "SELECT {} FROM inspection_records WHERE status = 'completed' ORDER BY id DESC LIMIT ?1",
+        RECORD_COLUMNS
+    );
+    crate::db::query::query_all(&conn, &sql, rusqlite::params![limit], record_from_row)
 }
 
 // ============================================================

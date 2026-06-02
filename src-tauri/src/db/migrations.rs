@@ -65,5 +65,22 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 6")?;
     }
 
+    if version < 7 {
+        // 报告模板增强：自定义 CSS、页眉、页脚
+        let has_custom_css: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('report_templates') WHERE name = 'custom_css'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_custom_css {
+            conn.execute_batch(
+                "ALTER TABLE report_templates ADD COLUMN custom_css TEXT DEFAULT '';
+                 ALTER TABLE report_templates ADD COLUMN page_header TEXT DEFAULT '';
+                 ALTER TABLE report_templates ADD COLUMN page_footer TEXT DEFAULT '';",
+            )?;
+        }
+        conn.execute_batch("PRAGMA user_version = 7")?;
+    }
+
     Ok(())
 }

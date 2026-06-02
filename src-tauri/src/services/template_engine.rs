@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use regex::Regex;
 use serde::Deserialize;
+use super::html_util::html_escape;
 
 /// A section in the visual template config.
 #[derive(Debug, Deserialize, Clone)]
@@ -44,6 +45,41 @@ pub fn render_template_from_config(
     render_default_sections(ctx, format)
 }
 
+/// Wrap HTML output with custom CSS and page header/footer.
+/// Sanitizes custom_css to prevent `</style>` injection.
+pub fn wrap_html_output(
+    body: &str,
+    custom_css: &str,
+    page_header: &str,
+    page_footer: &str,
+    ctx: &HashMap<String, serde_json::Value>,
+) -> String {
+    let mut out = String::new();
+
+    if !page_header.is_empty() {
+        let rendered = render_template(page_header, ctx, "html");
+        out.push_str(&format!("<header class=\"report-header\">{}</header>\n", rendered));
+    }
+
+    out.push_str(body);
+
+    if !page_footer.is_empty() {
+        let rendered = render_template(page_footer, ctx, "html");
+        out.push_str(&format!("<footer class=\"report-footer\">{}</footer>\n", rendered));
+    }
+
+    if !custom_css.is_empty() {
+        // Sanitize: strip </style> to prevent injection
+        let safe_css = custom_css.replace("</style>", "");
+        out.push_str(&format!(
+            "\n<style>/* custom CSS */\n{}\n</style>",
+            safe_css
+        ));
+    }
+
+    out
+}
+
 fn render_sections(config: &TemplateConfig, ctx: &HashMap<String, serde_json::Value>, format: &str) -> String {
     let mut out = String::new();
 
@@ -51,9 +87,9 @@ fn render_sections(config: &TemplateConfig, ctx: &HashMap<String, serde_json::Va
         if !section.enabled {
             continue;
         }
-        let section_md = render_section(section, ctx, format);
-        if !section_md.is_empty() {
-            out.push_str(&section_md);
+        let rendered = render_section(section, ctx, format);
+        if !rendered.is_empty() {
+            out.push_str(&rendered);
             out.push('\n');
         }
     }
@@ -66,12 +102,14 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
 
     match section.section_type.as_str() {
         "title" => {
+            let pattern = section.config.get("title_pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{{device_name}} 巡检报告");
+            let title = render_template(pattern, ctx, format);
             if is_html {
-                format!(
-                    "<h1 class=\"report-title\">{{device_name}} 巡检报告</h1>\n<p class=\"report-meta\">生成时间: {{report_timestamp}}</p>"
-                )
+                format!("<h1 class=\"report-title\">{}</h1>\n<p class=\"report-meta\">生成时间: {{report_timestamp}}</p>", html_escape(&title))
             } else {
-                "# {{device_name}} 巡检报告\n\n> 生成时间: {{report_timestamp}}\n".to_string()
+                format!("# {}\n\n> 生成时间: {{report_timestamp}}\n", title)
             }
         }
 
@@ -81,24 +119,38 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 ("device_name", "设备名称"), ("device_ip", "IP 地址"),
                 ("vendor", "厂商"), ("model", "型号"),
                 ("sn", "序列号"), ("manufacturing_date", "生产日期"),
+                ("hostname", "主机名"), ("os_release", "系统版本"),
+                ("kernel", "内核版本"), ("cpu_cores", "CPU 核数"),
+                ("mem_total", "内存总量"), ("uptime", "运行时间"),
+                ("interface_count", "接口数"), ("vlan_count", "VLAN 数"),
             ].iter().cloned().collect();
 
+            let show_header = section.config.get("show_header")
+                .and_then(|v| v.as_bool()).unwrap_or(true);
+
             if is_html {
-                let mut t = "<h2>基本信息</h2>\n<table class=\"info\">\n".to_string();
+                let mut t = String::new();
+                if show_header {
+                    t.push_str("<h2>基本信息</h2>\n");
+                }
+                t.push_str("<table class=\"info\">\n");
                 for chunk in fields.chunks(2) {
                     t.push_str("<tr>");
                     for f in chunk {
                         let label = labels.get(f.as_str()).copied().unwrap_or(f.as_str());
                         t.push_str(&format!("<td class=\"label\">{}</td><td>{{{{{}}}}}</td>", label, f));
                     }
-                    // Fill empty cells if odd count
                     if chunk.len() == 1 { t.push_str("<td></td><td></td>"); }
                     t.push_str("</tr>\n");
                 }
                 t.push_str("</table>\n");
                 t
             } else {
-                let mut t = "## 基本信息\n\n| 项目 | 内容 | 项目 | 内容 |\n|------|------|------|------|\n".to_string();
+                let mut t = String::new();
+                if show_header {
+                    t.push_str("## 基本信息\n\n");
+                }
+                t.push_str("| 项目 | 内容 | 项目 | 内容 |\n|------|------|------|------|\n");
                 for chunk in fields.chunks(2) {
                     let mut cells = Vec::new();
                     for f in chunk {
@@ -122,6 +174,9 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 .and_then(|v| v.as_bool()).unwrap_or(true);
             let max_lines = section.config.get("max_output_lines")
                 .and_then(|v| v.as_u64()).unwrap_or(60) as usize;
+            let filter_cats = section.config.get("filter_category")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<_>>());
 
             if is_html {
                 let mut t = "<h2>巡检结果</h2>\n<table class=\"result\">\n".to_string();
@@ -129,29 +184,37 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 if show_output { t.push_str("<th>原始输出</th>"); }
                 t.push_str("</tr></thead>\n<tbody>\n");
                 let cmd_desc_map = ctx.get("command_descriptions").and_then(|v| v.as_object());
+                let cmd_cat_map = ctx.get("command_categories").and_then(|v| v.as_object());
                 if let Some(judgments) = ctx.get("command_judgments").and_then(|v| v.as_object()) {
                     let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
                     let mut seq = 0u32;
                     for (cmd, jdg) in judgments {
+                        // 按类别过滤
+                        if let Some(ref cats) = filter_cats {
+                            let cmd_cat = cmd_cat_map.and_then(|m| m.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
+                            if !cats.iter().any(|c| c == cmd_cat) {
+                                continue;
+                            }
+                        }
                         seq += 1;
                         let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("-");
                         let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("-");
                         let suggestion = jdg.get("suggestion").and_then(|v| v.as_str()).unwrap_or("-");
                         let conclusion = if suggestion.is_empty() {
-                            format!("{}：{}", html_escape_str(status), html_escape_str(finding))
+                            format!("{}：{}", html_escape(status), html_escape(finding))
                         } else {
-                            format!("{}：{}；建议：{}", html_escape_str(status), html_escape_str(finding), html_escape_str(suggestion))
+                            format!("{}：{}；建议：{}", html_escape(status), html_escape(finding), html_escape(suggestion))
                         };
                         let display_name = cmd_desc_map
                             .and_then(|m| m.get(cmd))
                             .and_then(|v| v.as_str())
                             .unwrap_or(cmd);
                         t.push_str(&format!("<tr><td class=\"num\">{}</td><td class=\"item\">{}</td><td class=\"detail\">{}</td><td class=\"verdict\">{}</td>",
-                            seq, html_escape_str(display_name), html_escape_str(finding), conclusion));
+                            seq, html_escape(display_name), html_escape(finding), conclusion));
                         if show_output {
                             let raw = outputs.and_then(|o| o.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
                             let trimmed = trim_output(raw, max_lines);
-                            t.push_str(&format!("<td class=\"detail\">{}</td>", html_escape_str(&trimmed)));
+                            t.push_str(&format!("<td class=\"detail\">{}</td>", html_escape(&trimmed)));
                         }
                         t.push_str("</tr>\n");
                     }
@@ -189,6 +252,99 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 "<h2>总体评估</h2>\n<div class=\"overall\"><p><strong>综合判断：</strong>{{summary}}</p>\n<p><strong>建议：</strong>{{ai_suggestions}}</p></div>\n".to_string()
             } else {
                 "## 总体评估\n\n**综合判断：** {{summary}}\n\n**建议：** {{ai_suggestions}}\n".to_string()
+            }
+        }
+
+        "custom_text" => {
+            let content = section.config.get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if content.is_empty() {
+                return String::new();
+            }
+            let rendered = render_template(content, ctx, format);
+            if is_html {
+                format!("<div class=\"custom-text\">{}</div>\n", rendered)
+            } else {
+                format!("{}\n", rendered)
+            }
+        }
+
+        "header_footer" => {
+            let position = section.config.get("position")
+                .and_then(|v| v.as_str())
+                .unwrap_or("header");
+            let content = section.config.get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if content.is_empty() {
+                return String::new();
+            }
+            let rendered = render_template(content, ctx, format);
+            if is_html {
+                match position {
+                    "footer" => format!("<footer class=\"report-footer\">{}</footer>\n", rendered),
+                    _ => format!("<header class=\"report-header\">{}</header>\n", rendered),
+                }
+            } else {
+                match position {
+                    "footer" => format!("---\n{}\n", rendered),
+                    _ => format!("{}\n\n---\n", rendered),
+                }
+            }
+        }
+
+        "device_summary_table" => {
+            let fields = get_section_fields(&section.config, &["device_name", "device_ip", "vendor", "model"]);
+            let labels: HashMap<&str, &str> = [
+                ("device_name", "设备名称"), ("device_ip", "IP 地址"),
+                ("vendor", "厂商"), ("model", "型号"),
+                ("sn", "序列号"), ("status", "状态"),
+            ].iter().cloned().collect();
+
+            // 批量报告：从 context 中取 devices 数组
+            let devices = ctx.get("devices").and_then(|v| v.as_array());
+            let Some(devices) = devices else {
+                return String::new();
+            };
+            if devices.is_empty() {
+                return String::new();
+            }
+
+            if is_html {
+                let mut t = "<h2>设备汇总</h2>\n<table class=\"info\">\n<thead><tr>".to_string();
+                for f in &fields {
+                    let label = labels.get(f.as_str()).copied().unwrap_or(f.as_str());
+                    t.push_str(&format!("<th>{}</th>", html_escape(label)));
+                }
+                t.push_str("</tr></thead>\n<tbody>\n");
+                for dev in devices {
+                    t.push_str("<tr>");
+                    for f in &fields {
+                        let val = dev.get(f.as_str())
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-");
+                        t.push_str(&format!("<td>{}</td>", html_escape(val)));
+                    }
+                    t.push_str("</tr>\n");
+                }
+                t.push_str("</tbody>\n</table>\n");
+                t
+            } else {
+                let mut t = "## 设备汇总\n\n".to_string();
+                let headers: Vec<String> = fields.iter()
+                    .map(|f| labels.get(f.as_str()).copied().unwrap_or(f.as_str()).to_string())
+                    .collect();
+                t.push_str(&format!("| {} |\n", headers.join(" | ")));
+                t.push_str(&format!("|{}|\n", headers.iter().map(|_| "------").collect::<Vec<_>>().join("|")));
+                for dev in devices {
+                    let row: Vec<String> = fields.iter()
+                        .map(|f| dev.get(f.as_str()).and_then(|v| v.as_str()).unwrap_or("-").to_string())
+                        .collect();
+                    t.push_str(&format!("| {} |\n", row.join(" | ")));
+                }
+                t.push('\n');
+                t
             }
         }
 
@@ -230,8 +386,7 @@ fn trim_output(output: &str, max_lines: usize) -> String {
     }
 }
 
-/// Render a template string by replacing {{variable}} and {{#each}}...{{/each}}
-/// placeholders with values from the context HashMap.
+/// Render a template string by replacing {{variable}}, {{#each}}, and {{#if}} placeholders.
 pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>, format: &str) -> String {
     let mut result = template.to_string();
 
@@ -300,16 +455,34 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
         }
     }).to_string();
 
-    let html_escape = format == "html";
+    // Step 2: Process {{#if KEY}}...{{/if}} blocks (with optional {{else}})
+    let if_re = Regex::new(r"\{\{#if\s+(\S+)\}\}([\s\S]*?)\{\{/if\}\}").unwrap();
+    result = if_re.replace_all(&result, |caps: &regex::Captures| {
+        let key = &caps[1];
+        let body = &caps[2];
+        let val = resolve_path(ctx, key);
+        let is_truthy = !val.is_empty() && val != "-" && val != "null";
 
-    // Step 2: Process remaining {{variable}} and {{nested.path}} placeholders
+        // Check for {{else}} inside the body
+        if let Some(else_pos) = body.find("{{else}}") {
+            let if_part = &body[..else_pos];
+            let else_part = &body[else_pos + 8..]; // len of "{{else}}" = 8
+            if is_truthy { if_part.to_string() } else { else_part.to_string() }
+        } else {
+            if is_truthy { body.to_string() } else { String::new() }
+        }
+    }).to_string();
+
+    let is_html = format == "html";
+
+    // Step 3: Process remaining {{variable}} and {{nested.path}} placeholders
     let var_re = Regex::new(r"\{\{([^}]+)\}\}").unwrap();
     let final_result = var_re.replace_all(&result, |caps: &regex::Captures| {
         let path = caps[1].trim();
         let val = resolve_path(ctx, path);
 
-        if html_escape {
-            html_escape_str(&val)
+        if is_html {
+            html_escape(&val)
         } else {
             val
         }
@@ -319,44 +492,59 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
 }
 
 /// Resolve a dot-separated path from the context map.
-/// e.g., "command_judgments.display version.status" traverses nested objects.
+/// First tries the full path as a literal key (handles keys with spaces/dots like "display version"),
+/// then progressively splits from the right for nested access.
 fn resolve_path(ctx: &HashMap<String, serde_json::Value>, path: &str) -> String {
-    let parts: Vec<&str> = path.splitn(2, '.').collect();
-
-    if parts.is_empty() {
+    if path.is_empty() {
         return "-".to_string();
     }
 
-    let first = parts[0];
-    let value = ctx.get(first);
+    // Try the full path as a literal key first (handles "display version", etc.)
+    if let Some(v) = ctx.get(path) {
+        return v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+    }
 
-    match value {
-        None => "-".to_string(),
-        Some(v) => {
-            if parts.len() == 1 {
-                // Simple key - return string representation
-                v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())
-            } else {
-                // Nested path: descend into object
-                let rest = parts[1];
-                if let Some(obj) = v.as_object() {
-                    let nested_val = obj.get(rest);
-                    match nested_val {
-                        Some(nv) => nv.as_str().map(|s| s.to_string()).unwrap_or_else(|| nv.to_string()),
-                        None => "-".to_string(),
-                    }
-                } else {
-                    "-".to_string()
-                }
+    // Split on the first dot for top-level.nested access
+    if let Some(dot_pos) = path.find('.') {
+        let first = &path[..dot_pos];
+        let rest = &path[dot_pos + 1..];
+
+        if let Some(v) = ctx.get(first) {
+            return resolve_nested(v, rest);
+        }
+    }
+
+    "-".to_string()
+}
+
+/// Recursively resolve a nested path within a JSON value.
+/// Tries the full remaining path as a literal key first, then splits on '.'.
+fn resolve_nested(value: &serde_json::Value, path: &str) -> String {
+    // Try full path as literal key (for keys like "display version")
+    if let Some(obj) = value.as_object() {
+        if let Some(v) = obj.get(path) {
+            return v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+        }
+    }
+
+    // Try splitting on the first dot
+    if let Some(dot_pos) = path.find('.') {
+        let first = &path[..dot_pos];
+        let rest = &path[dot_pos + 1..];
+
+        if let Some(obj) = value.as_object() {
+            if let Some(v) = obj.get(first) {
+                return resolve_nested(v, rest);
             }
         }
     }
-}
 
-fn html_escape_str(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+    // Try as direct key (no more dots)
+    if let Some(obj) = value.as_object() {
+        if let Some(v) = obj.get(path) {
+            return v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+        }
+    }
+
+    "-".to_string()
 }

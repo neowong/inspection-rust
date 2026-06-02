@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings, GripVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings, GripVertical, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { InspectionTemplate, CommandPool, ReportTemplate, TemplateSection, TemplateConfig } from "../types";
@@ -13,6 +13,7 @@ import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import { VENDORS, CATEGORIES } from "../lib/constants";
+import VariablePicker from "../components/VariablePicker";
 
 type TabKey = "templates" | "commands" | "reports";
 
@@ -42,7 +43,16 @@ const SECTION_META: Record<string, { description: string; icon: string }> = {
   inspection_results: { description: "逐命令巡检判断结果（序号/项目/结果/结论）", icon: "✅" },
   ai_analysis: { description: "AI 对巡检结果的整体分析文字", icon: "🤖" },
   overall_assessment: { description: "综合判断结论和处理建议", icon: "📝" },
+  custom_text: { description: "自定义文本块，支持插入变量", icon: "✏️" },
+  header_footer: { description: "报告页眉或页脚内容", icon: "📌" },
+  device_summary_table: { description: "批量报告设备汇总表格", icon: "📇" },
 };
+
+const ADDABLE_SECTION_TYPES = [
+  { type: "custom_text", label: "自定义文本", defaultConfig: { content: "" } },
+  { type: "header_footer", label: "页眉/页脚", defaultConfig: { position: "header", content: "" } },
+  { type: "device_summary_table", label: "设备汇总表", defaultConfig: { fields: ["device_name", "device_ip", "vendor", "model"] } },
+];
 
 const BASIC_INFO_FIELDS = [
   { key: "device_name", label: "设备名称" },
@@ -116,6 +126,9 @@ export default function TemplatesPage() {
   // Report template state
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
   const [renderedPreview, setRenderedPreview] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<"sample" | "real">("sample");
+  const [recentRecords, setRecentRecords] = useState<{ id: number; device_id: number; created_at: string }[]>([]);
+  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [confirmDeleteReport, setConfirmDeleteReport] = useState<number | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<ReportTemplate | null>(null);
@@ -124,11 +137,17 @@ export default function TemplatesPage() {
     description: "", mode: "visual" as "visual" | "advanced",
     sections: cloneSections(),
     content: "",
+    custom_css: "", page_header: "", page_footer: "",
   });
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [showAdvancedStyle, setShowAdvancedStyle] = useState(false);
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
   const [reportSaving, setReportSaving] = useState(false);
   const [reportSaveError, setReportSaveError] = useState<string | null>(null);
+  const [showVariablePicker, setShowVariablePicker] = useState(false);
+  const variableTargetRef = useRef<"content" | number>("content"); // "content" = advanced mode, number = section index
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const customTextRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
 
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
@@ -261,17 +280,17 @@ export default function TemplatesPage() {
     setEditingReport(null);
     setReportForm({
       name: "", vendor: "", format: "markdown", description: "", mode: "visual",
-      sections: cloneSections(),
-      content: "",
+      sections: cloneSections(), content: "",
+      custom_css: "", page_header: "", page_footer: "",
     });
     setReportSaveError(null);
     setExpandedSection(null);
+    setShowAdvancedStyle(false);
     setReportModalOpen(true);
   };
 
   const openEditReport = (rt: ReportTemplate) => {
     setEditingReport(rt);
-    // Parse config_json for visual mode
     let sections = cloneSections();
     const mode = rt.mode || "visual";
     if (mode === "visual" && rt.config_json) {
@@ -295,6 +314,9 @@ export default function TemplatesPage() {
       mode,
       sections,
       content: rt.content || "",
+      custom_css: rt.custom_css || "",
+      page_header: rt.page_header || "",
+      page_footer: rt.page_footer || "",
     });
     setReportSaveError(null);
     setExpandedSection(null);
@@ -335,6 +357,9 @@ export default function TemplatesPage() {
       format: reportForm.format,
       description: reportForm.description,
       mode: reportForm.mode,
+      custom_css: reportForm.custom_css || "",
+      page_header: reportForm.page_header || "",
+      page_footer: reportForm.page_footer || "",
     };
 
     if (reportForm.mode === "visual") {
@@ -356,8 +381,23 @@ export default function TemplatesPage() {
   };
 
   const handleReportPreview = (id: number) => {
+    setPreviewMode("sample");
+    setRenderedPreview(null);
     invoke<string>("render_template_preview", { templateId: id })
       .then(setRenderedPreview)
+      .catch(console.error);
+  };
+
+  const handleReportPreviewReal = (id: number, recordId: number) => {
+    setRenderedPreview(null);
+    invoke<string>("render_template_preview_with_record", { templateId: id, recordId })
+      .then(setRenderedPreview)
+      .catch(console.error);
+  };
+
+  const loadRecentRecords = () => {
+    invoke<{ id: number; device_id: number; created_at: string }[]>("list_recent_records", { limit: 20 })
+      .then(setRecentRecords)
       .catch(console.error);
   };
 
@@ -416,6 +456,60 @@ export default function TemplatesPage() {
     const fields = (section.config.fields as string[]) || [];
     const newFields = fields.includes(field) ? fields.filter(f => f !== field) : [...fields, field];
     updateSectionConfig(index, { fields: newFields });
+  };
+
+  const addSection = (type: string) => {
+    const def = ADDABLE_SECTION_TYPES.find(s => s.type === type);
+    if (!def) return;
+    setReportForm(prev => ({
+      ...prev,
+      sections: [...prev.sections, {
+        type,
+        enabled: true,
+        label: def.label,
+        config: { ...def.defaultConfig },
+      } as TemplateSection],
+    }));
+    setAddSectionOpen(false);
+  };
+
+  const removeSection = (index: number) => {
+    setReportForm(prev => ({
+      ...prev,
+      sections: prev.sections.filter((_, i) => i !== index),
+    }));
+  };
+
+  const insertVariable = (varName: string) => {
+    const placeholder = `{{${varName}}}`;
+    const target = variableTargetRef.current;
+    let textarea: HTMLTextAreaElement | null = null;
+
+    if (target === "content") {
+      textarea = contentTextareaRef.current;
+    } else if (typeof target === "number") {
+      textarea = customTextRefs.current.get(target) || null;
+    }
+
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const oldVal = textarea.value;
+      const newVal = oldVal.slice(0, start) + placeholder + oldVal.slice(end);
+
+      if (target === "content") {
+        setReportForm(prev => ({ ...prev, content: newVal }));
+      } else if (typeof target === "number") {
+        updateSectionConfig(target, { content: newVal });
+      }
+
+      // Restore cursor position after React re-render
+      requestAnimationFrame(() => {
+        textarea!.focus();
+        textarea!.setSelectionRange(start + placeholder.length, start + placeholder.length);
+      });
+    }
+    setShowVariablePicker(false);
   };
 
   // ============================================================
@@ -895,25 +989,144 @@ export default function TemplatesPage() {
                             <div className="text-[10px] text-[hsl(var(--text-tertiary))] leading-tight">{meta.description}</div>
                           </div>
                           {/* Config gear */}
-                          {(section.type === "basic_info" || section.type === "inspection_results") && section.enabled && (
+                          {["basic_info", "inspection_results", "title", "custom_text", "header_footer", "device_summary_table"].includes(section.type) && section.enabled && (
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setExpandedSection(isExpanded ? null : section.type); }}
+                              onClick={(e) => { e.stopPropagation(); setExpandedSection(isExpanded ? null : section.type + i); }}
                               className={`shrink-0 p-1 rounded-md transition-colors ${
                                 isExpanded
                                   ? "text-[hsl(var(--accent))] bg-[hsl(var(--accent)_/_0.1)]"
                                   : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))]"
                               }`}
-                              title="配置字段"
+                              title="配置"
                             ><Settings size={13} /></button>
+                          )}
+                          {/* Remove button (only for non-default sections) */}
+                          {ADDABLE_SECTION_TYPES.some(s => s.type === section.type) && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeSection(i); }}
+                              className="shrink-0 p-1 rounded-md text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] hover:bg-[hsl(var(--danger)_/_0.1)] transition-colors"
+                              title="移除此区块"
+                            ><Trash2 size={13} /></button>
                           )}
                         </div>
                         {/* Expanded config */}
                         {isExpanded && section.enabled && (
                           <div className="px-3 pb-2.5 border-t border-[hsl(var(--border-light))] pt-2 ml-9">
                             {section.type === "basic_info" && (
+                              <div className="space-y-2">
+                                <div>
+                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的字段：</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {BASIC_INFO_FIELDS.map((f) => {
+                                      const fields = (section.config.fields as string[]) || [];
+                                      const checked = fields.includes(f.key);
+                                      return (
+                                        <span
+                                          key={f.key}
+                                          onClick={() => toggleSectionField(i, f.key)}
+                                          className={`px-2 py-1 rounded-md text-[11px] cursor-pointer border transition-all ${
+                                            checked
+                                              ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))] font-medium"
+                                              : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))] hover:border-[hsl(var(--border))] hover:text-[hsl(var(--text-secondary))]"
+                                          }`}
+                                        >{f.label}</span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
+                                  <input type="checkbox" checked={section.config.show_header as boolean ?? true}
+                                    onChange={(e) => updateSectionConfig(i, { show_header: e.target.checked })}
+                                    className="accent-[hsl(var(--accent))] w-3 h-3" />
+                                  显示区块标题
+                                </label>
+                              </div>
+                            )}
+                            {section.type === "inspection_results" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-4">
+                                  <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
+                                    <input type="checkbox" checked={section.config.show_output as boolean ?? true}
+                                      onChange={(e) => updateSectionConfig(i, { show_output: e.target.checked })}
+                                      className="accent-[hsl(var(--accent))] w-3 h-3" />
+                                    显示原始输出
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))]">
+                                    截断行数
+                                    <input type="number" value={section.config.max_output_lines as number ?? 60}
+                                      onChange={(e) => updateSectionConfig(i, { max_output_lines: Number(e.target.value) || 60 })}
+                                      min={5} max={500}
+                                      className="w-14 h-6 px-1.5 text-[11px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--accent))]" />
+                                  </label>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">按类别过滤：</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {CATEGORIES.map((cat) => {
+                                      const filterCats = (section.config.filter_category as string[]) || [];
+                                      const checked = filterCats.length === 0 || filterCats.includes(cat);
+                                      return (
+                                        <span
+                                          key={cat}
+                                          onClick={() => {
+                                            const cur = (section.config.filter_category as string[]) || [];
+                                            const next = cur.includes(cat) ? cur.filter(c => c !== cat) : [...cur, cat];
+                                            updateSectionConfig(i, { filter_category: next });
+                                          }}
+                                          className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer border transition-all ${
+                                            checked
+                                              ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))]"
+                                              : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))]"
+                                          }`}
+                                        >{cat}</span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {section.type === "title" && (
                               <div>
-                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的字段：</div>
+                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">标题模板（支持变量）：</div>
+                                <Input value={(section.config.title_pattern as string) || ""} onChange={(e) => updateSectionConfig(i, { title_pattern: e.target.value })} placeholder="{{device_name}} 巡检报告" className="text-xs h-7" />
+                              </div>
+                            )}
+                            {section.type === "custom_text" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))]">自定义内容（支持变量）：</div>
+                                  <button type="button" onClick={() => { variableTargetRef.current = i; setShowVariablePicker(true); }} className="text-[10px] text-[hsl(var(--accent))] hover:underline">插入变量</button>
+                                </div>
+                                <textarea
+                                  ref={(el) => { if (el) customTextRefs.current.set(i, el); }}
+                                  value={(section.config.content as string) || ""}
+                                  onChange={(e) => updateSectionConfig(i, { content: e.target.value })}
+                                  onFocus={() => { variableTargetRef.current = i; }}
+                                  className="w-full h-24 font-mono text-[11px] p-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
+                                  placeholder="输入自定义文本，用 {{变量名}} 插入动态内容"
+                                />
+                              </div>
+                            )}
+                            {section.type === "header_footer" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <label className="text-[10px] font-medium text-[hsl(var(--text-secondary))]">位置：</label>
+                                  <Select value={(section.config.position as string) || "header"} onChange={(e) => updateSectionConfig(i, { position: e.target.value })} className="text-xs h-6 w-24">
+                                    <option value="header">页眉</option>
+                                    <option value="footer">页脚</option>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">内容（支持变量）：</div>
+                                  <Input value={(section.config.content as string) || ""} onChange={(e) => updateSectionConfig(i, { content: e.target.value })} placeholder="XX公司 网络设备巡检报告" className="text-xs h-7" />
+                                </div>
+                              </div>
+                            )}
+                            {section.type === "device_summary_table" && (
+                              <div>
+                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的列：</div>
                                 <div className="flex flex-wrap gap-1.5">
                                   {BASIC_INFO_FIELDS.map((f) => {
                                     const fields = (section.config.fields as string[]) || [];
@@ -933,28 +1146,37 @@ export default function TemplatesPage() {
                                 </div>
                               </div>
                             )}
-                            {section.type === "inspection_results" && (
-                              <div className="flex items-center gap-4">
-                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
-                                  <input type="checkbox" checked={section.config.show_output as boolean ?? true}
-                                    onChange={(e) => updateSectionConfig(i, { show_output: e.target.checked })}
-                                    className="accent-[hsl(var(--accent))] w-3 h-3" />
-                                  显示原始输出
-                                </label>
-                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))]">
-                                  截断行数
-                                  <input type="number" value={section.config.max_output_lines as number ?? 60}
-                                    onChange={(e) => updateSectionConfig(i, { max_output_lines: Number(e.target.value) || 60 })}
-                                    min={5} max={500}
-                                    className="w-14 h-6 px-1.5 text-[11px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--accent))]" />
-                                </label>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
+                </div>
+                {/* Add Section button */}
+                <div className="relative mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddSectionOpen(!addSectionOpen)}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] border border-dashed border-[hsl(var(--border-light))] hover:border-[hsl(var(--accent))] rounded-md transition-colors"
+                  >
+                    <Plus size={13} /> 添加区块
+                  </button>
+                  {addSectionOpen && (
+                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-lg z-10 py-1">
+                      {ADDABLE_SECTION_TYPES.map((st) => (
+                        <button
+                          key={st.type}
+                          type="button"
+                          onClick={() => addSection(st.type)}
+                          className="w-full px-3 py-1.5 text-left text-[11px] text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))] flex items-center gap-2"
+                        >
+                          <span>{SECTION_META[st.type]?.icon || "📄"}</span>
+                          <span>{st.label}</span>
+                          <span className="text-[10px] text-[hsl(var(--text-tertiary))] ml-auto">{SECTION_META[st.type]?.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -982,13 +1204,17 @@ export default function TemplatesPage() {
           {/* ADVANCED MODE */}
           {reportForm.mode === "advanced" && (
             <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">
-                模板代码（{`{{变量}}`} 语法）
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-[hsl(var(--text-secondary))]">
+                  模板代码（{`{{变量}}`} 语法）
+                </label>
+                <button type="button" onClick={() => { variableTargetRef.current = "content"; setShowVariablePicker(true); }} className="text-[11px] text-[hsl(var(--accent))] hover:underline">插入变量</button>
+              </div>
               <textarea
                 ref={contentTextareaRef}
                 value={reportForm.content}
                 onChange={(e) => setReportForm({ ...reportForm, content: e.target.value })}
+                onFocus={() => { variableTargetRef.current = "content"; }}
                 className="w-full h-72 font-mono text-xs p-3 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
                 placeholder={reportForm.format === "markdown"
                   ? "# {{device_name}} 巡检报告\n\n> 生成时间: {{report_timestamp}}\n\n## 基本信息\n..."
@@ -997,7 +1223,53 @@ export default function TemplatesPage() {
               />
             </div>
           )}
+
+          {/* Page Header / Footer */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">页眉</label>
+              <Input value={reportForm.page_header} onChange={(e) => setReportForm({ ...reportForm, page_header: e.target.value })} placeholder="XX公司 网络设备巡检报告" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">页脚</label>
+              <Input value={reportForm.page_footer} onChange={(e) => setReportForm({ ...reportForm, page_footer: e.target.value })} placeholder="机密文件 | 仅限内部使用" />
+            </div>
+          </div>
+
+          {/* Advanced Style (CSS) */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedStyle(!showAdvancedStyle)}
+              className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors"
+            >
+              {showAdvancedStyle ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              高级样式（自定义 CSS）
+            </button>
+            {showAdvancedStyle && (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  value={reportForm.custom_css}
+                  onChange={(e) => setReportForm({ ...reportForm, custom_css: e.target.value })}
+                  className="w-full h-32 font-mono text-[11px] p-2.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
+                  placeholder=".report-title { color: #1a56db; }\n.info td.label { font-weight: 600; }"
+                />
+                <div className="text-[10px] text-[hsl(var(--text-tertiary))]">
+                  可用类名：<code>.report-title</code> <code>.report-meta</code> <code>.info</code> <code>.result</code> <code>.ai-analysis</code> <code>.overall</code> <code>.custom-text</code> <code>.report-header</code> <code>.report-footer</code>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
+
+        {/* Variable Picker Popover */}
+        {showVariablePicker && (
+          <VariablePicker
+            onSelect={insertVariable}
+            onClose={() => setShowVariablePicker(false)}
+          />
+        )}
       </Modal>
 
       {/* Report Template Rendered Preview */}
@@ -1007,23 +1279,58 @@ export default function TemplatesPage() {
         width="max-w-2xl"
         onClose={() => setRenderedPreview(null)}
         footer={
-          <Button variant="secondary" onClick={() => setRenderedPreview(null)}>关闭</Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setRenderedPreview(null)}>关闭</Button>
+          </div>
         }
       >
-        <div className="max-h-[70vh] overflow-auto">
-          {renderedPreview ? (
-            renderedPreview.trim().startsWith("<") ? (
-              <div dangerouslySetInnerHTML={{ __html: renderedPreview }} />
+        <div className="space-y-3">
+          {/* Preview mode toggle */}
+          <div className="flex items-center gap-3">
+            <div className="flex rounded-md border border-[hsl(var(--border))] overflow-hidden">
+              <button
+                onClick={() => { setPreviewMode("sample"); if (editingReport) handleReportPreview(editingReport.id); }}
+                className={`px-3 py-1 text-xs transition-colors ${previewMode === "sample" ? "bg-[hsl(var(--accent))] text-white" : "bg-[hsl(var(--bg-app))] text-[hsl(var(--text-secondary))]"}`}
+              >示例数据</button>
+              <button
+                onClick={() => { setPreviewMode("real"); loadRecentRecords(); }}
+                className={`px-3 py-1 text-xs transition-colors ${previewMode === "real" ? "bg-[hsl(var(--accent))] text-white" : "bg-[hsl(var(--bg-app))] text-[hsl(var(--text-secondary))]"}`}
+              >真实数据</button>
+            </div>
+            {previewMode === "real" && (
+              <Select
+                value={selectedRecordId ?? ""}
+                onChange={(e) => {
+                  const rid = Number(e.target.value);
+                  setSelectedRecordId(rid);
+                  if (editingReport && rid) handleReportPreviewReal(editingReport.id, rid);
+                }}
+                className="text-xs h-7"
+              >
+                <option value="">选择巡检记录...</option>
+                {recentRecords.map((r) => (
+                  <option key={r.id} value={r.id}>记录 #{r.id} (设备 #{r.device_id})</option>
+                ))}
+              </Select>
+            )}
+          </div>
+          <div className="max-h-[60vh] overflow-auto">
+            {renderedPreview ? (
+              renderedPreview.trim().startsWith("<") ? (
+                <div dangerouslySetInnerHTML={{ __html: renderedPreview }} />
+              ) : (
+                <div className="prose prose-sm max-w-none text-[hsl(var(--text-primary))] [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-2 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_code]:text-xs [&_code]:bg-[hsl(var(--bg-hover))] [&_code]:px-1 [&_code]:rounded [&_pre]:bg-[hsl(var(--bg-card))] [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-auto [&_pre]:max-h-60 [&_pre]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:text-left [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[hsl(var(--bg-hover))] [&_td]:px-2 [&_td]:py-1 [&_td]:border-b [&_td]:border-[hsl(var(--border-light))]]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {renderedPreview}
+                  </ReactMarkdown>
+                </div>
+              )
             ) : (
-              <div className="prose prose-sm max-w-none text-[hsl(var(--text-primary))] [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-2 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_code]:text-xs [&_code]:bg-[hsl(var(--bg-hover))] [&_code]:px-1 [&_code]:rounded [&_pre]:bg-[hsl(var(--bg-card))] [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-auto [&_pre]:max-h-60 [&_pre]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:text-left [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[hsl(var(--bg-hover))] [&_td]:px-2 [&_td]:py-1 [&_td]:border-b [&_td]:border-[hsl(var(--border-light))]]">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {renderedPreview}
-                </ReactMarkdown>
-              </div>
-            )
-          ) : (
-            <p className="text-sm text-[hsl(var(--text-tertiary))]">(空)</p>
-          )}
+              <p className="text-sm text-[hsl(var(--text-tertiary))] text-center py-8">
+                {previewMode === "real" && !selectedRecordId ? "请选择一条巡检记录" : "加载中..."}
+              </p>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -1166,6 +1473,51 @@ function WysiwygBlock({ section, format: _format }: { section: TemplateSection; 
               <div className="flex gap-2"><span className="font-medium">综合判断：</span><span className="text-[hsl(var(--warning))] font-medium">⚠ 警告</span></div>
               <div className="flex gap-2"><span className="font-medium">建议：</span><span>关注 CPU 负载趋势，排查链路异常日志</span></div>
             </div>
+          </div>
+        )}
+
+        {section.type === "custom_text" && (
+          <div>
+            <div className="text-[10px] text-[hsl(var(--text-secondary))] leading-relaxed whitespace-pre-wrap">
+              {(section.config.content as string) || <span className="text-[hsl(var(--text-tertiary))] italic">（未配置内容）</span>}
+            </div>
+          </div>
+        )}
+
+        {section.type === "header_footer" && (
+          <div className="text-[10px] text-[hsl(var(--text-secondary))]">
+            <div className="text-[hsl(var(--text-tertiary))] mb-0.5">
+              {section.config.position === "footer" ? "📌 页脚" : "📌 页眉"}
+            </div>
+            <div>{(section.config.content as string) || <span className="italic text-[hsl(var(--text-tertiary))]">（未配置内容）</span>}</div>
+          </div>
+        )}
+
+        {section.type === "device_summary_table" && (
+          <div>
+            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
+            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
+              <thead>
+                <tr className="bg-[hsl(var(--bg-hover))]">
+                  {((section.config.fields as string[]) || []).map((f) => (
+                    <th key={f} className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">{fieldLabel(f)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { device_name: "核心交换机-A", device_ip: "192.168.1.1", vendor: "H3C", model: "S5560X" },
+                  { device_name: "汇聚交换机-B", device_ip: "192.168.1.2", vendor: "H3C", model: "S5130" },
+                ].map((row, ri) => (
+                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
+                    {((section.config.fields as string[]) || []).map((f) => (
+                      <td key={f} className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] last:border-r-0">{(row as Record<string, string>)[f] || "-"}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-[10px] text-[hsl(var(--text-tertiary))] text-center mt-1">... 共 N 台设备</div>
           </div>
         )}
       </div>

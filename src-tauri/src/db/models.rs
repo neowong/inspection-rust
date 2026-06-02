@@ -259,6 +259,9 @@ pub struct ReportTemplate {
     pub sample_data: String,
     pub config_json: String,
     pub mode: String,
+    pub custom_css: String,
+    pub page_header: String,
+    pub page_footer: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -273,6 +276,9 @@ pub struct ReportTemplateCreate {
     pub sample_data: Option<String>,
     pub config_json: Option<String>,
     pub mode: Option<String>,
+    pub custom_css: Option<String>,
+    pub page_header: Option<String>,
+    pub page_footer: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -286,6 +292,9 @@ pub struct ReportTemplateUpdate {
     pub sample_data: Option<String>,
     pub config_json: Option<String>,
     pub mode: Option<String>,
+    pub custom_css: Option<String>,
+    pub page_header: Option<String>,
+    pub page_footer: Option<String>,
 }
 
 // ============================
@@ -334,7 +343,7 @@ pub const RECORD_COLUMNS: &str =
      started_at, completed_at, created_at, updated_at";
 
 pub const REPORT_TEMPLATE_COLUMNS: &str =
-    "id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, created_at, updated_at";
+    "id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer, created_at, updated_at";
 
 // ============================
 // 行映射函数（统一去重）
@@ -449,7 +458,10 @@ pub fn report_template_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportT
         sample_data: row.get(8)?,
         config_json: row.get(9)?,
         mode: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        custom_css: row.get(11)?,
+        page_header: row.get(12)?,
+        page_footer: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }

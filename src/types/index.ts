@@ -117,12 +117,15 @@ export interface ReportTemplate {
   sample_data: string;
   config_json: string;
   mode: "visual" | "advanced";
+  custom_css: string;
+  page_header: string;
+  page_footer: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface TemplateSection {
-  type: "title" | "basic_info" | "inspection_results" | "ai_analysis" | "overall_assessment";
+  type: "title" | "basic_info" | "inspection_results" | "ai_analysis" | "overall_assessment" | "custom_text" | "header_footer" | "device_summary_table";
   enabled: boolean;
   label: string;
   config: Record<string, unknown>;
