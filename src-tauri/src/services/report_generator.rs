@@ -79,7 +79,18 @@ pub fn build_markdown(ctx: &HashMap<String, serde_json::Value>, cmd_descs: &Hash
             })
             .unwrap_or_default();
 
-        for (cmd, jdg) in judgments {
+        // 按 command_order 排序遍历
+        let ordered_cmds: Vec<String> = if let Some(arr) = ctx.get("command_order").and_then(|v| v.as_array()) {
+            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+        } else {
+            judgments.keys().cloned().collect()
+        };
+
+        for cmd in &ordered_cmds {
+            let jdg = match judgments.get(cmd) {
+                Some(j) => j,
+                None => continue,
+            };
             let status = jdg
                 .get("status")
                 .and_then(|v| v.as_str())

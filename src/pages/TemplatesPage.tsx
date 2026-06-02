@@ -1435,25 +1435,31 @@ function WysiwygBlock({ section, format: _format }: { section: TemplateSection; 
               </thead>
               <tbody>
                 {[
-                  { cmd: "display version", status: "正常", finding: "软件版本为推荐版本", suggestion: "" },
-                  { cmd: "display cpu-usage", status: "警告", finding: "CPU 使用率偏高 (78%)", suggestion: "建议关注 CPU 负载趋势" },
-                  { cmd: "display memory-usage", status: "正常", finding: "内存使用率 45%", suggestion: "" },
+                  { cmd: "display version", output: "H3C Comware Software, Version 7.1.075", status: "正常", finding: "软件版本为推荐版本", suggestion: "" },
+                  { cmd: "display cpu-usage", output: "Slot 0 CPU 0 usage: 78%", status: "警告", finding: "CPU 使用率偏高 (78%)", suggestion: "建议关注 CPU 负载趋势" },
+                  { cmd: "display memory-usage", output: "Used: 45%  Free: 55%", status: "正常", finding: "内存使用率 45%", suggestion: "" },
                 ].map((row, ri) => (
                   <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
                     <td className="py-1 px-1.5 text-center text-[hsl(var(--text-tertiary))] border-r border-[hsl(var(--border-light))]">{ri + 1}</td>
                     <td className="py-1 px-1.5 text-[hsl(var(--text-primary))] border-r border-[hsl(var(--border-light))] font-medium">{row.cmd}</td>
-                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] text-[10px]">{row.finding}</td>
+                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] text-[10px] font-mono">{row.output}</td>
                     <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] text-[10px]">
                       <span className={row.status === "正常" ? "text-[hsl(var(--success))]" : row.status === "警告" ? "text-[hsl(var(--warning))]" : "text-[hsl(var(--danger))]"}>
                         {row.status}
                       </span>
-                      {row.suggestion && <span className="text-[hsl(var(--text-tertiary))]"> — {row.suggestion}</span>}
+                      <span>：{row.finding}</span>
+                      {row.suggestion && <span className="text-[hsl(var(--text-tertiary))]">；建议：{row.suggestion}</span>}
                     </td>
                   </tr>
                 ))}
+                {/* 总结行 */}
+                <tr className="bg-[hsl(var(--bg-hover))]">
+                  <td colSpan={4} className="py-1.5 px-2 text-[10px] text-[hsl(var(--text-secondary))] border-t border-[hsl(var(--border))]">
+                    <span className="font-medium">综合评判：</span>设备整体运行基本正常，CPU 使用率偏高需关注
+                  </td>
+                </tr>
               </tbody>
             </table>
-            <div className="text-[10px] text-[hsl(var(--text-tertiary))] text-center mt-1">... 共 N 条</div>
           </div>
         )}
 

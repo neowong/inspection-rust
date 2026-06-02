@@ -226,6 +226,16 @@ pub fn build_template_context(
         }
     }
 
+    // Command order — 从 command_outputs 的 key 顺序提取（即模板命令执行顺序）
+    let cmd_order: Vec<serde_json::Value> = outputs_map.keys()
+        .map(|k| serde_json::Value::String(k.clone()))
+        .collect();
+    ctx.insert("command_order".into(), serde_json::Value::Array(cmd_order));
+
+    // Summary judgment
+    let summary_judgment = record.summary_judgment.clone().unwrap_or_default();
+    ctx.insert("summary_judgment".into(), serde_json::Value::String(summary_judgment));
+
     // AI analysis
     let summary = record.summary_judgment.clone().unwrap_or_default();
     ctx.insert("summary".into(), serde_json::Value::String(summary));

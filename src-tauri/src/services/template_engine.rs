@@ -170,8 +170,6 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
         }
 
         "inspection_results" => {
-            let show_output = section.config.get("show_output")
-                .and_then(|v| v.as_bool()).unwrap_or(true);
             let max_lines = section.config.get("max_output_lines")
                 .and_then(|v| v.as_u64()).unwrap_or(60) as usize;
             let filter_cats = section.config.get("filter_category")
@@ -180,43 +178,64 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
 
             if is_html {
                 let mut t = "<h2>巡检结果</h2>\n<table class=\"result\">\n".to_string();
-                t.push_str("<thead><tr><th>序号</th><th>巡检项目</th><th>巡检结果</th><th>评判结论</th>");
-                if show_output { t.push_str("<th>原始输出</th>"); }
-                t.push_str("</tr></thead>\n<tbody>\n");
+                t.push_str("<thead><tr><th>序号</th><th>巡检项目</th><th>巡检结果</th><th>评判结论</th></tr></thead>\n<tbody>\n");
                 let cmd_desc_map = ctx.get("command_descriptions").and_then(|v| v.as_object());
                 let cmd_cat_map = ctx.get("command_categories").and_then(|v| v.as_object());
-                if let Some(judgments) = ctx.get("command_judgments").and_then(|v| v.as_object()) {
-                    let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
-                    let mut seq = 0u32;
-                    for (cmd, jdg) in judgments {
-                        // 按类别过滤
-                        if let Some(ref cats) = filter_cats {
-                            let cmd_cat = cmd_cat_map.and_then(|m| m.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
-                            if !cats.iter().any(|c| c == cmd_cat) {
-                                continue;
-                            }
+                let judgments = ctx.get("command_judgments").and_then(|v| v.as_object());
+                let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
+
+                // 按 command_order 排序遍历，而非 HashMap 随机顺序
+                let ordered_cmds: Vec<String> = if let Some(order_arr) = ctx.get("command_order").and_then(|v| v.as_array()) {
+                    order_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                } else if let Some(jdg) = judgments {
+                    jdg.keys().cloned().collect()
+                } else {
+                    vec![]
+                };
+
+                let mut seq = 0u32;
+                for cmd in &ordered_cmds {
+                    let jdg = judgments.and_then(|j| j.get(cmd));
+                    if jdg.is_none() && outputs.and_then(|o| o.get(cmd)).is_none() {
+                        continue;
+                    }
+
+                    // 按类别过滤
+                    if let Some(ref cats) = filter_cats {
+                        let cmd_cat = cmd_cat_map.and_then(|m| m.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
+                        if !cats.iter().any(|c| c == cmd_cat) {
+                            continue;
                         }
-                        seq += 1;
-                        let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("-");
-                        let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("-");
-                        let suggestion = jdg.get("suggestion").and_then(|v| v.as_str()).unwrap_or("-");
-                        let conclusion = if suggestion.is_empty() {
-                            format!("{}：{}", html_escape(status), html_escape(finding))
-                        } else {
-                            format!("{}：{}；建议：{}", html_escape(status), html_escape(finding), html_escape(suggestion))
-                        };
-                        let display_name = cmd_desc_map
-                            .and_then(|m| m.get(cmd))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(cmd);
-                        t.push_str(&format!("<tr><td class=\"num\">{}</td><td class=\"item\">{}</td><td class=\"detail\">{}</td><td class=\"verdict\">{}</td>",
-                            seq, html_escape(display_name), html_escape(finding), conclusion));
-                        if show_output {
-                            let raw = outputs.and_then(|o| o.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
-                            let trimmed = trim_output(raw, max_lines);
-                            t.push_str(&format!("<td class=\"detail\">{}</td>", html_escape(&trimmed)));
-                        }
-                        t.push_str("</tr>\n");
+                    }
+                    seq += 1;
+
+                    let status = jdg.and_then(|j| j.get("status")).and_then(|v| v.as_str()).unwrap_or("-");
+                    let finding = jdg.and_then(|j| j.get("finding")).and_then(|v| v.as_str()).unwrap_or("-");
+                    let suggestion = jdg.and_then(|j| j.get("suggestion")).and_then(|v| v.as_str()).unwrap_or("-");
+                    let conclusion = if suggestion.is_empty() {
+                        format!("{}：{}", html_escape(status), html_escape(finding))
+                    } else {
+                        format!("{}：{}；建议：{}", html_escape(status), html_escape(finding), html_escape(suggestion))
+                    };
+                    let display_name = cmd_desc_map
+                        .and_then(|m| m.get(cmd))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(cmd.as_str());
+                    // 巡检结果 = 命令原始输出
+                    let raw = outputs.and_then(|o| o.get(cmd)).and_then(|v| v.as_str()).unwrap_or("");
+                    let trimmed = trim_output(raw, max_lines);
+                    t.push_str(&format!(
+                        "<tr><td class=\"num\">{}</td><td class=\"item\">{}</td><td class=\"detail\">{}</td><td class=\"verdict\">{}</td></tr>\n",
+                        seq, html_escape(display_name), html_escape(&trimmed), conclusion
+                    ));
+                }
+                // 总结行
+                if let Some(summary) = ctx.get("summary_judgment").and_then(|v| v.as_str()) {
+                    if !summary.is_empty() {
+                        t.push_str(&format!(
+                            "<tr><td colspan=\"4\" class=\"summary\"><strong>综合评判：</strong>{}</td></tr>\n",
+                            html_escape(summary)
+                        ));
                     }
                 }
                 t.push_str("</tbody>\n</table>\n");
@@ -225,16 +244,11 @@ fn render_section(section: &TemplateSection, ctx: &HashMap<String, serde_json::V
                 let mut t = "## 巡检结果\n\n".to_string();
                 t.push_str("| 序号 | 巡检项目 | 巡检结果 | 评判结论 |\n");
                 t.push_str("|------|----------|----------|----------|\n");
-                t.push_str("{{#each command_judgments}}\n");
-                t.push_str("| {{_seq}} | {{command}} | {{finding}} | {{status}}：{{finding}}；建议：{{suggestion}} |\n");
-                t.push_str("{{/each}}\n");
+                // 使用 each_ordered 命令来按 command_order 排序
+                t.push_str("{{#each_ordered command_judgments}}\n");
+                t.push_str("| {{_seq}} | {{command}} | {{output}} | {{status}}：{{finding}}；建议：{{suggestion}} |\n");
+                t.push_str("{{/each_ordered}}\n");
                 t.push('\n');
-                if show_output {
-                    t.push_str("### 命令原始输出\n\n");
-                    t.push_str("{{#each command_judgments}}\n");
-                    t.push_str("**{{command}}**\n```\n{{output}}\n```\n\n");
-                    t.push_str("{{/each}}\n");
-                }
                 t
             }
         }
@@ -453,6 +467,61 @@ pub fn render_template(template: &str, ctx: &HashMap<String, serde_json::Value>,
                 String::new()
             }
         }
+    }).to_string();
+
+    // Step 1b: Process {{#each_ordered KEY}}...{{/each_ordered}} blocks
+    // Same as each but uses command_order array for iteration order
+    let each_ordered_re = Regex::new(r"\{\{#each_ordered\s+(\S+)\}\}([\s\S]*?)\{\{/each_ordered\}\}").unwrap();
+    result = each_ordered_re.replace_all(&result, |caps: &regex::Captures| {
+        let key = &caps[1];
+        let inner = &caps[2];
+
+        let order = ctx.get("command_order").and_then(|v| v.as_array());
+        let items = ctx.get(key).and_then(|v| v.as_object());
+        let cmd_desc_map = ctx.get("command_descriptions").and_then(|v| v.as_object());
+        let outputs = ctx.get("command_outputs").and_then(|v| v.as_object());
+
+        let ordered_keys: Vec<String> = if let Some(arr) = order {
+            arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+        } else if let Some(map) = items {
+            map.keys().cloned().collect()
+        } else {
+            return String::new();
+        };
+
+        let mut out = String::new();
+        let mut seq = 0u32;
+        for cmd_name in &ordered_keys {
+            let jdg = items.and_then(|m| m.get(cmd_name));
+            if jdg.is_none() && outputs.and_then(|o| o.get(cmd_name)).is_none() {
+                continue;
+            }
+            seq += 1;
+            let mut rendered = inner.to_string();
+            rendered = rendered.replace("{{_seq}}", &seq.to_string());
+            let display_name = cmd_desc_map
+                .and_then(|m| m.get(cmd_name))
+                .and_then(|v| v.as_str())
+                .unwrap_or(cmd_name);
+            rendered = rendered.replace("{{command}}", display_name);
+
+            let status = jdg.and_then(|j| j.get("status")).and_then(|v| v.as_str()).unwrap_or("-");
+            let finding = jdg.and_then(|j| j.get("finding")).and_then(|v| v.as_str()).unwrap_or("-");
+            let suggestion = jdg.and_then(|j| j.get("suggestion")).and_then(|v| v.as_str()).unwrap_or("-");
+
+            rendered = rendered.replace("{{status}}", status);
+            rendered = rendered.replace("{{finding}}", finding);
+            rendered = rendered.replace("{{suggestion}}", suggestion);
+
+            let output = outputs
+                .and_then(|co| co.get(cmd_name))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            rendered = rendered.replace("{{output}}", output);
+
+            out.push_str(&rendered);
+        }
+        out
     }).to_string();
 
     // Step 2: Process {{#if KEY}}...{{/if}} blocks (with optional {{else}})

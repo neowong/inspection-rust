@@ -272,14 +272,8 @@ fn build_inspection_rows(record: &InspectionRecord, cmd_descs: &HashMap<String, 
     for (cmd, output) in &outputs {
         seq += 1;
         let cmd_label = cmd_descs.get(cmd).cloned().unwrap_or_else(|| cmd.clone());
-        let mut detail_parts = Vec::new();
-        if let Some(jdg) = judgments.get(cmd) {
-            let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("");
-            if !finding.is_empty() {
-                detail_parts.push(html_escape(finding));
-            }
-        }
-        // Include trimmed output as detail (limit to 15 lines / 600 chars)
+
+        // 巡检结果 = 命令原始输出（截断）
         let lines: Vec<&str> = output.lines().collect();
         let trimmed = if lines.len() > 15 {
             format!("{}...\n[共 {} 行，已截断]", &lines[..15].join("\n"), lines.len())
@@ -288,13 +282,16 @@ fn build_inspection_rows(record: &InspectionRecord, cmd_descs: &HashMap<String, 
         } else {
             output.clone()
         };
-        detail_parts.push(html_escape(&trimmed));
-        let detail = detail_parts.join("<br>");
 
+        // 评判结论 = AI 评判
         let verdict_html = if let Some(jdg) = judgments.get(cmd) {
             let status = jdg.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let finding = jdg.get("finding").and_then(|v| v.as_str()).unwrap_or("");
             let suggestion = jdg.get("suggestion").and_then(|v| v.as_str()).unwrap_or("");
             let mut v = format!("<span class=\"verdict-status\">{}</span>", html_escape(status));
+            if !finding.is_empty() {
+                v.push_str(&format!("：{}", html_escape(finding)));
+            }
             if !suggestion.is_empty() {
                 v.push_str(&format!("<br><span class=\"verdict-line\">建议：{}</span>", html_escape(suggestion)));
             }
@@ -313,29 +310,25 @@ fn build_inspection_rows(record: &InspectionRecord, cmd_descs: &HashMap<String, 
 "#,
             seq = seq,
             label = html_escape(&cmd_label),
-            detail = detail,
+            detail = html_escape(&trimmed),
             verdict = verdict_html,
         ));
     }
 
-    // Summary row
-    let summary = record
-        .ai_analysis
-        .as_deref()
-        .unwrap_or("暂无总结");
-    let overall = record
+    // Summary row — 综合评判
+    let summary_judgment = record
         .summary_judgment
         .as_deref()
         .unwrap_or("");
+    let ai_analysis = record
+        .ai_analysis
+        .as_deref()
+        .unwrap_or("暂无总结");
 
-    let summary_text = if overall.is_empty() {
-        format!("<strong>总结：</strong>{}", html_escape(summary))
+    let summary_text = if !summary_judgment.is_empty() {
+        format!("<strong>综合评判：</strong>{}", html_escape(summary_judgment))
     } else {
-        format!(
-            "<strong>总结：</strong>{}<br>历史趋势：{}",
-            html_escape(summary),
-            html_escape(overall),
-        )
+        format!("<strong>综合评判：</strong>{}", html_escape(ai_analysis))
     };
 
     rows.push_str(&format!(
