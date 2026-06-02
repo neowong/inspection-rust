@@ -741,7 +741,18 @@ export default function TemplatesPage() {
                     <div
                       key={cmdId}
                       draggable
-                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); e.currentTarget.style.opacity = "0.4"; }}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", String(idx));
+                        e.dataTransfer.effectAllowed = "move";
+                        // 设置小尺寸拖拽预览
+                        const ghost = document.createElement("div");
+                        ghost.textContent = `${idx + 1}. ${cmd.command}`;
+                        ghost.style.cssText = "position:absolute;top:-9999px;padding:4px 8px;font-size:11px;background:hsl(var(--accent));color:white;border-radius:4px;white-space:nowrap;";
+                        document.body.appendChild(ghost);
+                        e.dataTransfer.setDragImage(ghost, 0, 0);
+                        setTimeout(() => document.body.removeChild(ghost), 0);
+                        e.currentTarget.style.opacity = "0.3";
+                      }}
                       onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
                       onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
                       onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
