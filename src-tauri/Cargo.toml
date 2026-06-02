@@ -2,6 +2,7 @@
 name = "inspection-rust"
 version = "3.0.0"
 edition = "2021"
+default-run = "inspection-rust"
 description = "网络设备巡检系统"
 
 [lib]
