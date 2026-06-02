@@ -83,6 +83,34 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
     }
 
     if version < 8 {
+        // 移除 format 列的 CHECK 约束，支持 docx 格式
+        // SQLite 无法直接修改 CHECK，需重建表
+        conn.execute_batch(
+            "ALTER TABLE report_templates RENAME TO report_templates_old;
+             CREATE TABLE report_templates (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name TEXT NOT NULL,
+                 vendor TEXT,
+                 file_path TEXT NOT NULL,
+                 content TEXT DEFAULT '',
+                 format TEXT DEFAULT 'markdown',
+                 is_default INTEGER NOT NULL DEFAULT 0,
+                 description TEXT DEFAULT '',
+                 sample_data TEXT DEFAULT '{}',
+                 config_json TEXT DEFAULT '',
+                 mode TEXT DEFAULT 'visual',
+                 custom_css TEXT DEFAULT '',
+                 page_header TEXT DEFAULT '',
+                 page_footer TEXT DEFAULT '',
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO report_templates (id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer, created_at, updated_at)
+                 SELECT id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer, created_at, updated_at
+                 FROM report_templates_old;
+             DROP TABLE report_templates_old;"
+        )?;
+
         // 注册默认 docx 模板
         let has_docx: bool = conn
             .prepare("SELECT COUNT(*) FROM report_templates WHERE format = 'docx'")
