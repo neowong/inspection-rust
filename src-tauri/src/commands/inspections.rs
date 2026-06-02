@@ -139,10 +139,16 @@ fn update_record_result(
     let completed_at = now_str();
     match (outputs_json, error) {
         (Some(json), _) => {
+            // Parse output count for summary
+            let cmd_count = serde_json::from_str::<serde_json::Value>(json)
+                .ok()
+                .and_then(|v| v.as_object().map(|o| o.len()))
+                .unwrap_or(0);
+            let summary = format!("完成 {} 条命令", cmd_count);
             conn.execute(
                 "UPDATE inspection_records SET status = ?1, command_outputs = ?2, \
-                 completed_at = ?3, updated_at = ?3 WHERE id = ?4",
-                rusqlite::params![status, json, completed_at, record_id],
+                 error_message = ?3, completed_at = ?4, updated_at = ?4 WHERE id = ?5",
+                rusqlite::params![status, json, summary, completed_at, record_id],
             )
             .map_err(|e| e.to_string())?;
         }

@@ -487,13 +487,13 @@ export default function InspectionPage() {
                 { key: "report_path", header: "报告", width: "70px", render: (r) =>
                   r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : <span className="text-[hsl(var(--text-tertiary))] text-xs">-</span>,
                 },
-                { key: "progress", header: "巡检进度", width: "130px", render: (r) => {
+                { key: "progress", header: "巡检进度", width: "180px", render: (r) => {
                   if (r.ai_status === "processing") return <span className="text-xs text-[hsl(var(--info))]">AI 分析中...</span>;
-                  if (r.status === "completed") return <span className="text-xs text-[hsl(var(--success))]">已完成</span>;
-                  if (r.status === "running" && r.error_message) return <span className="text-xs text-[hsl(var(--info))]">{r.error_message}</span>;
-                  if (r.status === "failed") return <span className="text-xs text-[hsl(var(--danger))]">{r.error_message || "执行失败"}</span>;
+                  if (r.status === "running" && r.error_message) return <span className="text-xs text-[hsl(var(--info))] truncate block" title={r.error_message}>{r.error_message}</span>;
+                  if (r.status === "completed") return <span className="text-xs text-[hsl(var(--success))]" title={r.error_message || ""}>{r.error_message || "已完成"}</span>;
+                  if (r.status === "failed") return <span className="text-xs text-[hsl(var(--danger))] truncate block" title={r.error_message || ""}>{r.error_message || "执行失败"}</span>;
                   if (r.status === "stopped") return <span className="text-xs text-[hsl(var(--warning))]">已停止</span>;
-                  return <span className="text-xs text-[hsl(var(--text-tertiary))]">-</span>;
+                  return <span className="text-xs text-[hsl(var(--text-tertiary))]">等待中</span>;
                 }},
                 {
                   key: "actions", header: "操作", width: "280px", render: (r) => (
@@ -550,11 +550,23 @@ export default function InspectionPage() {
                 </div>
 
                 {/* Status bar */}
-                <div className="flex gap-4 mb-4 text-sm">
+                <div className="flex gap-4 mb-4 text-sm flex-wrap items-center">
                   <span>状态: <StatusBadge status={batchStatusColor(fullRecord.status)} /></span>
                   <span>AI 状态: {fullRecord.ai_status ? <StatusBadge status={batchStatusColor(fullRecord.ai_status)} /> : <span className="text-[hsl(var(--text-tertiary))]">-</span>}</span>
-                  {fullRecord.error_message && (
-                    <span className="text-[hsl(var(--danger))]">错误: {fullRecord.error_message}</span>
+                  {fullRecord.error_message && fullRecord.status === "running" && (
+                    <span className="text-xs text-[hsl(var(--info))] font-mono">进度: {fullRecord.error_message}</span>
+                  )}
+                  {fullRecord.error_message && fullRecord.status === "failed" && (
+                    <span className="text-xs text-[hsl(var(--danger))]">失败原因: {fullRecord.error_message}</span>
+                  )}
+                  {fullRecord.error_message && fullRecord.status === "completed" && (
+                    <span className="text-xs text-[hsl(var(--text-secondary))]">{fullRecord.error_message}</span>
+                  )}
+                  {fullRecord.started_at && (
+                    <span className="text-xs text-[hsl(var(--text-tertiary))]">开始: {new Date(fullRecord.started_at).toLocaleTimeString("zh-CN")}</span>
+                  )}
+                  {fullRecord.completed_at && (
+                    <span className="text-xs text-[hsl(var(--text-tertiary))]">完成: {new Date(fullRecord.completed_at).toLocaleTimeString("zh-CN")}</span>
                   )}
                 </div>
 
