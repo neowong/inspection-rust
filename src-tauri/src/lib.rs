@@ -27,53 +27,53 @@ impl AppState {
 }
 
 #[cfg(target_os = "windows")]
-fn extract_webview2_loader() {
+fn ensure_webview2_runtime() {
+    // Check if WebView2 Runtime is already installed
+    if is_webview2_installed() {
+        return;
+    }
+
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    // Extract WebView2Loader.dll if not present
-    let dll_path = exe_dir.join("WebView2Loader.dll");
-    if !dll_path.exists() {
-        let _ = std::fs::write(&dll_path, include_bytes!("../WebView2Loader.dll"));
+    tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
+
+    // Extract the bootstrapper from the binary
+    let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
+    if let Err(e) = std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")) {
+        tracing::warn!("无法写入 WebView2 安装程序: {}", e);
+        return;
     }
 
-    // Check if WebView2 Runtime is installed by looking for registry key
-    if !is_webview2_installed() {
-        tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
-        let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.tmp.exe");
-        // Extract the bootstrapper (only on first run when runtime is missing)
-        if !setup_path.exists() {
-            let _ = std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe"));
-        }
-        // Run silent install (idempotent — exits fast if already installed)
-        match std::process::Command::new(&setup_path)
-            .args(["/silent", "/install"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(mut child) => {
-                // Wait up to 120 seconds for install
-                match child.wait() {
-                    Ok(status) if status.success() => {
-                        tracing::info!("WebView2 Runtime 安装成功");
-                        let _ = std::fs::remove_file(&setup_path);
-                    }
-                    Ok(_) => {
-                        tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
-                    }
-                    Err(e) => {
-                        tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
-                    }
+    // Run silent install (idempotent — exits fast if already installed)
+    match std::process::Command::new(&setup_path)
+        .args(["/silent", "/install"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            match child.wait() {
+                Ok(status) if status.success() => {
+                    tracing::info!("WebView2 Runtime 安装成功");
+                }
+                Ok(_) => {
+                    tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
+                }
+                Err(e) => {
+                    tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
                 }
             }
-            Err(e) => {
-                tracing::warn!("无法启动 WebView2 安装程序: {}，请手动从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下载安装", e);
-            }
+        }
+        Err(e) => {
+            tracing::warn!("无法启动 WebView2 安装程序: {}，请手动从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下载安装", e);
         }
     }
+
+    // Clean up the bootstrapper file
+    let _ = std::fs::remove_file(&setup_path);
 }
 
 #[cfg(target_os = "windows")]
@@ -104,7 +104,7 @@ fn extract_webview2_loader() {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    extract_webview2_loader();
+    ensure_webview2_runtime();
 
     tracing_subscriber::fmt()
         .with_env_filter(
