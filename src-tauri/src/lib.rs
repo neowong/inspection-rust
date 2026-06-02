@@ -112,8 +112,12 @@ pub fn run() {
 
     std::fs::create_dir_all(&app_data_dir).ok();
 
-    // Logging: stdout + rolling daily file in data/logs/
-    let log_dir = app_data_dir.join("data").join("logs");
+    // Logging: stdout + rolling daily file in ./logs/ next to the exe
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let log_dir = exe_dir.join("logs");
     std::fs::create_dir_all(&log_dir).ok();
     let file_appender = tracing_appender::rolling::daily(&log_dir, "inspection.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
