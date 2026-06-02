@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Desktop**: Tauri v2 (Rust backend + webview frontend)
 - **Frontend**: React 18 + Vite 6 + TypeScript + TailwindCSS 3
-- **Backend (Rust)**: rusqlite (SQLite bundled), ssh2, reqwest, fernet, serde, chrono, tokio
+- **Backend (Rust)**: rusqlite (SQLite bundled), ssh2, reqwest, fernet, serde, chrono, tokio, docx-rs, indexmap
 - **UI**: lucide-react icons, class-variance-authority, tailwind-merge/clsx
 - **AI**: OpenAI / Anthropic API via reqwest
 - **Routing**: react-router-dom v7
@@ -70,6 +70,11 @@ inspection-rust/
 │   │       ├── inspection_runner.rs  # SSH execution via ssh2 (netmiko-style)
 │   │       ├── ai_inspection.rs  # AI analysis prompt + API call
 │   │       ├── report_generator.rs   # Markdown report builder
+│   │       ├── report_builder.rs     # HTML batch report builder
+│   │       ├── template_engine.rs    # Template rendering (visual/advanced modes)
+│   │       ├── template_variables.rs # Template variable definitions + context builder
+│   │       ├── docx_engine.rs    # DOCX template engine (variable replacement + dynamic rows)
+│   │       ├── html_util.rs      # Shared html_escape utility
 │   │       └── template_generator.rs # Auto-generate templates from command pool
 │   └── sql/001_init.sql          # 9 tables: devices, device_status_logs, inspection_templates, command_pool, inspection_batches, inspection_records, ai_model_configs, report_templates, system_settings
 ```
@@ -96,6 +101,8 @@ inspection-rust/
 - **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`
 - **Dashboard cards**: Clickable with `cursor-pointer` + `navigate(path)`. Summary + detail cards both have path field.
 - **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
+- **DOCX report engine**: Uses `docx-rs` (0.4) for Word template processing. `docx_engine.rs` handles variable replacement (`{{var}}`) and dynamic table row cloning (rows containing `{{seq}}` are cloned per command). Multi-line output uses `Break::new(BreakType::TextWrapping)`. Command order preserved via `IndexMap` from `inspection_runner`.
+- **Command order**: `inspection_runner::run_commands` returns `IndexMap<String, String>` to preserve execution order. Template editor supports drag-and-drop command reordering.
 
 ## Dev Commands
 
