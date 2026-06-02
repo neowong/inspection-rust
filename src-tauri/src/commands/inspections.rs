@@ -172,7 +172,7 @@ fn execute_device_ssh(
     password: &str,
     commands: &[String],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
-) -> Result<std::collections::HashMap<String, String>, String> {
+) -> Result<indexmap::IndexMap<String, String>, String> {
     let source = SSHSessionSource {
         host: device.ip.clone(),
         port: device.ssh_port as u16,

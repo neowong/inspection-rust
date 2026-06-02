@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
@@ -41,7 +40,7 @@ pub fn run_commands(
     vendor: &str,
     commands: &[String],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<indexmap::IndexMap<String, String>, String> {
     tracing::info!(
         "SSH 开始: {}@{}:{}, 厂商={}, 命令数={}",
         source.username, source.host, source.port, vendor, commands.len()
@@ -59,7 +58,7 @@ fn run_commands_libssh2(
     vendor: &str,
     commands: &[String],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<indexmap::IndexMap<String, String>, String> {
     // 1. TCP connect + SSH handshake + authenticate
     let session = connect_session(source)?;
 
@@ -68,7 +67,7 @@ fn run_commands_libssh2(
 
     // 3. Execute each command through the persistent shell
     let host = &source.host;
-    let mut results = HashMap::new();
+    let mut results = indexmap::IndexMap::new();
     let mut consecutive_timeouts = 0u32;
     for (i, cmd) in commands.iter().enumerate() {
         if let Some(ref progress) = on_progress {

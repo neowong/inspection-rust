@@ -342,6 +342,7 @@ fn clear_run_text(run: &mut Run) {
 // JSON 解析辅助
 // ============================
 
+/// 解析 JSON 为有序的键值对（serde_json::Map 保留原始插入顺序）
 fn parse_json_map(json: &Option<String>) -> Vec<(String, String)> {
     let Some(s) = json else { return vec![] };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(s) else { return vec![] };

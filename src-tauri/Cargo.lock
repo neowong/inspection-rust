@@ -1723,6 +1723,7 @@ dependencies = [
  "docx-rs",
  "fernet",
  "futures",
+ "indexmap 2.14.0",
  "open",
  "parking_lot",
  "regex",
