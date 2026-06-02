@@ -327,6 +327,45 @@ pub async fn create_batch(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let device_ids = data.device_ids.clone().unwrap_or_else(|| "[]".to_string());
+    let parsed_ids: Vec<i64> = serde_json::from_str(&device_ids)
+        .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
+
+    // 前置校验：检查所有设备是否有模板和 SSH 密码
+    {
+        let conn = state.db.lock();
+        let mut no_template: Vec<String> = Vec::new();
+        let mut no_password: Vec<String> = Vec::new();
+        for &id in &parsed_ids {
+            let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+            if let Ok(Some(device)) = crate::db::query::query_one(
+                &conn, &sql, rusqlite::params![id], device_from_row,
+            ) {
+                if device.template_id.is_none() {
+                    no_template.push(format!("{} ({})", device.name, device.ip));
+                }
+                let has_pwd = device
+                    .ssh_password_encrypted
+                    .as_ref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+                if !has_pwd {
+                    no_password.push(format!("{} ({})", device.name, device.ip));
+                }
+            }
+        }
+        if !no_template.is_empty() {
+            return Err(format!(
+                "以下设备未关联巡检模板: {}",
+                no_template.join("、")
+            ));
+        }
+        if !no_password.is_empty() {
+            return Err(format!(
+                "以下设备未配置 SSH 密码: {}",
+                no_password.join("、")
+            ));
+        }
+    }
 
     // 插入批次记录（短暂获锁）
     let batch_id = {
@@ -350,9 +389,6 @@ pub async fn create_batch(
     tracing::info!("批次 #{} 创建成功, auto_start={}", batch_id, auto_start.unwrap_or(false));
 
     if auto_start.unwrap_or(false) {
-        let parsed_ids: Vec<i64> = serde_json::from_str(&device_ids)
-            .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
-
         if parsed_ids.is_empty() {
             let conn = state.db.lock();
             let now = now_str();
@@ -480,6 +516,39 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
             .map_err(|e| e.to_string())?;
             tracing::info!("批次 #{} 无设备，直接标记为完成", batch_id);
             return Ok(());
+        }
+
+        // 前置校验：设备是否配置了模板和 SSH 密码
+        let mut no_template: Vec<String> = Vec::new();
+        let mut no_password: Vec<String> = Vec::new();
+        for &id in &ids {
+            let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+            if let Ok(Some(device)) = crate::db::query::query_one(
+                &conn, &sql, rusqlite::params![id], device_from_row,
+            ) {
+                if device.template_id.is_none() {
+                    no_template.push(format!("{} ({})", device.name, device.ip));
+                }
+                let has_pwd = device.ssh_password_encrypted
+                    .as_ref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+                if !has_pwd {
+                    no_password.push(format!("{} ({})", device.name, device.ip));
+                }
+            }
+        }
+        if !no_template.is_empty() {
+            return Err(format!(
+                "以下设备未关联巡检模板，请先给设备分配巡检模板: {}",
+                no_template.join("、")
+            ));
+        }
+        if !no_password.is_empty() {
+            return Err(format!(
+                "以下设备未配置 SSH 密码，请先编辑设备添加密码: {}",
+                no_password.join("、")
+            ));
         }
 
         // 更新批次状态为 running

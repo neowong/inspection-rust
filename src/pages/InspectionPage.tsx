@@ -718,6 +718,7 @@ export default function InspectionPage() {
               {devices.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无设备</p>}
               {devices.map((d) => {
                 const checked = batchForm.device_ids.includes(d.id);
+                const noTemplate = !d.template_id;
                 return (
                   <label key={d.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
                     <input
@@ -734,6 +735,9 @@ export default function InspectionPage() {
                       className="accent-[hsl(var(--accent))]"
                     />
                     <span className="text-xs">{d.name} ({d.ip})</span>
+                    {noTemplate && (
+                      <span className="text-[10px] text-[hsl(var(--warning))]" title="未关联巡检模板，将无法执行巡检">⚠ 未配置模板</span>
+                    )}
                   </label>
                 );
               })}

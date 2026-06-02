@@ -100,7 +100,7 @@ fn is_webview2_installed() -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn extract_webview2_loader() {}
+fn ensure_webview2_runtime() {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
