@@ -352,7 +352,16 @@ export default function InspectionPage() {
             return (
               <div
                 key={b.id}
-                onClick={() => { setSelectedBatch(b); setExpandedRecordId(null); setFullRecord(null); setLogResult(null); }}
+                onClick={() => {
+                  setSelectedBatch(b);
+                  setExpandedRecordId(null);
+                  setFullRecord(null);
+                  setLogResult(null);
+                  // 立即加载完整批次详情（含 records）
+                  invoke<InspectionBatch>("get_batch", { batchId: b.id })
+                    .then(setSelectedBatch)
+                    .catch(console.error);
+                }}
                 className={`px-3 py-2.5 cursor-pointer border-l-2 transition-colors ${
                   selected
                     ? "border-l-[hsl(var(--accent))] bg-[hsl(var(--accent)_/_0.08)]"
