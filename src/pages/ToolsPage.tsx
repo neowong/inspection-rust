@@ -1121,13 +1121,13 @@ export default function ToolsPage() {
         ))}
       </div>
 
-      {/* Panel */}
-      {active === "subnet" && <SubnetCalc />}
-      {active === "scanner" && <LiveScanner />}
-      {active === "port" && <PortScanner />}
-      {active === "web" && <WebChecker />}
-      {active === "snmp" && <SnmpChecker />}
-      {active === "zabbix" && <ZabbixChecker />}
+      {/* Panel — use hidden to preserve state across tab switches */}
+      <div hidden={active !== "subnet"}><SubnetCalc /></div>
+      <div hidden={active !== "scanner"}><LiveScanner /></div>
+      <div hidden={active !== "port"}><PortScanner /></div>
+      <div hidden={active !== "web"}><WebChecker /></div>
+      <div hidden={active !== "snmp"}><SnmpChecker /></div>
+      <div hidden={active !== "zabbix"}><ZabbixChecker /></div>
     </div>
   );
 }
