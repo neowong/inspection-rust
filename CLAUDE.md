@@ -79,7 +79,7 @@ inspection-rust/
 │   │       ├── docx_engine.rs    # DOCX template engine (variable replacement + dynamic rows)
 │   │       ├── html_util.rs      # Shared html_escape utility
 │   │       ├── template_generator.rs # Auto-generate templates from command pool
-│   │       ├── live_scanner.rs   # ICMP ping sweep with CIDR parsing, parallel scan
+│   │       ├── live_scanner.rs   # ICMP ping + TCP fallback(135/445) sweep, CIDR parsing, parallel scan
 │   │       ├── port_scanner.rs   # TCP connect scan + UDP scan (connect/ICMP detection)
 │   │       ├── web_checker.rs    # HTTP/HTTPS status check, IP defaults to HTTP
 │   │       ├── snmp_checker.rs   # SNMP v2c + v3 USM (MD5/SHA1/SHA256 auth, DES/AES128 priv)
@@ -105,7 +105,9 @@ inspection-rust/
 - **Background tasks**: `lib.rs` spawns std thread for 5-minute device status polling (`poll_device_statuses`), uses `try_lock` to avoid blocking.
 - **Export**: `export_batch_csv` writes CSV with BOM to `data/reports/`. Fields escaped for commas/newlines/quotes.
 - **tsconfig `noEmit: true` is REQUIRED**: Without it, `tsc` generates stale `.js` files in `src/` that Vite loads instead of `.tsx` — causing "changes not reflected" bugs
-- **Branding**: `public/3636785.png` used as app logo in sidebar
+- **Branding**: `public/3636785.png` used as app logo in sidebar. App icons (`icon.ico`, `*.png`) in `src-tauri/icons/` generated from server rack SVG.
+- **Windows ping reliability**: `live_scanner.rs` parses ping output for `TTL=`/`time=` instead of exit code, since Windows exits 0 even on timeout. Uses `CREATE_NO_WINDOW` to suppress cmd popups. Falls back to TCP connect on ports 135/445 when ICMP is blocked.
+- **中国输入法兼容**: All toolbox IP input fields use `style={{ imeMode: "disabled" }}` to force English mode, avoiding manual IME switching.
 - **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`
 - **Dashboard cards**: Clickable with `cursor-pointer` + `navigate(path)`. Summary + detail cards both have path field.
 - **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
@@ -117,6 +119,13 @@ inspection-rust/
 - **SNMP v3**: Self-implemented ASN.1 BER codec. Key localization: 1MB password hashing → Ku → Kul = Hash(Ku||engineID||Ku). Auth key lengths: MD5=16, SHA1=20, SHA256=32. MAC always 12 bytes. msgData is SEQUENCE (0x30) unencrypted, OCTET STRING (0x04) when encrypted. Engine discovery via empty GET → REPORT, auto-retry on `notInTimeWindow`.
 - **Zabbix protocol**: Frame format `ZBXD\x01` + LE64 length + JSON. Response read in two phases: header (13 bytes) → parse length → read rest. Shows raw hex on parse failure for debugging.
 - **Batch creation non-blocking**: `create_batch`(auto_start) and `run_batch` spawn `tokio::spawn` background tasks and return immediately — frontend shows batch instantly, 3s polling updates progress. Helper `await_handles_and_finalize()` updates final status.
+
+## Windows 交叉编译注意事项
+
+- Cargo profile 的 `strip` 值在 `x86_64-pc-windows-gnu` 目标上不支持 `"debug"`，需用 `"symbols"` 或 `"debuginfo"`
+- 只跑 `cargo build --target x86_64-pc-windows-gnu` 不会构建前端（Loader2 动画等）也不会正确处理图标嵌入，须先执行 `npm run build` 再编译 Rust
+- 前端改动（新增图标、组件等）必须经过 `npm run build` 才会打包进二进制
+- 图标文件 `icon.ico` 和 `*.png` 通过 tauri-build 的 build.rs 处理嵌入
 
 ## Dev Commands
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Plug } from "lucide-react";
+import { CheckCircle2, XCircle, Plug, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Select, SpinInput } from "../components/ui/Input";
 
@@ -155,6 +155,7 @@ function SubnetCalc() {
             value={ip} onChange={e => setIp(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleCalc()}
             className="w-36 px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-input))] text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent)_/_0.4)]"
+            style={{ imeMode: "disabled" }}
           />
         </div>
         <span className="text-lg font-bold text-[hsl(var(--text-secondary))] pb-2">/</span>
@@ -252,6 +253,7 @@ function LiveScanner() {
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-[hsl(var(--text-tertiary))]">基于系统 ping + TCP 后备(135/445)探测，结果仅供参考。</p>
       <div className="flex items-end gap-3 flex-wrap">
         <div>
           <label className={labelClass}>网段 (CIDR)</label>
@@ -260,6 +262,7 @@ function LiveScanner() {
             value={subnet} onChange={e => setSubnet(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleScan()}
             className={`w-44 ${inputClass}`}
+            style={{ imeMode: "disabled" }}
           />
         </div>
         <div>
@@ -274,6 +277,13 @@ function LiveScanner() {
           {scanning ? "扫描中..." : "开始扫描"}
         </button>
       </div>
+
+      {scanning && (
+        <div className="flex items-center gap-2 text-sm text-[hsl(var(--text-secondary))]">
+          <Loader2 size={16} className="animate-spin" />
+          扫描中 ...
+        </div>
+      )}
 
       {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
 
@@ -447,6 +457,7 @@ function PortScanner() {
             value={ip} onChange={e => setIp(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleScan()}
             className={`w-40 ${inputClass}`}
+            style={{ imeMode: "disabled" }}
           />
         </div>
         <div>
@@ -788,6 +799,7 @@ function SnmpChecker() {
             value={ip} onChange={e => setIp(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleGet()}
             className={`w-40 ${inputClass}`}
+            style={{ imeMode: "disabled" }}
           />
         </div>
 
@@ -854,6 +866,7 @@ function SnmpChecker() {
             value={oid} onChange={e => setOid(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleGet()}
             className={`w-56 ${inputClass} font-mono text-xs`}
+            style={{ imeMode: "disabled" }}
           />
         </div>
         <div>
@@ -981,6 +994,7 @@ function ZabbixChecker() {
             value={ip} onChange={e => setIp(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleCheck()}
             className={`w-40 ${inputClass}`}
+            style={{ imeMode: "disabled" }}
           />
         </div>
         <div>

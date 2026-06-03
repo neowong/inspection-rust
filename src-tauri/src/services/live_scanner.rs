@@ -1,8 +1,10 @@
 use serde::Serialize;
-use std::net::Ipv4Addr;
-use std::sync::Arc;
 use regex::Regex;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::OnceLock;
+use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LiveHostResult {
@@ -10,6 +12,12 @@ pub struct LiveHostResult {
     pub alive: bool,
     pub response_time_ms: Option<f64>,
 }
+
+/// TCP probe ports as ICMP fallback. Windows 135 (RPC) is nearly always
+/// listening + reachable on LAN; 445 (SMB) is common on domain/office networks.
+const TCP_FALLBACK_PORTS: &[u16] = &[135, 445];
+
+// ---- ICMP Ping -------------------------------------------------------------
 
 fn time_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -20,6 +28,9 @@ fn time_regex() -> &'static Regex {
 fn build_ping_cmd(ip: &str, timeout_secs: u64) -> std::process::Command {
     let mut cmd = std::process::Command::new("ping");
     cmd.args(["-n", "1", "-w", &(timeout_secs * 1000).to_string(), ip]);
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
 }
 
@@ -46,8 +57,12 @@ fn ping_one(ip: &str, timeout_secs: u64) -> LiveHostResult {
         }
     };
 
-    let alive = output.status.success();
     let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let alive = stdout.contains("TTL=")
+        || stdout.contains("ttl=")
+        || stdout.contains("time=")
+        || stdout.contains("time<");
 
     let response_time_ms = if alive {
         time_regex()
@@ -65,12 +80,72 @@ fn ping_one(ip: &str, timeout_secs: u64) -> LiveHostResult {
     }
 }
 
-fn parse_cidr(subnet: &str) -> Result<Vec<Ipv4Addr>, String> {
+// ---- TCP fallback (internal, no UI) ----------------------------------------
+// When ping fails (ICMP blocked), try a quick TCP connect to common Windows
+// ports. 135 (RPC) is nearly always listening on any Windows machine.
+// Connection refused (RST) means the host is alive; timeout means dead.
+
+async fn tcp_fallback(ip: &str, per_port_ms: u64) -> bool {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(10));
+    let mut handles = Vec::with_capacity(TCP_FALLBACK_PORTS.len());
+
+    for &port in TCP_FALLBACK_PORTS {
+        let sem = semaphore.clone();
+        let addr = match format!("{}:{}", ip, port).parse::<SocketAddr>() {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            timeout(Duration::from_millis(per_port_ms), TcpStream::connect(addr))
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .is_some()
+        }));
+    }
+
+    for h in handles {
+        if h.await.unwrap_or(false) {
+            return true;
+        }
+    }
+    false
+}
+
+async fn check_alive(ip: &str, timeout_secs: u64) -> LiveHostResult {
+    // 1. ICMP ping
+    let r = tokio::task::spawn_blocking({
+        let ip = ip.to_string();
+        move || ping_one(&ip, timeout_secs)
+    })
+    .await
+    .unwrap_or(LiveHostResult {
+        ip: ip.to_string(),
+        alive: false,
+        response_time_ms: None,
+    });
+    if r.alive {
+        return r;
+    }
+
+    // 2. TCP fallback (ICMP likely blocked)
+    let tcp_alive = tcp_fallback(ip, timeout_secs * 1000).await;
+    LiveHostResult {
+        ip: ip.to_string(),
+        alive: tcp_alive,
+        response_time_ms: None,
+    }
+}
+
+// ---- CIDR parser -----------------------------------------------------------
+
+fn parse_cidr(subnet: &str) -> Result<Vec<std::net::Ipv4Addr>, String> {
     let parts: Vec<&str> = subnet.split('/').collect();
     if parts.len() != 2 {
         return Err("无效的CIDR格式，示例: 192.168.1.0/24".into());
     }
-    let base = parts[0].trim().parse::<Ipv4Addr>()
+    let base = parts[0].trim().parse::<std::net::Ipv4Addr>()
         .map_err(|_| format!("无效的IP地址: {}", parts[0]))?;
     let prefix: u8 = parts[1].trim().parse()
         .map_err(|_| format!("无效的CIDR前缀: {}", parts[1]))?;
@@ -93,10 +168,12 @@ fn parse_cidr(subnet: &str) -> Result<Vec<Ipv4Addr>, String> {
 
     let mut ips = Vec::new();
     for i in start..range_end {
-        ips.push(Ipv4Addr::from(i));
+        ips.push(std::net::Ipv4Addr::from(i));
     }
     Ok(ips)
 }
+
+// ---- Public API ------------------------------------------------------------
 
 pub async fn scan_subnet(subnet: &str, timeout_ms: u64) -> Result<Vec<LiveHostResult>, String> {
     let ips = parse_cidr(subnet)?;
@@ -110,8 +187,7 @@ pub async fn scan_subnet(subnet: &str, timeout_ms: u64) -> Result<Vec<LiveHostRe
         let ip_str = ip.to_string();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            let ip = ip_str;
-            tokio::task::spawn_blocking(move || ping_one(&ip, timeout_secs)).await.unwrap()
+            check_alive(&ip_str, timeout_secs).await
         }));
     }
 
