@@ -342,6 +342,11 @@ pub const RECORD_COLUMNS: &str =
      ai_analysis, ai_suggestions, command_judgments, summary_judgment, report_path, \
      started_at, completed_at, created_at, updated_at";
 
+// Lightweight columns for batch listing — excludes heavy fields (command_outputs, ai_result, etc.)
+pub const RECORD_SUMMARY_COLUMNS: &str =
+    "id, batch_id, device_id, status, error_message, ai_status, report_path, \
+     started_at, completed_at, created_at, updated_at";
+
 pub const REPORT_TEMPLATE_COLUMNS: &str =
     "id, name, vendor, file_path, content, format, is_default, description, sample_data, config_json, mode, custom_css, page_header, page_footer, created_at, updated_at";
 
@@ -442,6 +447,29 @@ pub fn record_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionRecord
         completed_at: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+    })
+}
+
+/// Lightweight row mapper for summary columns — excludes heavy JSON fields
+pub fn record_summary_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionRecord> {
+    Ok(InspectionRecord {
+        id: row.get(0)?,
+        batch_id: row.get(1)?,
+        device_id: row.get(2)?,
+        status: row.get(3)?,
+        error_message: row.get(4)?,
+        command_outputs: None,
+        ai_status: row.get(5)?,
+        ai_result: None,
+        ai_analysis: None,
+        ai_suggestions: None,
+        command_judgments: None,
+        summary_judgment: None,
+        report_path: row.get(6)?,
+        started_at: row.get(7)?,
+        completed_at: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 

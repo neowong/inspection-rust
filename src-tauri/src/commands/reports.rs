@@ -16,14 +16,20 @@ use crate::services::{ai_inspection, report_builder, report_generator, template_
 // Helpers
 // ============================================================
 
+fn app_data_dir() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("inspection-rust")
+}
+
 fn ensure_reports_dir() -> Result<std::path::PathBuf, String> {
-    let dir = std::path::PathBuf::from("data").join("reports");
+    let dir = app_data_dir().join("data").join("reports");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建报告目录失败: {}", e))?;
     Ok(dir)
 }
 
 fn ensure_report_templates_dir() -> Result<std::path::PathBuf, String> {
-    let dir = std::path::PathBuf::from("data").join("report_templates");
+    let dir = app_data_dir().join("data").join("report_templates");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建报告模板目录失败: {}", e))?;
     Ok(dir)
 }
@@ -1204,6 +1210,49 @@ pub fn list_recent_records(
     crate::db::query::query_all(&conn, &sql, rusqlite::params![limit], record_from_row)
 }
 
+/// 删除指定记录的巡检报告（清除 DB 记录 + 删除文件）
+#[tauri::command]
+pub fn delete_record_report(
+    record_id: i64,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let conn = state.db.lock();
+
+    let record_sql = format!("SELECT {} FROM inspection_records WHERE id = ?1", RECORD_COLUMNS);
+    let record = crate::db::query::query_one(&conn, &record_sql, rusqlite::params![record_id], record_from_row)?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+    if let Some(ref path) = record.report_path {
+        let _ = std::fs::remove_file(path);
+    }
+
+    conn.execute(
+        "UPDATE inspection_records SET report_path = NULL, updated_at = ?1 WHERE id = ?2",
+        rusqlite::params![now_str(), record_id],
+    )
+    .map_err(|e| format!("清除报告记录失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 读取报告文件内容
+#[tauri::command]
+pub fn read_report_content(
+    record_id: i64,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock();
+    let record_sql = format!("SELECT {} FROM inspection_records WHERE id = ?1", RECORD_COLUMNS);
+    let record = crate::db::query::query_one(&conn, &record_sql, rusqlite::params![record_id], record_from_row)?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+
+    let path = record.report_path
+        .ok_or_else(|| "该记录尚未生成报告".to_string())?;
+
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取报告文件失败: {}", e))
+}
+
 /// 生成 DOCX 巡检报告
 #[tauri::command]
 pub fn generate_docx_report(
@@ -1242,7 +1291,7 @@ pub fn generate_docx_report(
             t.file_path
         } else {
             // 使用内置默认模板
-            let default_path = std::path::Path::new("data").join("default_template.docx");
+            let default_path = app_data_dir().join("data").join("default_template.docx");
             if default_path.exists() {
                 default_path.to_string_lossy().to_string()
             } else {

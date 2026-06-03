@@ -35,7 +35,7 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl ${width} w-full mx-4 max-h-[80vh] flex flex-col animate-in`}
+        className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl ${width} mx-4 max-h-[80vh] flex flex-col animate-in`}
         style={{ animationDuration: "150ms" }}
         onClick={(e) => e.stopPropagation()}
       >

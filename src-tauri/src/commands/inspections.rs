@@ -139,16 +139,10 @@ fn update_record_result(
     let completed_at = now_str();
     match (outputs_json, error) {
         (Some(json), _) => {
-            // Parse output count for summary
-            let cmd_count = serde_json::from_str::<serde_json::Value>(json)
-                .ok()
-                .and_then(|v| v.as_object().map(|o| o.len()))
-                .unwrap_or(0);
-            let summary = format!("完成 {} 条命令", cmd_count);
             conn.execute(
                 "UPDATE inspection_records SET status = ?1, command_outputs = ?2, \
-                 error_message = ?3, completed_at = ?4, updated_at = ?4 WHERE id = ?5",
-                rusqlite::params![status, json, summary, completed_at, record_id],
+                 error_message = NULL, completed_at = ?3, updated_at = ?3 WHERE id = ?4",
+                rusqlite::params![status, json, completed_at, record_id],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -211,35 +205,38 @@ pub fn list_batches(
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let batches = crate::db::query::query_all(&conn, &sql, &param_refs, batch_from_row)?;
 
+    // Load all records for all batches in a single query
+    let mut records_by_batch: std::collections::HashMap<i64, Vec<serde_json::Value>> = std::collections::HashMap::new();
+    if !batches.is_empty() {
+        let batch_ids: Vec<String> = batches.iter().map(|b| b.id.to_string()).collect();
+        let all_records_sql = format!(
+            "SELECT {} FROM inspection_records WHERE batch_id IN ({}) ORDER BY batch_id, id",
+            crate::db::models::RECORD_SUMMARY_COLUMNS,
+            batch_ids.join(",")
+        );
+        let all_records = crate::db::query::query_all(
+            &conn,
+            &all_records_sql,
+            &[] as &[&dyn rusqlite::types::ToSql],
+            crate::db::models::record_summary_from_row,
+        )?;
+        for r in all_records {
+            records_by_batch.entry(r.batch_id).or_default().push(serde_json::json!({
+                "id": r.id,
+                "batch_id": r.batch_id,
+                "device_id": r.device_id,
+                "status": r.status,
+                "ai_status": r.ai_status,
+                "report_path": r.report_path,
+                "error_message": r.error_message,
+                "started_at": r.started_at,
+                "completed_at": r.completed_at,
+            }));
+        }
+    }
+
     let mut results = Vec::new();
     for batch in batches {
-        let records_sql = format!(
-            "SELECT {} FROM inspection_records WHERE batch_id = ?1",
-            RECORD_COLUMNS
-        );
-        let records = crate::db::query::query_all(
-            &conn,
-            &records_sql,
-            rusqlite::params![batch.id],
-            record_from_row,
-        )?;
-
-        let record_summaries: Vec<serde_json::Value> = records
-            .into_iter()
-            .map(|r| {
-                serde_json::json!({
-                    "id": r.id,
-                    "batch_id": r.batch_id,
-                    "device_id": r.device_id,
-                    "status": r.status,
-                    "ai_status": r.ai_status,
-                    "report_path": r.report_path,
-                    "error_message": r.error_message,
-                })
-            })
-            .collect();
-
-        // Parse device_ids from JSON string to array
         let device_ids_value = batch
             .device_ids
             .as_deref()
@@ -256,7 +253,7 @@ pub fn list_batches(
             "completed_at": batch.completed_at,
             "created_at": batch.created_at,
             "updated_at": batch.updated_at,
-            "records": record_summaries,
+            "records": records_by_batch.remove(&batch.id).unwrap_or_default(),
         }));
     }
 
@@ -285,13 +282,13 @@ pub fn get_batch(
 
     let records_sql = format!(
         "SELECT {} FROM inspection_records WHERE batch_id = ?1 ORDER BY id",
-        RECORD_COLUMNS
+        crate::db::models::RECORD_SUMMARY_COLUMNS
     );
     let records = crate::db::query::query_all(
         &conn,
         &records_sql,
         rusqlite::params![batch_id],
-        record_from_row,
+        crate::db::models::record_summary_from_row,
     )?;
 
     // Parse device_ids from JSON string to array

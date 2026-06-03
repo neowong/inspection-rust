@@ -5,9 +5,10 @@ import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import InspectionPage from "./pages/InspectionPage";
-import ReportsPage from "./pages/ReportsPage";
+import ReportManagementPage from "./pages/ReportManagementPage";
 import SettingsPage from "./pages/SettingsPage";
 import LogAnalysisPage from "./pages/LogAnalysisPage";
+import ToolsPage from "./pages/ToolsPage";
 
 export default function App() {
   useGlobalShortcuts();
@@ -19,7 +20,8 @@ export default function App() {
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/inspection" element={<InspectionPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/reports" element={<ReportManagementPage />} />
+        <Route path="/tools" element={<ToolsPage />} />
         <Route path="/logs" element={<LogAnalysisPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={

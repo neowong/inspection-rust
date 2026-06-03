@@ -259,6 +259,8 @@ pub fn run() {
             commands::reports::render_template_preview_with_record,
             commands::reports::list_recent_records,
             commands::reports::generate_docx_report,
+            commands::reports::delete_record_report,
+            commands::reports::read_report_content,
             commands::reports::export_batch_csv,
             commands::reports::analyze_record_logs,
             commands::reports::analyze_batch_logs,
