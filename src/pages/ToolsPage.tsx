@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Wrench } from "lucide-react";
+import { CheckCircle2, XCircle, Plug } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Select, SpinInput } from "../components/ui/Input";
 
 const TOOLS = [
   { key: "subnet", label: "子网计算器" },
@@ -7,9 +9,53 @@ const TOOLS = [
   { key: "port", label: "端口扫描" },
   { key: "web", label: "WEB检测" },
   { key: "snmp", label: "SNMP" },
+  { key: "zabbix", label: "Zabbix" },
 ] as const;
 
 type ToolKey = (typeof TOOLS)[number]["key"];
+
+// ---- Types ------------------------------------------------------------------
+
+interface LiveHostResult {
+  ip: string;
+  alive: boolean;
+  response_time_ms: number | null;
+}
+
+interface PortScanResult {
+  port: number;
+  open: boolean;
+  service: string;
+}
+
+interface WebCheckResult {
+  url: string;
+  final_url: string;
+  status_code: number | null;
+  response_time_ms: number;
+  error: string | null;
+  content_type: string | null;
+  content_length: number | null;
+}
+
+interface SnmpResult {
+  oid: string;
+  value: string | null;
+  value_type: string | null;
+  error: string | null;
+  response_time_ms: number;
+  raw_hex: string | null;
+}
+
+interface ZabbixAgentResult {
+  reachable: boolean;
+  version: string | null;
+  hostname: string | null;
+  ping_ok: boolean;
+  active_mode_note: string;
+  response_time_ms: number;
+  error: string | null;
+}
 
 // ---- Subnet Calculator ------------------------------------------------------
 
@@ -169,16 +215,866 @@ function SubnetCalc() {
   );
 }
 
-// ---- Placeholder tabs --------------------------------------------------------
+// ---- Shared styles ----------------------------------------------------------
 
-function PlaceholderTab({ title, desc }: { title: string; desc: string }) {
+const inputClass = "px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-input))] text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent)_/_0.4)]";
+const btnClass = "px-5 py-2 rounded-lg text-sm font-medium text-white bg-[hsl(var(--accent))] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed";
+const labelClass = "block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1";
+
+// ---- Alive Scanner ----------------------------------------------------------
+
+function LiveScanner() {
+  const [subnet, setSubnet] = useState("192.168.9.0/24");
+  const [timeout, setTimeout_] = useState("2000");
+  const [scanning, setScanning] = useState(false);
+  const [results, setResults] = useState<LiveHostResult[] | null>(null);
+  const [error, setError] = useState("");
+
+  const handleScan = async () => {
+    setError("");
+    setResults(null);
+    setScanning(true);
+    try {
+      const data = await invoke<LiveHostResult[]>("scan_live_hosts", {
+        subnet: subnet.trim(),
+        timeoutMs: parseInt(timeout, 10) || 2000,
+      });
+      setResults(data);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const alive = results?.filter(r => r.alive) ?? [];
+  const dead = results?.filter(r => !r.alive) ?? [];
+
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-12 h-12 rounded-full bg-[hsl(var(--muted))] flex items-center justify-center mb-4">
-        <Wrench size={20} className="text-[hsl(var(--text-tertiary))]" />
+    <div className="space-y-6">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className={labelClass}>网段 (CIDR)</label>
+          <input
+            type="text" placeholder="192.168.1.0/24"
+            value={subnet} onChange={e => setSubnet(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleScan()}
+            className={`w-44 ${inputClass}`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>超时 (ms)</label>
+          <SpinInput
+            min={500} max={10000} step={500}
+            value={timeout} onChange={(v) => setTimeout_(String(v))}
+            className="w-24"
+          />
+        </div>
+        <button onClick={handleScan} disabled={scanning} className={btnClass}>
+          {scanning ? "扫描中..." : "开始扫描"}
+        </button>
       </div>
-      <h3 className="text-sm font-medium text-[hsl(var(--text-secondary))] mb-1">{title}</h3>
-      <p className="text-xs text-[hsl(var(--text-tertiary))]">{desc}</p>
+
+      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
+
+      {results && (
+        <div className="space-y-3">
+          <div className="flex gap-4 text-sm">
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[hsl(var(--success))]" />
+              存活 <span className="font-semibold">{alive.length}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full bg-[hsl(var(--text-tertiary))]" />
+              离线 <span className="font-semibold">{dead.length}</span>
+            </span>
+            <span className="text-[hsl(var(--text-tertiary))]">共 {results.length} 个 IP</span>
+          </div>
+
+          {alive.length > 0 && (
+            <div className="overflow-hidden rounded-lg border border-[hsl(var(--border))]">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[hsl(var(--muted))] text-left">
+                    <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">IP 地址</th>
+                    <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">响应时间</th>
+                    <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alive.map(r => (
+                    <tr key={r.ip} className="border-t border-[hsl(var(--border))]">
+                      <td className="px-4 py-2 font-mono">{r.ip}</td>
+                      <td className="px-4 py-2 font-mono text-[hsl(var(--text-secondary))]">
+                        {r.response_time_ms != null ? `${r.response_time_ms.toFixed(1)} ms` : "-"}
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className="inline-flex items-center gap-1 text-[hsl(var(--success))]">
+                          <CheckCircle2 size={14} /> 在线
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {dead.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-secondary))]">
+                离线主机 ({dead.length})
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {dead.map(r => (
+                  <span key={r.ip} className="px-2 py-0.5 rounded bg-[hsl(var(--muted))] font-mono text-[hsl(var(--text-tertiary))]">
+                    {r.ip}
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Port Scanner -----------------------------------------------------------
+
+const TCP_PORT_PRESETS: Record<string, string> = {
+  "常用端口": "22,80,443,8080,8443",
+  "Web 端口": "80,443,8080,8443,9090,3000,5000,8000",
+  "数据库端口": "3306,5432,1433,1521,6379,27017",
+  "全端口 (1-1000)": "1-1000",
+  "全端口 (1-5000)": "1-5000",
+};
+
+const UDP_PORT_PRESETS: Record<string, string> = {
+  "常用UDP": "53,67,123,161,514,1900,5353",
+  "DNS+DHCP+NTP": "53,67,68,123",
+  "SNMP+管理": "161,162,514,623",
+  "发现服务": "1900,5353,5683",
+  "全端口 (1-500)": "1-500",
+};
+
+interface UdpPortResult {
+  port: number;
+  open: boolean;
+  filtered: boolean;
+  service: string;
+  detail: string;
+}
+
+type ScanType = "tcp" | "udp";
+
+function PortScanner() {
+  const [scanType, setScanType] = useState<ScanType>("tcp");
+  const [ip, setIp] = useState("192.168.9.6");
+  const [ports, setPorts] = useState("5000");
+  const [timeout, setTimeout_] = useState(scanType === "udp" ? "3000" : "2000");
+  const [scanning, setScanning] = useState(false);
+  const [tcpResults, setTcpResults] = useState<PortScanResult[] | null>(null);
+  const [udpResults, setUdpResults] = useState<UdpPortResult[] | null>(null);
+  const [error, setError] = useState("");
+
+  const results = scanType === "tcp" ? tcpResults : udpResults;
+
+  const handleScan = async () => {
+    setError("");
+    setTcpResults(null);
+    setUdpResults(null);
+    setScanning(true);
+    const t = parseInt(timeout, 10) || 2000;
+    try {
+      if (scanType === "tcp") {
+        const data = await invoke<PortScanResult[]>("scan_ports", {
+          ip: ip.trim(), ports: ports.trim(), timeoutMs: t,
+        });
+        setTcpResults(data);
+      } else {
+        const data = await invoke<UdpPortResult[]>("scan_udp_ports", {
+          ip: ip.trim(), ports: ports.trim(), timeoutMs: t,
+        });
+        setUdpResults(data);
+      }
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const presets = scanType === "tcp" ? TCP_PORT_PRESETS : UDP_PORT_PRESETS;
+
+  const tcpOpen = (tcpResults ?? []).filter(r => r.open).length;
+  const tcpClosed = (tcpResults ?? []).filter(r => !r.open).length;
+  const udpOpen = (udpResults ?? []).filter(r => r.open).length;
+  const udpFiltered = (udpResults ?? []).filter(r => r.filtered).length;
+  const udpClosed = (udpResults ?? []).filter(r => !r.open && !r.filtered).length;
+
+  return (
+    <div className="space-y-6">
+      {/* Scan type toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setScanType("tcp"); setTcpResults(null); setUdpResults(null); }}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            scanType === "tcp"
+              ? "bg-[hsl(var(--accent))] text-white"
+              : "bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))]"
+          }`}
+        >
+          TCP 扫描
+        </button>
+        <button
+          onClick={() => { setScanType("udp"); setTcpResults(null); setUdpResults(null); }}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            scanType === "udp"
+              ? "bg-[hsl(var(--accent))] text-white"
+              : "bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))]"
+          }`}
+        >
+          UDP 扫描
+        </button>
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className={labelClass}>目标 IP</label>
+          <input
+            type="text" placeholder="192.168.1.1"
+            value={ip} onChange={e => setIp(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleScan()}
+            className={`w-40 ${inputClass}`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>端口 (逗号/范围)</label>
+          <input
+            type="text" placeholder="22,80,443 或 1-1000"
+            value={ports} onChange={e => setPorts(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleScan()}
+            className={`w-56 ${inputClass}`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>超时 (ms)</label>
+          <SpinInput
+            min={500} max={10000} step={500}
+            value={timeout} onChange={(v) => setTimeout_(String(v))}
+            className="w-24"
+          />
+        </div>
+        <button onClick={handleScan} disabled={scanning} className={btnClass}>
+          {scanning ? "扫描中..." : "开始扫描"}
+        </button>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {Object.entries(presets).map(([label, preset]) => (
+          <button
+            key={label}
+            onClick={() => setPorts(preset)}
+            className="px-2.5 py-1 rounded text-xs font-medium bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))] transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
+
+      {results && results.length > 0 && (
+        <div className="space-y-3">
+          {scanType === "tcp" && (
+            <div className="flex gap-4 text-sm">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-[hsl(var(--success))]" />
+                开放 <span className="font-semibold">{tcpOpen}</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <XCircle size={14} className="text-[hsl(var(--text-tertiary))]" />
+                关闭 <span className="font-semibold">{tcpClosed}</span>
+              </span>
+            </div>
+          )}
+          {scanType === "udp" && (
+            <div className="flex gap-4 text-sm">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-[hsl(var(--success))]" />
+                开放/响应 <span className="font-semibold">{udpOpen}</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-[hsl(var(--accent)_/_0.4)]" />
+                开放/无响应 <span className="font-semibold">{udpFiltered}</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <XCircle size={14} className="text-[hsl(var(--danger))]" />
+                关闭 <span className="font-semibold">{udpClosed}</span>
+              </span>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-lg border border-[hsl(var(--border))]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[hsl(var(--muted))] text-left">
+                  <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))] w-24">端口</th>
+                  <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">服务</th>
+                  <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))] w-24">状态</th>
+                  {scanType === "udp" && <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">详情</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {scanType === "tcp" && (results as PortScanResult[]).map(r => (
+                  <tr key={r.port} className="border-t border-[hsl(var(--border))]">
+                    <td className="px-4 py-2 font-mono">{r.port}</td>
+                    <td className="px-4 py-2 text-[hsl(var(--text-secondary))]">{r.service}</td>
+                    <td className="px-4 py-2">
+                      {r.open ? (
+                        <span className="inline-flex items-center gap-1 text-[hsl(var(--success))]">
+                          <CheckCircle2 size={14} /> 开放
+                        </span>
+                      ) : (
+                        <span className="text-[hsl(var(--text-tertiary))]">关闭</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {scanType === "udp" && (results as UdpPortResult[]).map(r => (
+                  <tr key={r.port} className="border-t border-[hsl(var(--border))]">
+                    <td className="px-4 py-2 font-mono">{r.port}</td>
+                    <td className="px-4 py-2 text-[hsl(var(--text-secondary))]">{r.service}</td>
+                    <td className="px-4 py-2">
+                      {r.open ? (
+                        <span className="inline-flex items-center gap-1 text-[hsl(var(--success))]">
+                          <CheckCircle2 size={14} /> 开放
+                        </span>
+                      ) : r.filtered ? (
+                        <span className="inline-flex items-center gap-1 text-[hsl(var(--text-primary))]">
+                          <span className="w-2.5 h-2.5 rounded-full bg-[hsl(var(--accent)_/_0.5)]" />
+                          开放
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[hsl(var(--danger))]">
+                          <XCircle size={14} /> 关闭
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-[hsl(var(--text-secondary))]">{r.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Web Checker ------------------------------------------------------------
+
+function WebChecker() {
+  const [urls, setUrls] = useState("https://www.baidu.com");
+  const [timeout, setTimeout_] = useState("10");
+  const [scanning, setScanning] = useState(false);
+  const [results, setResults] = useState<WebCheckResult[] | null>(null);
+  const [error, setError] = useState("");
+
+  const handleCheck = async () => {
+    setError("");
+    setResults(null);
+    setScanning(true);
+    const urlList = urls.split("\n").map(s => s.trim()).filter(Boolean);
+    if (urlList.length === 0) { setError("请输入至少一个URL"); setScanning(false); return; }
+    try {
+      const data = await invoke<WebCheckResult[]>("check_web_urls", {
+        urls: urlList,
+        timeoutSecs: parseInt(timeout, 10) || 10,
+      });
+      setResults(data);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const statusColor = (code: number | null) => {
+    if (!code) return "text-[hsl(var(--text-tertiary))]";
+    if (code >= 200 && code < 300) return "text-[hsl(var(--success))]";
+    if (code >= 300 && code < 400) return "text-[hsl(var(--warning))]";
+    return "text-[hsl(var(--danger))]";
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex-1 min-w-80">
+          <label className={labelClass}>URL (每行一个)</label>
+          <textarea
+            placeholder={"https://www.baidu.com\nhttps://github.com"}
+            value={urls} onChange={e => setUrls(e.target.value)}
+            rows={4}
+            className={`w-full ${inputClass} resize-y font-mono text-xs`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>超时 (秒)</label>
+          <SpinInput
+            min={1} max={60} step={1}
+            value={timeout} onChange={(v) => setTimeout_(String(v))}
+            className="w-20"
+          />
+        </div>
+        <button onClick={handleCheck} disabled={scanning} className={btnClass}>
+          {scanning ? "检测中..." : "开始检测"}
+        </button>
+      </div>
+
+      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
+
+      {results && (
+        <div className="overflow-hidden rounded-lg border border-[hsl(var(--border))]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[hsl(var(--muted))] text-left">
+                <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">URL</th>
+                <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))] w-20">状态码</th>
+                <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))] w-24">响应时间</th>
+                <th className="px-4 py-2 font-medium text-[hsl(var(--text-secondary))]">详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, i) => (
+                <tr key={i} className="border-t border-[hsl(var(--border))]">
+                  <td className="px-4 py-2 max-w-60 truncate font-mono" title={r.url}>
+                    {r.url}
+                  </td>
+                  <td className={`px-4 py-2 font-mono font-semibold ${statusColor(r.status_code)}`}>
+                    {r.status_code ?? "ERR"}
+                  </td>
+                  <td className="px-4 py-2 font-mono text-[hsl(var(--text-secondary))]">
+                    {r.response_time_ms}ms
+                  </td>
+                  <td className="px-4 py-2 text-xs text-[hsl(var(--text-secondary))]">
+                    {r.error ? (
+                      <span className="text-[hsl(var(--danger))]">{r.error}</span>
+                    ) : (
+                      <span>
+                        {r.final_url !== r.url && (
+                          <span className="text-[hsl(var(--text-tertiary))]">→ {r.final_url}</span>
+                        )}
+                        {r.content_type && (
+                          <span className="ml-2 text-[hsl(var(--text-tertiary))]">{r.content_type.split(";")[0]}</span>
+                        )}
+                        {r.content_length != null && (
+                          <span className="ml-2 text-[hsl(var(--text-tertiary))]">
+                            {(r.content_length / 1024).toFixed(1)}KB
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- SNMP Checker -----------------------------------------------------------
+
+const COMMON_OIDS: Record<string, string> = {
+  "系统描述": "1.3.6.1.2.1.1.1.0",
+  "系统名称": "1.3.6.1.2.1.1.5.0",
+  "运行时间": "1.3.6.1.2.1.1.3.0",
+  "联系信息": "1.3.6.1.2.1.1.4.0",
+  "位置": "1.3.6.1.2.1.1.6.0",
+  "接口数量": "1.3.6.1.2.1.2.1.0",
+  "接口表": "1.3.6.1.2.1.2.2",
+};
+
+const AUTH_PROTOCOLS = ["MD5", "SHA1", "SHA256"] as const;
+const PRIV_PROTOCOLS = ["none", "DES", "AES128"] as const;
+
+function SnmpChecker() {
+  const [version, setVersion] = useState<"v2c" | "v3">("v2c");
+  const [ip, setIp] = useState("");
+  const [community, setCommunity] = useState("public");
+  // v3
+  const [username, setUsername] = useState("");
+  const [authProto, setAuthProto] = useState("SHA1");
+  const [authPass, setAuthPass] = useState("");
+  const [privProto, setPrivProto] = useState("DES");
+  const [privPass, setPrivPass] = useState("");
+  // shared
+  const [oid, setOid] = useState("1.3.6.1.2.1.1.1.0");
+  const [timeout, setTimeout_] = useState("5");
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState<SnmpResult | null>(null);
+  const [error, setError] = useState("");
+
+  const handleGet = async () => {
+    setError("");
+    setResult(null);
+    setScanning(true);
+    const t = parseInt(timeout, 10) || 5;
+    try {
+      let data: SnmpResult;
+      if (version === "v2c") {
+        data = await invoke<SnmpResult>("snmp_get", {
+          ip: ip.trim(),
+          community: community.trim() || "public",
+          oid: oid.trim(),
+          timeoutSecs: t,
+        });
+      } else {
+        data = await invoke<SnmpResult>("snmp_v3_get", {
+          ip: ip.trim(),
+          username: username.trim(),
+          authProtocol: authProto,
+          authPassword: authPass,
+          privProtocol: privProto,
+          privPassword: privPass,
+          oid: oid.trim(),
+          timeoutSecs: t,
+        });
+      }
+      setResult(data);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Version toggle */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setVersion("v2c")}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            version === "v2c"
+              ? "bg-[hsl(var(--accent))] text-white"
+              : "bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))]"
+          }`}
+        >
+          SNMP v2c
+        </button>
+        <button
+          onClick={() => setVersion("v3")}
+          className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            version === "v3"
+              ? "bg-[hsl(var(--accent))] text-white"
+              : "bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))]"
+          }`}
+        >
+          SNMP v3
+        </button>
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className={labelClass}>目标 IP</label>
+          <input
+            type="text" placeholder="192.168.1.1"
+            value={ip} onChange={e => setIp(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleGet()}
+            className={`w-40 ${inputClass}`}
+          />
+        </div>
+
+        {version === "v2c" && (
+          <div>
+            <label className={labelClass}>Community</label>
+            <input
+              type="text" placeholder="public"
+              value={community} onChange={e => setCommunity(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleGet()}
+              className={`w-32 ${inputClass}`}
+            />
+          </div>
+        )}
+
+        {version === "v3" && (
+          <>
+            <div>
+              <label className={labelClass}>用户名</label>
+              <input
+                type="text" placeholder="snmpuser"
+                value={username} onChange={e => setUsername(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleGet()}
+                className={`w-32 ${inputClass}`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>认证协议</label>
+              <Select value={authProto} onChange={e => setAuthProto(e.target.value)} className="w-24">
+                {AUTH_PROTOCOLS.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className={labelClass}>认证密码</label>
+              <input
+                type="password" placeholder="auth密码"
+                value={authPass} onChange={e => setAuthPass(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleGet()}
+                className={`w-32 ${inputClass}`}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>加密协议</label>
+              <Select value={privProto} onChange={e => setPrivProto(e.target.value)} className="w-24">
+                {PRIV_PROTOCOLS.map(p => <option key={p} value={p}>{p === "none" ? "无加密" : p}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className={labelClass}>加密密码</label>
+              <input
+                type="password" placeholder="priv密码"
+                value={privPass} onChange={e => setPrivPass(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleGet()}
+                className={`w-32 ${inputClass}`}
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className={labelClass}>OID</label>
+          <input
+            type="text" placeholder="1.3.6.1.2.1.1.1.0"
+            value={oid} onChange={e => setOid(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleGet()}
+            className={`w-56 ${inputClass} font-mono text-xs`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>超时 (秒)</label>
+          <SpinInput
+            min={1} max={30} step={1}
+            value={timeout} onChange={(v) => setTimeout_(String(v))}
+            className="w-20"
+          />
+        </div>
+        <button onClick={handleGet} disabled={scanning} className={btnClass}>
+          {scanning ? "查询中..." : "GET"}
+        </button>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {Object.entries(COMMON_OIDS).map(([label, oidVal]) => (
+          <button
+            key={label}
+            onClick={() => setOid(oidVal)}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              oid === oidVal
+                ? "bg-[hsl(var(--accent)_/_0.15)] text-[hsl(var(--accent))]"
+                : "bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--border))]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
+
+      {result && (
+        <div className="rounded-lg border border-[hsl(var(--border))] overflow-hidden">
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] w-24">版本</td>
+                <td className="px-4 py-2.5 font-mono text-[hsl(var(--text-secondary))]">{version === "v2c" ? "SNMP v2c" : "SNMP v3"}</td>
+              </tr>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">OID</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{result.oid || oid}</td>
+              </tr>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">类型</td>
+                <td className="px-4 py-2.5 font-mono">{result.value_type || "-"}</td>
+              </tr>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">值</td>
+                <td className="px-4 py-2.5 font-mono">
+                  {result.error ? (
+                    <span className="text-[hsl(var(--danger))]">{result.error}</span>
+                  ) : (
+                    <span className="break-all">{result.value ?? "-"}</span>
+                  )}
+                </td>
+              </tr>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">响应时间</td>
+                <td className="px-4 py-2.5 font-mono text-[hsl(var(--text-secondary))]">{result.response_time_ms}ms</td>
+              </tr>
+              {result.raw_hex && (
+                <tr>
+                  <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">原始数据</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-[hsl(var(--text-tertiary))] break-all">{result.raw_hex}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!result && !error && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-12 h-12 rounded-full bg-[hsl(var(--muted))] flex items-center justify-center mb-4">
+            <Plug size={20} className="text-[hsl(var(--text-tertiary))]" />
+          </div>
+          <h3 className="text-sm font-medium text-[hsl(var(--text-secondary))] mb-1">SNMP 检测</h3>
+          <p className="text-xs text-[hsl(var(--text-tertiary))] max-w-md">
+            支持 SNMP v2c 和 v3。v2c 使用 Community 字符串认证；v3 使用 USM 安全模型，支持 MD5/SHA1/SHA256 认证和 DES/AES128 加密。
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Zabbix Agent Checker ---------------------------------------------------
+
+function ZabbixChecker() {
+  const [ip, setIp] = useState("");
+  const [port, setPort] = useState("10050");
+  const [timeout, setTimeout_] = useState("3000");
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState<ZabbixAgentResult | null>(null);
+  const [error, setError] = useState("");
+
+  const handleCheck = async () => {
+    setError("");
+    setResult(null);
+    setScanning(true);
+    try {
+      const data = await invoke<ZabbixAgentResult>("check_zabbix_agent", {
+        ip: ip.trim(),
+        port: parseInt(port, 10) || 10050,
+        timeoutMs: parseInt(timeout, 10) || 3000,
+      });
+      setResult(data);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className={labelClass}>目标 IP</label>
+          <input
+            type="text" placeholder="192.168.1.1"
+            value={ip} onChange={e => setIp(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleCheck()}
+            className={`w-40 ${inputClass}`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>端口</label>
+          <SpinInput
+            min={1} max={65535} step={1}
+            value={port} onChange={(v) => setPort(String(v))}
+            className="w-24"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>超时 (ms)</label>
+          <SpinInput
+            min={500} max={10000} step={500}
+            value={timeout} onChange={(v) => setTimeout_(String(v))}
+            className="w-24"
+          />
+        </div>
+        <button onClick={handleCheck} disabled={scanning} className={btnClass}>
+          {scanning ? "检测中..." : "开始检测"}
+        </button>
+      </div>
+
+      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
+
+      {result && (
+        <div className="rounded-lg border border-[hsl(var(--border))] overflow-hidden">
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b border-[hsl(var(--border))]">
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] w-24">端口状态</td>
+                <td className="px-4 py-2.5 font-mono">
+                  {result.reachable ? (
+                    <span className="inline-flex items-center gap-1 text-[hsl(var(--success))]">
+                      <CheckCircle2 size={14} /> 可达 (TCP {port})
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[hsl(var(--danger))]">
+                      <XCircle size={14} /> 不可达
+                    </span>
+                  )}
+                </td>
+              </tr>
+              {result.reachable && (
+                <>
+                  <tr className="border-b border-[hsl(var(--border))]">
+                    <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">被动模式</td>
+                    <td className="px-4 py-2.5 font-mono">
+                      {result.ping_ok ? (
+                        <span className="text-[hsl(var(--success))]">已确认 (agent.ping 响应成功)</span>
+                      ) : (
+                        <span className="text-[hsl(var(--warning))]">未确认 ({result.error || "未知"})</span>
+                      )}
+                    </td>
+                  </tr>
+                  {result.version && (
+                    <tr className="border-b border-[hsl(var(--border))]">
+                      <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">Agent 版本</td>
+                      <td className="px-4 py-2.5 font-mono">{result.version}</td>
+                    </tr>
+                  )}
+                  {result.hostname && (
+                    <tr className="border-b border-[hsl(var(--border))]">
+                      <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">主机名</td>
+                      <td className="px-4 py-2.5 font-mono">{result.hostname}</td>
+                    </tr>
+                  )}
+                  <tr className="border-b border-[hsl(var(--border))]">
+                    <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">主动模式</td>
+                    <td className="px-4 py-2.5 text-xs text-[hsl(var(--text-secondary))]">{result.active_mode_note}</td>
+                  </tr>
+                </>
+              )}
+              <tr>
+                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">响应时间</td>
+                <td className="px-4 py-2.5 font-mono text-[hsl(var(--text-secondary))]">{result.response_time_ms}ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!result && !error && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-12 h-12 rounded-full bg-[hsl(var(--muted))] flex items-center justify-center mb-4">
+            <Plug size={20} className="text-[hsl(var(--text-tertiary))]" />
+          </div>
+          <h3 className="text-sm font-medium text-[hsl(var(--text-secondary))] mb-1">Zabbix Agent 检测</h3>
+          <p className="text-xs text-[hsl(var(--text-tertiary))] max-w-md">
+            被动模式：连接 TCP 10050 端口，发送 agent.ping / agent.version / agent.hostname 协议帧<br />
+            主动模式：agent 主动连接 Zabbix server 10051 端口上报数据，无法从外部被动检测
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -213,10 +1109,11 @@ export default function ToolsPage() {
 
       {/* Panel */}
       {active === "subnet" && <SubnetCalc />}
-      {active === "scanner" && <PlaceholderTab title="存活主机扫描" desc="扫描指定网段内存活的主机（即将上线）" />}
-      {active === "port" && <PlaceholderTab title="端口扫描" desc="检测指定 IP 的开放 TCP 端口（即将上线）" />}
-      {active === "web" && <PlaceholderTab title="WEB 状态码检测" desc="批量检测 HTTP/HTTPS 站点状态（即将上线）" />}
-      {active === "snmp" && <PlaceholderTab title="SNMP 检测" desc="检测 SNMP 服务可达性（即将上线）" />}
+      {active === "scanner" && <LiveScanner />}
+      {active === "port" && <PortScanner />}
+      {active === "web" && <WebChecker />}
+      {active === "snmp" && <SnmpChecker />}
+      {active === "zabbix" && <ZabbixChecker />}
     </div>
   );
 }

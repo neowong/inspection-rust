@@ -35,6 +35,15 @@ regex = "1"
 toml = "0.8"
 docx-rs = "0.4"
 indexmap = { version = "2", features = ["serde"] }
+digest = "0.10"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+aes = "0.8"
+des = "0.8"
+cipher = "0.4"
+rand = "0.8"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

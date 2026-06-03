@@ -72,7 +72,12 @@ export default function LogAnalysisPage() {
   return (
     <div className="space-y-6">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
-        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">日志分析</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">日志分析</h1>
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[hsl(var(--warning)_/_0.15)] text-[hsl(var(--warning))] border border-[hsl(var(--warning)_/_0.3)]">
+            功能有待完善
+          </span>
+        </div>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">上传设备日志文件，自动解析并统计</p>
       </div>
 

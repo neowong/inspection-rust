@@ -267,6 +267,14 @@ pub fn run() {
             commands::reports::parse_log_text,
             commands::reports::generate_html_report,
             commands::reports::open_in_browser,
+            // Tools
+            commands::tools::scan_live_hosts,
+            commands::tools::scan_ports,
+            commands::tools::scan_udp_ports,
+            commands::tools::check_web_urls,
+            commands::tools::snmp_get,
+            commands::tools::snmp_v3_get,
+            commands::tools::check_zabbix_agent,
             // Settings
             commands::settings::get_settings,
             commands::settings::update_settings,

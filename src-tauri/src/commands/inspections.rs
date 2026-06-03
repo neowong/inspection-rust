@@ -410,53 +410,18 @@ pub async fn create_batch(
             let device_count = parsed_ids.len();
             tracing::info!("批次 #{} 自动开始执行, 共 {} 台设备并发", batch_id, device_count);
 
+            // 后台执行：不阻塞 create_batch 返回，前端立即可见
             let db = state.db.clone();
-            let handles: Vec<_> = parsed_ids.into_iter().map(|device_id| {
-                let db = Arc::clone(&db);
-                tokio::spawn(async move {
-                    inspect_one_device(batch_id, device_id, db).await
-                })
-            }).collect();
+            tokio::spawn(async move {
+                let handles: Vec<_> = parsed_ids.into_iter().map(|device_id| {
+                    let db = Arc::clone(&db);
+                    tokio::spawn(async move {
+                        inspect_one_device(batch_id, device_id, db).await
+                    })
+                }).collect();
 
-            let mut completed_count = 0u32;
-            let mut failed_count = 0u32;
-            for handle in handles {
-                match handle.await {
-                    Ok(Ok(_)) => completed_count += 1,
-                    Ok(Err((_id, err))) => {
-                        failed_count += 1;
-                        tracing::warn!("批次 #{} 设备巡检失败: {}", batch_id, err);
-                    }
-                    Err(join_err) => {
-                        failed_count += 1;
-                        tracing::error!("批次 #{} 设备任务 panic: {}", batch_id, join_err);
-                    }
-                }
-            }
-
-            let final_status = if failed_count == 0 {
-                "completed"
-            } else if completed_count == 0 {
-                "failed"
-            } else {
-                "partially_completed"
-            };
-
-            tracing::info!(
-                "批次 #{} 执行完毕: status={}, completed={}, failed={}",
-                batch_id, final_status, completed_count, failed_count
-            );
-
-            {
-                let conn = state.db.lock();
-                let now = now_str();
-                conn.execute(
-                    "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
-                     WHERE id = ?3",
-                    rusqlite::params![final_status, now, batch_id],
-                )
-                .map_err(|e| e.to_string())?;
-            }
+                await_handles_and_finalize(batch_id, handles, db).await;
+            });
         }
     }
 
@@ -530,7 +495,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         ids
     }; // 锁释放
 
-    // 2. 并发执行各设备
+    // 2. 并发执行各设备（后台运行，不阻塞 run_batch 返回）
     let db = state.db.clone();
 
     let handles: Vec<_> = device_ids.into_iter().map(|device_id| {
@@ -540,9 +505,21 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         })
     }).collect();
 
+    tokio::spawn(async move {
+        await_handles_and_finalize(batch_id, handles, db).await;
+    });
+
+    Ok(())
+}
+
+/// 后台等待所有设备任务完成，更新批次最终状态
+async fn await_handles_and_finalize(
+    batch_id: i64,
+    handles: Vec<tokio::task::JoinHandle<Result<(), (i64, String)>>>,
+    db: Arc<parking_lot::Mutex<rusqlite::Connection>>,
+) {
     let mut completed_count = 0u32;
     let mut failed_count = 0u32;
-
     for handle in handles {
         match handle.await {
             Ok(Ok(_)) => completed_count += 1,
@@ -557,7 +534,6 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         }
     }
 
-    // 3. 更新批次最终状态（短暂获锁）
     let final_status = if failed_count == 0 {
         "completed"
     } else if completed_count == 0 {
@@ -571,18 +547,13 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         batch_id, final_status, completed_count, failed_count
     );
 
-    {
-        let conn = state.db.lock();
-        let now = now_str();
-        conn.execute(
-            "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
-             WHERE id = ?3",
-            rusqlite::params![final_status, now, batch_id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
+    let conn = db.lock();
+    let now = now_str();
+    let _ = conn.execute(
+        "UPDATE inspection_batches SET status = ?1, completed_at = ?2, updated_at = ?2 \
+         WHERE id = ?3",
+        rusqlite::params![final_status, now, batch_id],
+    );
 }
 
 /// 执行单台设备的巡检流程：读数据 → 建记录 → SSH → 写结果。

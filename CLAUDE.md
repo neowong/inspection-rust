@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Desktop**: Tauri v2 (Rust backend + webview frontend)
 - **Frontend**: React 18 + Vite 6 + TypeScript + TailwindCSS 3
-- **Backend (Rust)**: rusqlite (SQLite bundled), ssh2, reqwest, fernet, serde, chrono, tokio, docx-rs, indexmap
+- **Backend (Rust)**: rusqlite (SQLite bundled), ssh2, reqwest, fernet, serde, chrono, tokio, docx-rs, indexmap, digest, md-5, sha1, sha2, hmac, aes, des, cipher, rand
 - **UI**: lucide-react icons, class-variance-authority, tailwind-merge/clsx
 - **AI**: OpenAI / Anthropic API via reqwest
 - **Routing**: react-router-dom v7
@@ -41,6 +41,8 @@ inspection-rust/
 │   │       └── Input.tsx         # Input + Select components
 │   └── pages/
 │       ├── DashboardPage.tsx     # Stats cards overview
+│       ├── ToolsPage.tsx         # Toolbox: subnet calc, alive scan, TCP/UDP port scan, web check, SNMP v2c/v3, Zabbix agent
+│       ├── LogAnalysisPage.tsx   # Device log parsing and analysis
 │       ├── DevicesPage.tsx       # Device CRUD + status check
 │       ├── TemplatesPage.tsx     # Inspection templates + command pool CRUD
 │       ├── InspectionPage.tsx    # Batch creation, running, monitoring
@@ -64,6 +66,7 @@ inspection-rust/
 │   │   │   ├── inspections.rs    # Batch CRUD + run/pause/stop/restart/retry
 │   │   │   ├── reports.rs        # AI analysis, report generation, report templates
 │   │   │   ├── ai_config.rs      # AI model config CRUD + activate/deactivate
+│   │   │   ├── tools.rs           # Toolbox: scan hosts/ports/UDP, web check, SNMP v2c/v3, Zabbix agent
 │   │   │   └── settings.rs       # System settings
 │   │   └── services/
 │   │       ├── crypto.rs         # Fernet encryption (password/API key)
@@ -75,7 +78,12 @@ inspection-rust/
 │   │       ├── template_variables.rs # Template variable definitions + context builder
 │   │       ├── docx_engine.rs    # DOCX template engine (variable replacement + dynamic rows)
 │   │       ├── html_util.rs      # Shared html_escape utility
-│   │       └── template_generator.rs # Auto-generate templates from command pool
+│   │       ├── template_generator.rs # Auto-generate templates from command pool
+│   │       ├── live_scanner.rs   # ICMP ping sweep with CIDR parsing, parallel scan
+│   │       ├── port_scanner.rs   # TCP connect scan + UDP scan (connect/ICMP detection)
+│   │       ├── web_checker.rs    # HTTP/HTTPS status check, IP defaults to HTTP
+│   │       ├── snmp_checker.rs   # SNMP v2c + v3 USM (MD5/SHA1/SHA256 auth, DES/AES128 priv)
+│   │       └── zabbix_checker.rs # Zabbix agent passive mode detection (protocol frame)
 │   └── sql/001_init.sql          # 9 tables: devices, device_status_logs, inspection_templates, command_pool, inspection_batches, inspection_records, ai_model_configs, report_templates, system_settings
 ```
 
@@ -103,6 +111,12 @@ inspection-rust/
 - **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
 - **DOCX report engine**: Uses `docx-rs` (0.4) for Word template processing. `docx_engine.rs` handles variable replacement (`{{var}}`) and dynamic table row cloning (rows containing `{{seq}}` are cloned per command). Multi-line output uses `Break::new(BreakType::TextWrapping)`. Command order preserved via `IndexMap` from `inspection_runner`.
 - **Command order**: `inspection_runner::run_commands` returns `IndexMap<String, String>` to preserve execution order. Template editor supports drag-and-drop command reordering.
+- **SpinInput component**: Custom number input with hidden native spinners + ChevronUp/Down buttons. Use `<SpinInput>` instead of `<input type="number">` for timeout/port fields.
+- **Toolbox IP validation**: All tools that take IP input (`scan_ports`, `scan_udp_ports`, `snmp_v2c_get`, `snmp_v3_get`, `check_zabbix_agent`) validate with `parse::<IpAddr>()` at entry, returning "请输入有效的 IP 地址" on failure.
+- **UDP scan**: Uses `socket.connect()` before `send()`/`recv()` — connected UDP sockets receive ICMP Port Unreachable as `ECONNREFUSED`. Without `connect()`, ICMP errors are not delivered. Protocol probes for DNS(53), SNMP(161), NTP(123).
+- **SNMP v3**: Self-implemented ASN.1 BER codec. Key localization: 1MB password hashing → Ku → Kul = Hash(Ku||engineID||Ku). Auth key lengths: MD5=16, SHA1=20, SHA256=32. MAC always 12 bytes. msgData is SEQUENCE (0x30) unencrypted, OCTET STRING (0x04) when encrypted. Engine discovery via empty GET → REPORT, auto-retry on `notInTimeWindow`.
+- **Zabbix protocol**: Frame format `ZBXD\x01` + LE64 length + JSON. Response read in two phases: header (13 bytes) → parse length → read rest. Shows raw hex on parse failure for debugging.
+- **Batch creation non-blocking**: `create_batch`(auto_start) and `run_batch` spawn `tokio::spawn` background tasks and return immediately — frontend shows batch instantly, 3s polling updates progress. Helper `await_handles_and_finalize()` updates final status.
 
 ## Dev Commands
 
