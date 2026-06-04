@@ -8,8 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:release": "npm run build && cargo build --release && upx --best --lzma src-tauri/target/release/inspection-rust",
-    "build:win": "npm run build && cargo build --target x86_64-pc-windows-gnu --release && upx --best --lzma src-tauri/target/x86_64-pc-windows-gnu/release/inspection_rust_lib.dll"
+    "build:release": "npm run build && cargo build --release",
+    "build:win": "npm run build && cargo build --target x86_64-pc-windows-gnu --release"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
