@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection};
 
-/// 种子命令数据（91条，H3C 26 + 华为 25 + 思科 22 + 锐捷 18）
+/// 种子命令数据（89条，H3C 24 + 华为 25 + 思科 22 + 锐捷 18）
 /// 插入种子命令数据
 ///
 /// 仅当 `command_pool` 表为空时执行插入。
@@ -16,24 +16,22 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
     }
 
     let commands: Vec<(&str, &str, &str, &str)> = vec![
-        // ==================== H3C (Comware V5/V7) ====================
+        // ==================== H3C (Comware V5/V7，已真机验证) ====================
         ("H3C", "display clock", "查看系统时钟", "clock"),
         ("H3C", "display ntp status", "查看 NTP 状态", "clock"),
-        ("H3C", "display cpu-usage", "查看 CPU 利用率", "cpu"),
+        ("H3C", "display cpu-usage summary", "查看 CPU 利用率", "cpu"),
         ("H3C", "display environment", "查看环境状态", "env"),
         ("H3C", "display fan", "查看风扇状态", "fan"),
         ("H3C", "display current-configuration | include sysname", "主机名", "general"),
         ("H3C", "dir", "Flash空间使用情况", "hardware"),
         ("H3C", "display device", "查看设备信息", "hardware"),
         ("H3C", "display device manuinfo", "查看设备序列号", "hardware"),
-        ("H3C", "display health", "查看设备健康状态", "hardware"),
         ("H3C", "display irf", "查看 IRF 状态", "hardware"),
         ("H3C", "display transceiver", "查看光模块信息", "hardware"),
         ("H3C", "display interface", "查看接口详细信息", "interface"),
         ("H3C", "display interface brief", "查看接口概要", "interface"),
-        ("H3C", "display ip interface brief", "查看 IP 接口概要", "interface"),
-        ("H3C", "display logbuffer", "查看日志摘要", "log"),
-        ("H3C", "display memory", "查看内存利用率", "memory"),
+        ("H3C", "display logbuffer last-mins 5", "查看日志摘要", "log"),
+        ("H3C", "dis memory summary ", "查看内存利用率", "memory"),
         ("H3C", "display power", "查看电源状态", "power"),
         ("H3C", "display arp", "查看 ARP 表", "protocol"),
         ("H3C", "display ip routing-table", "查看路由表", "protocol"),
