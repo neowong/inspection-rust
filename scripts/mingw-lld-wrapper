@@ -1,0 +1,67 @@
+#!/bin/bash
+# MinGW linker wrapper — translates gcc-style flags to ld.lld-compatible ones.
+# Uses rust-lld (via ld.lld symlink) which supports COFF/PE via -m i386pep.
+#
+# The Rust target spec for x86_64-pc-windows-gnu hardcodes -Wl, prefixes
+# (assuming gcc as the linker driver). We strip those and filter out
+# gcc-driver-only flags.
+
+set -euo pipefail
+
+MINGW_LIB="/usr/x86_64-w64-mingw32/lib"
+GCC_LIB="/usr/lib/gcc/x86_64-w64-mingw32/13-win32"
+LLD="/home/neo/.local/bin/ld.lld"
+
+ARGS=()
+IS_SHARED=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -shared|--shared)
+            IS_SHARED=true
+            ARGS+=("$arg")
+            ;;
+        -Wl,*)
+            stripped="${arg#-Wl,}"
+            case "$stripped" in
+                -Bstatic)   ARGS+=("--Bstatic") ;;
+                -Bdynamic)  ARGS+=("--Bdynamic") ;;
+                --subsystem,console|--subsystem,windows)
+                            ARGS+=("--subsystem" "${stripped#--subsystem,}") ;;
+                *)          ARGS+=("$stripped") ;;
+            esac
+            ;;
+        -fno-use-linker-plugin|-nodefaultlibs|-m64)
+            # gcc driver flags — skip (we pass -m i386pep explicitly)
+            ;;
+        --subsystem,console|--subsystem,windows)
+            # Convert Unix-ld syntax to LLD syntax (space-separated)
+            ARGS+=("--subsystem" "${arg#--subsystem,}")
+            ;;
+        *)
+            ARGS+=("$arg")
+            ;;
+    esac
+done
+
+# CRT startup object
+if $IS_SHARED; then
+    CRT="$MINGW_LIB/dllcrt2.o"
+else
+    CRT="$MINGW_LIB/crt2.o"
+fi
+
+# DLLs: limit exports to avoid 65535 ordinal limit (PE format constraint)
+if $IS_SHARED; then
+    EXTRA_FLAGS=(--exclude-all-symbols)
+else
+    EXTRA_FLAGS=()
+fi
+
+exec "$LLD" \
+    -m i386pep \
+    "$CRT" \
+    -L"$GCC_LIB" \
+    -L"$MINGW_LIB" \
+    "${EXTRA_FLAGS[@]}" \
+    "${ARGS[@]}"

@@ -1,0 +1,4 @@
+[target.x86_64-pc-windows-gnu]
+linker = "/home/neo/.local/bin/mingw-lld-wrapper"
+# BFD linker has a 16-bit export ordinal limit (65535).
+# Our DLL exceeds this (99536 exports), so we use LLD via wrapper.

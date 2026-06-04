@@ -127,6 +127,10 @@ inspection-rust/
 - 只跑 `cargo build --target x86_64-pc-windows-gnu` 不会构建前端（Loader2 动画等）也不会正确处理图标嵌入，须先执行 `npm run build` 再编译 Rust
 - 前端改动（新增图标、组件等）必须经过 `npm run build` 才会打包进二进制
 - 图标文件 `icon.ico` 和 `*.png` 通过 tauri-build 的 build.rs 处理嵌入
+- **BFD 链接器 DLL 导出限制**：`cdylib` 导出符号超过 65535 个时，MinGW BFD 链接器会报 `export ordinal too large`。解决方案：
+  1. `.cargo/config.toml` 中设置 `linker = "/home/neo/.local/bin/mingw-lld-wrapper"` 切换为 LLD
+  2. 依赖包装脚本 `scripts/mingw-lld-wrapper`（翻译 `-Wl,` 前缀、过滤 gcc 驱动参数、添加 CRT 对象、`--exclude-all-symbols`）
+  3. 需要 `ld.lld` 在 PATH 中（可用 Rust 自带的 `rust-lld` 做符号链接：`ln -s $(rustup which rust-lld) ~/.local/bin/ld.lld`）
 
 ## Dev Commands
 

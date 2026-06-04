@@ -49,11 +49,11 @@ rand = "0.8"
 tauri-build = { version = "2", features = [] }
 
 [profile.release]
-opt-level = 2          # balance speed and binary size
-lto = "fat"            # link-time optimization (~30% size reduction)
-codegen-units = 1      # allow more per-function optimization
+opt-level = "z"        # optimize for size over speed
+lto = "fat"            # link-time optimization
+codegen-units = 1      # per-function optimization
 strip = "symbols"      # strip all symbols
-panic = "abort"        # remove unwind tables (safe for desktop app)
+panic = "abort"        # remove unwind tables
 
 [features]
 default = ["custom-protocol"]

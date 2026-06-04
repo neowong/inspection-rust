@@ -148,6 +148,39 @@ export default function TemplatesPage() {
   const variableTargetRef = useRef<"content" | number>("content"); // "content" = advanced mode, number = section index
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const customTextRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
+  const cmdListRef = useRef<HTMLDivElement>(null);
+  const reportSectionsRef = useRef<HTMLDivElement>(null);
+  const autoScrollRaf = useRef<number | null>(null);
+  const SCROLL_ZONE = 50; // px from edge to trigger auto-scroll
+  const MAX_SCROLL_SPEED = 8; // px per frame
+
+  const handleDragAutoScroll = (e: React.DragEvent, container: HTMLElement | null) => {
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (autoScrollRaf.current) { cancelAnimationFrame(autoScrollRaf.current); autoScrollRaf.current = null; }
+    let speed = 0;
+    if (y < SCROLL_ZONE && container.scrollTop > 0) {
+      speed = -((SCROLL_ZONE - y) / SCROLL_ZONE) * MAX_SCROLL_SPEED;
+    } else if (y > rect.height - SCROLL_ZONE && container.scrollTop < container.scrollHeight - container.clientHeight) {
+      speed = ((y - (rect.height - SCROLL_ZONE)) / SCROLL_ZONE) * MAX_SCROLL_SPEED;
+    }
+    if (speed !== 0) {
+      const scroll = () => {
+        if ((speed < 0 && container.scrollTop <= 0) || (speed > 0 && container.scrollTop >= container.scrollHeight - container.clientHeight)) {
+          autoScrollRaf.current = null;
+          return;
+        }
+        container.scrollTop += speed;
+        autoScrollRaf.current = requestAnimationFrame(scroll);
+      };
+      autoScrollRaf.current = requestAnimationFrame(scroll);
+    }
+  };
+
+  const stopAutoScroll = () => {
+    if (autoScrollRaf.current) { cancelAnimationFrame(autoScrollRaf.current); autoScrollRaf.current = null; }
+  };
 
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
@@ -677,6 +710,7 @@ export default function TemplatesPage() {
         <Modal
           open={templateModal}
           title={editingTemplate ? "编辑模板" : "添加模板"}
+          width="max-w-2xl"
           onClose={() => setTemplateModal(false)}
           footer={
             <div className="flex gap-2">
@@ -732,7 +766,11 @@ export default function TemplatesPage() {
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
                 已选命令 ({templateForm.command_ids.length}) <span className="text-[10px] text-[hsl(var(--text-tertiary))]">拖拽排序</span>
               </label>
-              <div className="max-h-40 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3">
+              <div ref={cmdListRef} className="max-h-40 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3"
+                onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, cmdListRef.current); }}
+                onDrop={stopAutoScroll}
+                onDragEnd={stopAutoScroll}
+              >
                 {templateForm.command_ids.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
                 {templateForm.command_ids.map((cmdId, idx) => {
                   const cmd = commands.find(c => c.id === cmdId);
@@ -954,7 +992,11 @@ export default function TemplatesPage() {
                     {reportForm.sections.filter(s => s.enabled).length}/{reportForm.sections.length} 已启用
                   </span>
                 </div>
-                <div className="space-y-2 flex-1 overflow-y-auto pr-1" style={{ maxHeight: "400px" }}>
+                <div ref={reportSectionsRef} className="space-y-2 flex-1 overflow-y-auto pr-1" style={{ maxHeight: "400px" }}
+                  onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, reportSectionsRef.current); }}
+                  onDrop={stopAutoScroll}
+                  onDragEnd={stopAutoScroll}
+                >
                   {reportForm.sections.map((section, i) => {
                     const meta = SECTION_META[section.type] || { description: "", icon: "📄" };
                     const isExpanded = expandedSection === section.type;

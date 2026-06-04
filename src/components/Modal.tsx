@@ -10,6 +10,25 @@ interface Props {
   onClose: () => void;
 }
 
+const WIDTH_MAP: Record<string, number> = {
+  "max-w-sm": 384,
+  "max-w-md": 448,
+  "max-w-lg": 512,
+  "max-w-xl": 576,
+  "max-w-2xl": 672,
+  "max-w-3xl": 768,
+  "max-w-4xl": 896,
+  "max-w-5xl": 1024,
+  "max-w-6xl": 1152,
+};
+
+function responsiveWidth(twClass: string): string {
+  const basePx = WIDTH_MAP[twClass] ?? 576;
+  const vwPct = Math.round(basePx / 13);
+  const capPx = Math.round(basePx * 1.6);
+  return `min(${vwPct}vw, ${capPx}px)`;
+}
+
 export default function Modal({
   open,
   title,
@@ -35,8 +54,8 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl ${width} mx-4 max-h-[80vh] flex flex-col animate-in`}
-        style={{ animationDuration: "150ms" }}
+        className="relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col animate-in"
+        style={{ animationDuration: "150ms", maxWidth: responsiveWidth(width) }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-[hsl(var(--border-light))]">
