@@ -17,21 +17,13 @@ use std::time::Duration;
 // Helpers
 // ============================================================
 
-/// 验证 IP 地址格式（IPv4，4 段，每段 0-255）
+/// 验证 IP 地址格式
 fn validate_ip(ip: &str) -> Result<(), String> {
-    let parts: Vec<&str> = ip.trim().split('.').collect();
-    if parts.len() != 4 {
-        return Err(format!("无效的 IP 地址格式: {}", ip));
+    if ip.trim().is_empty() || ip.trim().parse::<std::net::IpAddr>().is_err() {
+        Err(format!("请输入有效的 IP 地址: {}", ip))
+    } else {
+        Ok(())
     }
-    for part in &parts {
-        let num: u16 = part
-            .parse()
-            .map_err(|_| format!("无效的 IP 地址段: {}", part))?;
-        if num > 255 {
-            return Err(format!("IP 地址段超出范围 (0-255): {}", part));
-        }
-    }
-    Ok(())
 }
 
 /// 检查设备名称或 IP 是否唯一

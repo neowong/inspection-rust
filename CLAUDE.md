@@ -78,6 +78,7 @@ inspection-rust/
 │   │       ├── template_variables.rs # Template variable definitions + context builder
 │   │       ├── docx_engine.rs    # DOCX template engine (variable replacement + dynamic rows)
 │   │       ├── html_util.rs      # Shared html_escape utility
+│   │       ├── json_util.rs      # Shared JSON parse helpers (parse_json_map, parse_json_object)
 │   │       ├── template_generator.rs # Auto-generate templates from command pool
 │   │       ├── live_scanner.rs   # ICMP ping + TCP fallback(135/445) sweep, CIDR parsing, parallel scan
 │   │       ├── port_scanner.rs   # TCP connect scan + UDP scan (connect/ICMP detection)

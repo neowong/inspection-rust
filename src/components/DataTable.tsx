@@ -1,10 +1,10 @@
-import React from "react";
+import type { ReactNode, MouseEvent } from "react";
 
 interface Column<T> {
   key: string;
   header: string;
   width?: string;
-  render: (row: T) => React.ReactNode;
+  render: (row: T) => ReactNode;
 }
 
 interface Props<T> {
@@ -12,7 +12,7 @@ interface Props<T> {
   data: T[];
   rowKey: (row: T) => string | number;
   onRowDoubleClick?: (row: T) => void;
-  onContextMenu?: (e: React.MouseEvent, row: T) => void;
+  onContextMenu?: (e: MouseEvent, row: T) => void;
   onRowClick?: (row: T) => void;
   selectedKey?: string | number | null;
   emptyText?: string;

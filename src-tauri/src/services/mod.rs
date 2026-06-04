@@ -3,6 +3,7 @@ pub mod ai_inspection;
 pub mod crypto;
 pub mod docx_engine;
 pub mod html_util;
+pub mod json_util;
 pub mod inspection_runner;
 pub mod report_generator;
 pub mod live_scanner;

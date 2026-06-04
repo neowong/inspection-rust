@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
-use docx_rs::*;
+use docx_rs::{read_docx, DocumentChild, Table, TableChild, TableRowChild, TableCellContent, Paragraph, ParagraphChild, Run, RunChild, Break, BreakType, Text};
 
 use crate::db::models::{Device, InspectionRecord};
+use super::json_util::{parse_json_map, parse_json_object};
 
 /// 用模板 docx 生成巡检报告
 pub fn generate_docx_report(
@@ -335,31 +336,6 @@ fn clear_run_text(run: &mut Run) {
         if let RunChild::Text(ref mut t) = child {
             t.text.clear();
         }
-    }
-}
-
-// ============================
-// JSON 解析辅助
-// ============================
-
-/// 解析 JSON 为有序的键值对（serde_json::Map 保留原始插入顺序）
-fn parse_json_map(json: &Option<String>) -> Vec<(String, String)> {
-    let Some(s) = json else { return vec![] };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(s) else { return vec![] };
-    match val {
-        serde_json::Value::Object(map) => map.into_iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
-            .collect(),
-        _ => vec![],
-    }
-}
-
-fn parse_json_object(json: &Option<String>) -> serde_json::Map<String, serde_json::Value> {
-    let Some(s) = json else { return serde_json::Map::new(); };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(s) else { return serde_json::Map::new(); };
-    match val {
-        serde_json::Value::Object(map) => map,
-        _ => serde_json::Map::new(),
     }
 }
 

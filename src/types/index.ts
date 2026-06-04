@@ -42,7 +42,7 @@ export interface CommandPool {
   updated_at: string;
 }
 
-export type BatchStatusType =
+type BatchStatusType =
   | "pending" | "running" | "completed" | "failed"
   | "stopped" | "paused" | "waiting" | "in_progress" | "partially_completed";
 
@@ -65,7 +65,7 @@ export interface InspectionBatch {
   records: InspectionRecordSummary[];
 }
 
-export interface InspectionRecordSummary {
+interface InspectionRecordSummary {
   id: number;
   batch_id: number;
   device_id: number;

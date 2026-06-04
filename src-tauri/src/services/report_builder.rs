@@ -1,6 +1,7 @@
 use crate::db::models::{InspectionBatch, InspectionRecord, Device, now_str, BATCH_COLUMNS, RECORD_COLUMNS, DEVICE_COLUMNS, REPORT_TEMPLATE_COLUMNS, batch_from_row, record_from_row, device_from_row, report_template_from_row};
 use super::template_engine;
 use super::html_util::html_escape;
+use super::json_util::{parse_json_map, parse_json_object};
 use std::collections::HashMap;
 
 /// Load command→description mapping from the command pool.
@@ -377,27 +378,4 @@ fn extract_mfg_date(record: &InspectionRecord) -> String {
     "-".to_string()
 }
 
-// --- Helpers ---
 
-fn parse_json_map(json_str: &Option<String>) -> std::collections::HashMap<String, String> {
-    let empty = "{}".to_string();
-    let val: serde_json::Value =
-        serde_json::from_str(json_str.as_deref().unwrap_or(&empty)).unwrap_or_default();
-    let mut map = std::collections::HashMap::new();
-    if let Some(obj) = val.as_object() {
-        for (k, v) in obj {
-            let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
-            map.insert(k.clone(), s);
-        }
-    }
-    map
-}
-
-fn parse_json_object(json_str: &Option<String>) -> serde_json::Map<String, serde_json::Value> {
-    let empty = "{}".to_string();
-    let val: serde_json::Value =
-        serde_json::from_str(json_str.as_deref().unwrap_or(&empty)).unwrap_or_default();
-    val.as_object().cloned().unwrap_or_default()
-}
-
-// html_escape 已迁移到 html_util 模块，通过 use super::html_util::html_escape 导入
