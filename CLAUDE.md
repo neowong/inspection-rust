@@ -59,7 +59,7 @@ inspection-rust/
 │   │   │   ├── models.rs         # Rust structs (Device, Template, Batch, Record, AiConfig, etc.)
 │   │   │   ├── migrations.rs     # Pragmatic version-based migrations
 │   │   │   ├── query.rs          # query_all / query_one / count helpers
-│   │   │   └── seed_data.rs      # 65 seed commands for H3C/华为/思科/锐捷
+│   │   │   └── seed_data.rs      # 85 seed commands for H3C/华为/思科/锐捷
 │   │   ├── commands/             # Tauri command handlers (each file = domain module)
 │   │   │   ├── devices.rs        # list/get/create/update/delete/check-status
 │   │   │   ├── templates.rs      # Template CRUD + command pool CRUD + auto-generate
