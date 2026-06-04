@@ -31,7 +31,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("H3C", "display interface", "查看接口详细信息", "interface"),
         ("H3C", "display interface brief", "查看接口概要", "interface"),
         ("H3C", "display logbuffer last-mins 5", "查看日志摘要", "log"),
-        ("H3C", "dis memory summary ", "查看内存利用率", "memory"),
+        ("H3C", "display memory summary", "查看内存利用率", "memory"),
         ("H3C", "display power", "查看电源状态", "power"),
         ("H3C", "display arp", "查看 ARP 表", "protocol"),
         ("H3C", "display ip routing-table", "查看路由表", "protocol"),
