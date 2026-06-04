@@ -142,13 +142,40 @@ cargo check
 
 # Rust build
 cargo build                   # debug
-cargo build --release         # release (~19MB binary with LTO)
+cargo build --release         # release (15MB, LTO+opt-level=z)
 
-# Production desktop build
+# Full release binary with UPX compression (~4.7MB)
+npm run build:release
+
+# Windows cross-compile + UPX
+npm run build:win
+
+# Production desktop bundle (installer)
 npx tauri build               # produces .deb / .AppImage
 
 # Frontend build only
 npm run build
+```
+
+### Release profile 优化
+
+```
+[profile.release]
+opt-level = "z"        # 体积优先
+lto = "fat"            # 链接去死代码
+codegen-units = 1      # 单代码单元最大化优化
+strip = "symbols"      # 剥离符号
+panic = "abort"        # 移除展开表
+
+# 构建后 UPX --best --lzma 压缩，二进制约 4.7MB（原 26MB 的 18%）
+```
+
+UPX 解压开销约 200-500ms（桌面 GUI 无感），需要 `upx` 命令：
+```bash
+# Ubuntu/Debian
+sudo apt install upx
+# macOS
+brew install upx
 ```
 
 ## Data & State
