@@ -123,6 +123,7 @@ inspection-rust/
 ## Windows 交叉编译注意事项
 
 - Cargo profile 的 `strip` 值在 `x86_64-pc-windows-gnu` 目标上不支持 `"debug"`，需用 `"symbols"` 或 `"debuginfo"`
+	- Release profile 配置：`lto = "fat"` + `codegen-units = 1` + `panic = "abort"`，release 二进制约 19MB
 - 只跑 `cargo build --target x86_64-pc-windows-gnu` 不会构建前端（Loader2 动画等）也不会正确处理图标嵌入，须先执行 `npm run build` 再编译 Rust
 - 前端改动（新增图标、组件等）必须经过 `npm run build` 才会打包进二进制
 - 图标文件 `icon.ico` 和 `*.png` 通过 tauri-build 的 build.rs 处理嵌入
@@ -141,7 +142,7 @@ cargo check
 
 # Rust build
 cargo build                   # debug
-cargo build --release         # release (~20MB binary)
+cargo build --release         # release (~19MB binary with LTO)
 
 # Production desktop build
 npx tauri build               # produces .deb / .AppImage
