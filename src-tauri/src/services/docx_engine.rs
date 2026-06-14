@@ -5,9 +5,8 @@ use std::path::Path;
 
 use docx_rs::{
     AlignmentType, BorderType, Docx, Footer, Header, HeightRule, LineSpacing, NumPages, PageNum,
-    Paragraph, ParagraphBorder, ParagraphBorderPosition, Run, RunFonts, Shading, Table,
-    TableBorder, TableBorderPosition, TableBorders, TableCell, TableCellMargins, TableLayoutType,
-    TableRow, VAlignType, WidthType,
+    Paragraph, Run, RunFonts, Shading, Table, TableBorder, TableBorderPosition, TableBorders,
+    TableCell, TableCellMargins, TableLayoutType, TableRow, VAlignType, WidthType,
 };
 
 use crate::db::models::{Device, InspectionRecord};
@@ -154,11 +153,35 @@ fn init_docx(config: &ReportTemplateConfig, device: &Device) -> Docx {
 }
 
 fn build_header(template: &str) -> Header {
-    Header::new().add_paragraph(with_bottom_border(build_running_paragraph(template)))
+    Header::new()
+        .add_paragraph(build_running_paragraph(template))
+        .add_table(horizontal_rule_table(TableBorderPosition::Bottom))
 }
 
 fn build_footer(template: &str) -> Footer {
-    Footer::new().add_paragraph(with_top_border(build_running_paragraph(template)))
+    Footer::new()
+        .add_table(horizontal_rule_table(TableBorderPosition::Top))
+        .add_paragraph(build_running_paragraph(template))
+}
+
+fn horizontal_rule_table(position: TableBorderPosition) -> Table {
+    let mut borders = TableBorders::with_empty().clear_all();
+    borders = borders.set(
+        TableBorder::new(position)
+            .border_type(BorderType::Single)
+            .size(6)
+            .color("808080"),
+    );
+    Table::new(vec![TableRow::new(vec![
+        TableCell::new()
+            .clear_all_border()
+            .add_paragraph(Paragraph::new().line_spacing(LineSpacing::new().before(0).after(0))),
+    ])])
+    .layout(TableLayoutType::Fixed)
+    .set_grid(vec![9072])
+    .width(9072, WidthType::Dxa)
+    .set_borders(borders)
+    .margins(TableCellMargins::new().margin(0, 0, 0, 0))
 }
 
 /// 把含 `{{page}} {{total}}` 的字符串构造成段落（用于页眉/页脚）
@@ -210,26 +233,6 @@ fn build_running_paragraph(template: &str) -> Paragraph {
         paragraph = paragraph.add_run(Run::new().add_text(buf).size(18).fonts(zh_fonts()));
     }
     paragraph
-}
-
-fn with_bottom_border(mut p: Paragraph) -> Paragraph {
-    p.property = p.property.set_border(
-        ParagraphBorder::new(ParagraphBorderPosition::Bottom)
-            .size(4)
-            .space(4)
-            .color("808080"),
-    );
-    p
-}
-
-fn with_top_border(mut p: Paragraph) -> Paragraph {
-    p.property = p.property.set_border(
-        ParagraphBorder::new(ParagraphBorderPosition::Top)
-            .size(4)
-            .space(4)
-            .color("808080"),
-    );
-    p
 }
 
 fn replace_simple_vars(template: &str, vars: &HashMap<&str, String>) -> String {
