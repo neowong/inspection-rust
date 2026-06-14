@@ -102,7 +102,7 @@ inspection-rust/
 - **Background tasks**: `lib.rs` spawns std thread for 5-minute device status polling (`poll_device_statuses`), uses `try_lock` to avoid blocking.
 - **Export**: `export_batch_csv` writes CSV with BOM to `data/reports/`. Fields escaped for commas/newlines/quotes.
 - **tsconfig `noEmit: true` is REQUIRED**: Without it, `tsc` generates stale `.js` files in `src/` that Vite loads instead of `.tsx` — causing "changes not reflected" bugs
-- **Branding**: `public/3636785.png` used as app logo in sidebar. App icons (`icon.ico`, `*.png`) in `src-tauri/icons/` generated from server rack SVG.
+- **Branding**: `public/open-inspection-logo.svg` used as open-source sidebar logo. App icons (`icon.ico`, `*.png`) in `src-tauri/icons/` generated from server rack SVG.
 - **Windows ping reliability**: `live_scanner.rs` parses ping output for `TTL=`/`time=` instead of exit code, since Windows exits 0 even on timeout. Uses `CREATE_NO_WINDOW` to suppress cmd popups. Falls back to TCP connect on ports 135/445 when ICMP is blocked.
 - **中国输入法兼容**: All toolbox IP input fields use `style={{ imeMode: "disabled" }}` to force English mode, avoiding manual IME switching.
 - **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`

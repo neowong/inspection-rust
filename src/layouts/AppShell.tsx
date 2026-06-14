@@ -71,7 +71,7 @@ export default function AppShell() {
           {/* Brand */}
           <div className={`flex items-center justify-center h-14 border-b px-2`}
             style={{ borderColor: "hsl(var(--sidebar-hover))" }}>
-            <img src="/3636785.png" alt="" className="max-h-10 max-w-full rounded object-contain" />
+            <img src="/open-inspection-logo.svg" alt="OpenInspect" className="max-h-10 max-w-full object-contain" />
           </div>
 
           {/* Nav groups */}
