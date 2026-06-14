@@ -16,11 +16,18 @@ use crate::services::inspection_runner::{self, SSHSessionSource};
 // Internal Helpers
 // ============================================================
 
+#[derive(Debug, Clone)]
+struct TemplateCommandSpec {
+    command: String,
+    show_in_report: bool,
+    extract_fields: Vec<String>,
+}
+
 /// 从数据库读取设备巡检所需的全部信息（在锁内调用）
 fn read_device_inspection_data(
     conn: &rusqlite::Connection,
     device_id: i64,
-) -> Result<(Device, String, String, Vec<String>), String> {
+) -> Result<(Device, String, String, Vec<TemplateCommandSpec>), String> {
     // 1. Look up device
     let device_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
     let device = crate::db::query::query_one(
@@ -54,23 +61,22 @@ fn read_device_inspection_data(
     )?
     .ok_or_else(|| format!("巡检模板 ID {} 不存在", template_id))?;
 
-    // 4. Parse template config for command IDs
+    // 4. Parse template config for command specs
     let config_str = template
         .config
         .ok_or_else(|| format!("模板 '{}' 配置为空", template.name))?;
     let config: serde_json::Value = serde_json::from_str(&config_str)
         .map_err(|e| format!("解析模板配置 JSON 失败: {}", e))?;
 
-    let command_ids: Vec<i64> = config["command_ids"]
+    let specs_json = config["commands"]
         .as_array()
-        .ok_or_else(|| format!("模板 '{}' 配置缺少 command_ids", template.name))?
-        .iter()
-        .filter_map(|v| v.as_i64())
-        .collect();
+        .ok_or_else(|| format!("模板 '{}' 配置缺少 commands", template.name))?;
 
     // 5. Fetch commands from command_pool by ID
-    let mut commands: Vec<String> = Vec::new();
-    for cmd_id in &command_ids {
+    let mut commands: Vec<TemplateCommandSpec> = Vec::new();
+    for spec in specs_json {
+        let cmd_id = spec.get("command_id").and_then(|v| v.as_i64())
+            .ok_or_else(|| format!("模板 '{}' 命令配置缺少 command_id", template.name))?;
         let cmd_sql = format!("SELECT {} FROM command_pool WHERE id = ?1", COMMAND_COLUMNS);
         let cmd = crate::db::query::query_one(
             conn,
@@ -79,7 +85,20 @@ fn read_device_inspection_data(
             command_from_row,
         )?
         .ok_or_else(|| format!("命令 ID {} 不存在", cmd_id))?;
-        commands.push(cmd.command);
+
+        let purpose = spec.get("purpose").and_then(|v| v.as_str()).unwrap_or("inspection");
+        let show_in_report = spec.get("show_in_report").and_then(|v| v.as_bool())
+            .unwrap_or(purpose != "static_info");
+        let extract_fields = spec.get("extract_fields")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_else(Vec::new);
+
+        commands.push(TemplateCommandSpec {
+            command: cmd.command,
+            show_in_report,
+            extract_fields,
+        });
     }
 
     if commands.is_empty() {
@@ -109,7 +128,7 @@ fn create_or_reset_record(
         Ok(id) => {
             conn.execute(
                 "UPDATE inspection_records SET status = 'running', error_message = NULL, \
-                 command_outputs = '{}', started_at = ?1, updated_at = ?1 WHERE id = ?2",
+                 command_outputs = '{}', static_info = '{}', started_at = ?1, updated_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, id],
             )
             .map_err(|e| e.to_string())?;
@@ -134,15 +153,16 @@ fn update_record_result(
     record_id: i64,
     status: &str,
     outputs_json: Option<&str>,
+    static_info_json: Option<&str>,
     error: Option<&str>,
 ) -> Result<(), String> {
     let completed_at = now_str();
     match (outputs_json, error) {
         (Some(json), _) => {
             conn.execute(
-                "UPDATE inspection_records SET status = ?1, command_outputs = ?2, \
-                 error_message = NULL, completed_at = ?3, updated_at = ?3 WHERE id = ?4",
-                rusqlite::params![status, json, completed_at, record_id],
+                "UPDATE inspection_records SET status = ?1, command_outputs = ?2, static_info = ?3, \
+                 error_message = NULL, completed_at = ?4, updated_at = ?4 WHERE id = ?5",
+                rusqlite::params![status, json, static_info_json.unwrap_or("{}"), completed_at, record_id],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -157,6 +177,104 @@ fn update_record_result(
         _ => {}
     }
     Ok(())
+}
+
+fn build_static_info(
+    all_outputs: &indexmap::IndexMap<String, String>,
+    specs: &[TemplateCommandSpec],
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut info = serde_json::Map::new();
+    for spec in specs {
+        if spec.extract_fields.is_empty() { continue; }
+        let Some(output) = all_outputs.get(&spec.command) else { continue; };
+        for field in &spec.extract_fields {
+            if info.contains_key(field) { continue; }
+            let val = match field.as_str() {
+                "sysname" => extract_sysname(output),
+                "serial_number" | "sn" => extract_by_patterns(output, &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER", "Serial Number"]),
+                "manufacturing_date" | "mfg_date" => extract_by_patterns(output, &["MANUFACTURING_DATE", "Manufacturing Date"]),
+                "model" => extract_by_patterns(output, &["DEVICE_NAME", "PRODUCT_NAME", "Product Name"]),
+                _ => None,
+            };
+            if let Some(v) = val.filter(|s| !s.trim().is_empty()) {
+                let key = match field.as_str() {
+                    "sn" => "serial_number",
+                    "mfg_date" => "manufacturing_date",
+                    other => other,
+                };
+                info.insert(key.to_string(), serde_json::Value::String(v));
+            }
+        }
+    }
+    info
+}
+
+fn extract_sysname(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_lowercase().starts_with("sysname ") {
+            let name = trimmed.split_whitespace().nth(1).unwrap_or("").trim();
+            if !name.is_empty() { return Some(name.to_string()); }
+        }
+        if trimmed.to_lowercase().starts_with("hostname ") {
+            let name = trimmed.split_whitespace().nth(1).unwrap_or("").trim();
+            if !name.is_empty() { return Some(name.to_string()); }
+        }
+    }
+    None
+}
+
+fn extract_by_patterns(output: &str, keys: &[&str]) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        for key in keys {
+            if let Some(rest) = trimmed.strip_prefix(key) {
+                let value = rest.trim_start().strip_prefix(':').unwrap_or(rest).trim();
+                if !value.is_empty() && !value.contains("----") {
+                    return Some(value.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn visible_outputs(
+    all_outputs: &indexmap::IndexMap<String, String>,
+    specs: &[TemplateCommandSpec],
+) -> indexmap::IndexMap<String, String> {
+    let mut visible = indexmap::IndexMap::new();
+    for spec in specs {
+        if !spec.show_in_report { continue; }
+        if let Some(output) = all_outputs.get(&spec.command) {
+            visible.insert(spec.command.clone(), output.clone());
+        }
+    }
+    visible
+}
+
+fn sync_device_static_info(
+    conn: &rusqlite::Connection,
+    device_id: i64,
+    static_info: &serde_json::Map<String, serde_json::Value>,
+) {
+    let get = |key: &str| static_info.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty());
+    let sysname = get("sysname");
+    let model = get("model");
+    let serial_number = get("serial_number");
+    let manufacturing_date = get("manufacturing_date");
+    if sysname.is_none() && model.is_none() && serial_number.is_none() && manufacturing_date.is_none() {
+        return;
+    }
+    let _ = conn.execute(
+        "UPDATE devices SET \
+         sysname = COALESCE(?1, sysname), \
+         model = COALESCE(?2, model), \
+         serial_number = COALESCE(?3, serial_number), \
+         manufacturing_date = COALESCE(?4, manufacturing_date), \
+         updated_at = datetime('now') WHERE id = ?5",
+        rusqlite::params![sysname, model, serial_number, manufacturing_date, device_id],
+    );
 }
 
 /// 执行单台设备的 SSH 巡检（锁外调用，包含耗时的 SSH 操作）
@@ -611,9 +729,9 @@ async fn inspect_one_device(
         let device_clone = device.clone();
         let username_clone = username.clone();
         let password_clone = password.clone();
-        let commands_clone = commands.clone();
+        let command_texts: Vec<String> = commands.iter().map(|c| c.command.clone()).collect();
         tokio::task::spawn_blocking(move || {
-            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone, Some(progress_ssh))
+            execute_device_ssh(&device_clone, &username_clone, &password_clone, &command_texts, Some(progress_ssh))
         })
         .await
         .map_err(|e| (device_id, format!("SSH 任务调度失败: {}", e)))?
@@ -628,14 +746,19 @@ async fn inspect_one_device(
         let conn = db.lock();
         match &ssh_result {
             Ok(outputs) => {
-                let outputs_json = serde_json::to_string(outputs)
+                let static_info = build_static_info(outputs, &commands);
+                let report_outputs = visible_outputs(outputs, &commands);
+                let outputs_json = serde_json::to_string(&report_outputs)
                     .map_err(|e| (device_id, format!("序列化命令输出失败: {}", e)))?;
-                update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)
+                let static_info_json = serde_json::to_string(&static_info)
+                    .map_err(|e| (device_id, format!("序列化静态信息失败: {}", e)))?;
+                update_record_result(&conn, record_id, "completed", Some(&outputs_json), Some(&static_info_json), None)
                     .map_err(|e| (device_id, e))?;
-                tracing::info!("批次 #{} 设备 #{} OK, 获得 {} 条命令输出", batch_id, device_id, outputs.len());
+                sync_device_static_info(&conn, device_id, &static_info);
+                tracing::info!("批次 #{} 设备 #{} OK, 获得 {} 条命令输出（报告显示 {} 条）", batch_id, device_id, outputs.len(), report_outputs.len());
             }
             Err(err) => {
-                update_record_result(&conn, record_id, "failed", None, Some(err))
+                update_record_result(&conn, record_id, "failed", None, None, Some(err))
                     .map_err(|e| (device_id, e))?;
                 return Err((device_id, err.clone()));
             }
@@ -720,7 +843,7 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
     // Reset failed/stopped records to "pending"
     conn.execute(
         "UPDATE inspection_records SET status = 'pending', error_message = NULL, \
-         command_outputs = '{}', completed_at = NULL, updated_at = ?1 \
+         command_outputs = '{}', static_info = '{}', completed_at = NULL, updated_at = ?1 \
          WHERE batch_id = ?2 AND (status = 'failed' OR status = 'stopped')",
         rusqlite::params![now, batch_id],
     )
@@ -763,7 +886,7 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         let now = now_str();
         conn.execute(
             "UPDATE inspection_records SET status = 'running', error_message = NULL, \
-             command_outputs = '{}', started_at = ?1, updated_at = ?1 WHERE id = ?2",
+             command_outputs = '{}', static_info = '{}', started_at = ?1, updated_at = ?1 WHERE id = ?2",
             rusqlite::params![now, record_id],
         )
         .map_err(|e| e.to_string())?;
@@ -785,9 +908,9 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         let device_clone = device.clone();
         let username_clone = username.clone();
         let password_clone = password.clone();
-        let commands_clone = commands.clone();
+        let command_texts: Vec<String> = commands.iter().map(|c| c.command.clone()).collect();
         tokio::task::spawn_blocking(move || {
-            execute_device_ssh(&device_clone, &username_clone, &password_clone, &commands_clone, None)
+            execute_device_ssh(&device_clone, &username_clone, &password_clone, &command_texts, None)
         })
         .await
         .map_err(|e| format!("SSH 任务调度失败: {}", e))?
@@ -797,12 +920,17 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
     let conn = state.db.lock();
     match ssh_result {
         Ok(outputs) => {
-            let outputs_json = serde_json::to_string(&outputs)
+            let static_info = build_static_info(&outputs, &commands);
+            let report_outputs = visible_outputs(&outputs, &commands);
+            let outputs_json = serde_json::to_string(&report_outputs)
                 .map_err(|e| format!("序列化命令输出失败: {}", e))?;
-            update_record_result(&conn, record_id, "completed", Some(&outputs_json), None)?;
+            let static_info_json = serde_json::to_string(&static_info)
+                .map_err(|e| format!("序列化静态信息失败: {}", e))?;
+            update_record_result(&conn, record_id, "completed", Some(&outputs_json), Some(&static_info_json), None)?;
+            sync_device_static_info(&conn, device.id, &static_info);
         }
         Err(err) => {
-            update_record_result(&conn, record_id, "failed", None, Some(&err))?;
+            update_record_result(&conn, record_id, "failed", None, None, Some(&err))?;
         }
     }
 

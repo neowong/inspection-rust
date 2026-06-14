@@ -12,8 +12,16 @@ export interface Device {
   last_checked_at: string | null;
   serial_number: string | null;
   manufacturing_date: string | null;
+  sysname: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface TemplateCommandConfig {
+  command_id: number;
+  show_in_report: boolean;
+  purpose: "inspection" | "static_info";
+  extract_fields: string[];
 }
 
 export interface InspectionTemplate {
@@ -22,7 +30,7 @@ export interface InspectionTemplate {
   vendor: string;
   model: string | null;
   device_type: string | null;
-  config: { command_ids?: number[] };
+  config: { commands?: TemplateCommandConfig[] };
   description: string | null;
   report_template_id: number | null;
   template_type: string | null;
@@ -109,14 +117,15 @@ export interface ReportTemplate {
   id: number;
   name: string;
   vendor: string | null;
-  file_path: string;
-  content: string;
-  format: "markdown" | "html" | "docx";
   is_default: boolean;
   description: string;
-  sample_data: string;
   config_json: string;
-  mode: "visual" | "advanced";
+  // 以下字段为兼容旧 DB 列保留，新代码不再读写
+  file_path: string;
+  content: string;
+  format: string;
+  sample_data: string;
+  mode: string;
   custom_css: string;
   page_header: string;
   page_footer: string;
@@ -124,16 +133,91 @@ export interface ReportTemplate {
   updated_at: string;
 }
 
-export interface TemplateSection {
-  type: "title" | "basic_info" | "inspection_results" | "ai_analysis" | "overall_assessment" | "custom_text" | "header_footer" | "device_summary_table";
-  enabled: boolean;
-  label: string;
-  config: Record<string, unknown>;
+// ----- 报告模板配置（与后端 ReportTemplateConfig 同形）-----
+
+export interface ReportTemplateConfig {
+  cover: CoverConfig;
+  device_info: DeviceInfoConfig;
+  command_table: CommandTableConfig;
+  summary: SummaryConfig;
+  header: string;
+  footer: string;
 }
 
-export interface TemplateConfig {
-  sections: TemplateSection[];
+export interface CoverConfig {
+  title: string;
+  subtitle: string;
+  logo_path: string;
+  primary_color: string;
 }
+
+export interface DeviceInfoConfig {
+  enabled: boolean;
+  fields: DeviceField[];
+  layout: "two_column" | "table";
+}
+
+export interface DeviceField {
+  key: "name" | "ip" | "vendor" | "model" | "sn" | "mfg_date" | "inspect_time";
+  label: string;
+  visible: boolean;
+}
+
+export interface CommandTableConfig {
+  columns: TableColumn[];
+  output_max_lines: number;
+}
+
+export interface TableColumn {
+  key: "seq" | "item" | "output" | "ai_judgment";
+  label: string;
+  width: number;
+  visible: boolean;
+}
+
+export interface SummaryConfig {
+  enabled: boolean;
+  title: string;
+  show_problem_table: boolean;
+}
+
+export const DEFAULT_REPORT_CONFIG: ReportTemplateConfig = {
+  cover: {
+    title: "{{vendor}} 设备巡检报告",
+    subtitle: "运维巡检中心",
+    logo_path: "",
+    primary_color: "#1F4E79",
+  },
+  device_info: {
+    enabled: true,
+    layout: "two_column",
+    fields: [
+      { key: "name",         label: "设备名称", visible: true },
+      { key: "ip",           label: "IP 地址",  visible: true },
+      { key: "vendor",       label: "厂商",     visible: true },
+      { key: "model",        label: "型号",     visible: true },
+      { key: "sn",           label: "序列号",   visible: false },
+      { key: "mfg_date",     label: "出厂日期", visible: false },
+      { key: "inspect_time", label: "巡检时间", visible: true },
+    ],
+  },
+  command_table: {
+    output_max_lines: 15,
+    columns: [
+      { key: "seq",         label: "序号",     width: 6,  visible: true },
+      { key: "item",        label: "项目",     width: 16, visible: true },
+      { key: "output",      label: "巡检内容", width: 58, visible: true },
+      { key: "ai_judgment", label: "评判结论", width: 20, visible: true },
+    ],
+  },
+  summary: {
+    enabled: true,
+    title: "巡检总结",
+    show_problem_table: true,
+  },
+  header: "{{vendor}} 巡检报告",
+  footer: "第 {{page}} 页 / 共 {{total}} 页",
+};
 
 export interface Stats {
   device_count: number;

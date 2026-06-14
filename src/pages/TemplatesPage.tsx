@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Upload, Copy, Star, Settings, GripVertical, Plus } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { InspectionTemplate, CommandPool, ReportTemplate, TemplateSection, TemplateConfig } from "../types";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical } from "lucide-react";
+import type {
+  InspectionTemplate, CommandPool, ReportTemplate, TemplateCommandConfig,
+  ReportTemplateConfig, TableColumn, DeviceField,
+} from "../types";
+import { DEFAULT_REPORT_CONFIG } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
 import { friendlyError } from "../lib/utils";
 import Toolbar from "../components/Toolbar";
@@ -13,7 +15,6 @@ import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import { VENDORS, CATEGORIES } from "../lib/constants";
-import VariablePicker from "../components/VariablePicker";
 
 type TabKey = "templates" | "commands" | "reports";
 
@@ -21,46 +22,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "templates", label: "巡检模板" },
   { key: "commands", label: "命令库" },
   { key: "reports", label: "报告模板" },
-];
-
-// ============================================================
-// Report Section Builder
-// ============================================================
-
-function cloneSections(): TemplateSection[] {
-  return [
-    { type: "title", enabled: true, label: "报告标题", config: {} },
-    { type: "basic_info", enabled: true, label: "基本信息", config: { fields: ["device_name", "device_ip", "vendor", "model", "sn", "manufacturing_date"] } },
-    { type: "inspection_results", enabled: true, label: "巡检结果", config: { show_output: true, max_output_lines: 60 } },
-    { type: "ai_analysis", enabled: true, label: "AI 分析总结", config: {} },
-    { type: "overall_assessment", enabled: true, label: "总体评估", config: {} },
-  ];
-}
-
-const SECTION_META: Record<string, { description: string; icon: string }> = {
-  title: { description: "报告标题和生成时间", icon: "📋" },
-  basic_info: { description: "设备名称、IP、厂商、型号、序列号、生产日期", icon: "📊" },
-  inspection_results: { description: "逐命令巡检判断结果（序号/项目/结果/结论）", icon: "✅" },
-  ai_analysis: { description: "AI 对巡检结果的整体分析文字", icon: "🤖" },
-  overall_assessment: { description: "综合判断结论和处理建议", icon: "📝" },
-  custom_text: { description: "自定义文本块，支持插入变量", icon: "✏️" },
-  header_footer: { description: "报告页眉或页脚内容", icon: "📌" },
-  device_summary_table: { description: "批量报告设备汇总表格", icon: "📇" },
-};
-
-const ADDABLE_SECTION_TYPES = [
-  { type: "custom_text", label: "自定义文本", defaultConfig: { content: "" } },
-  { type: "header_footer", label: "页眉/页脚", defaultConfig: { position: "header", content: "" } },
-  { type: "device_summary_table", label: "设备汇总表", defaultConfig: { fields: ["device_name", "device_ip", "vendor", "model"] } },
-];
-
-const BASIC_INFO_FIELDS = [
-  { key: "device_name", label: "设备名称" },
-  { key: "device_ip", label: "IP 地址" },
-  { key: "vendor", label: "厂商" },
-  { key: "model", label: "型号" },
-  { key: "sn", label: "序列号" },
-  { key: "manufacturing_date", label: "生产日期" },
 ];
 
 // ============================================================
@@ -73,12 +34,12 @@ interface TemplateForm {
   model: string;
   device_type: string;
   description: string;
-  command_ids: number[];
+  commands: TemplateCommandConfig[];
   report_template_id: number | null;
 }
 
 const EMPTY_TEMPLATE_FORM: TemplateForm = {
-  name: "", vendor: "H3C", model: "", device_type: "", description: "", command_ids: [], report_template_id: null,
+  name: "", vendor: "H3C", model: "", device_type: "", description: "", commands: [], report_template_id: null,
 };
 
 interface CommandForm {
@@ -91,6 +52,18 @@ interface CommandForm {
 const EMPTY_COMMAND_FORM: CommandForm = {
   vendor: "H3C", command: "", description: "", category: "general",
 };
+
+interface ReportForm {
+  name: string;
+  vendor: string;
+  description: string;
+  config: ReportTemplateConfig;
+}
+
+const EMPTY_REPORT_FORM = (): ReportForm => ({
+  name: "", vendor: "", description: "",
+  config: JSON.parse(JSON.stringify(DEFAULT_REPORT_CONFIG)),
+});
 
 // ============================================================
 // TemplatesPage
@@ -125,34 +98,17 @@ export default function TemplatesPage() {
 
   // Report template state
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
-  const [renderedPreview, setRenderedPreview] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<"sample" | "real">("sample");
-  const [recentRecords, setRecentRecords] = useState<{ id: number; device_id: number; created_at: string }[]>([]);
-  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
-  const [confirmDeleteReport, setConfirmDeleteReport] = useState<number | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<ReportTemplate | null>(null);
-  const [reportForm, setReportForm] = useState({
-    name: "", vendor: "", format: "markdown" as "markdown" | "html" | "docx",
-    description: "", mode: "visual" as "visual" | "advanced",
-    sections: cloneSections(),
-    content: "",
-    custom_css: "", page_header: "", page_footer: "",
-  });
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
-  const [showAdvancedStyle, setShowAdvancedStyle] = useState(false);
-  const [addSectionOpen, setAddSectionOpen] = useState(false);
+  const [reportForm, setReportForm] = useState<ReportForm>(EMPTY_REPORT_FORM());
   const [reportSaving, setReportSaving] = useState(false);
   const [reportSaveError, setReportSaveError] = useState<string | null>(null);
-  const [showVariablePicker, setShowVariablePicker] = useState(false);
-  const variableTargetRef = useRef<"content" | number>("content"); // "content" = advanced mode, number = section index
-  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const customTextRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
+  const [confirmDeleteReport, setConfirmDeleteReport] = useState<number | null>(null);
+
   const cmdListRef = useRef<HTMLDivElement>(null);
-  const reportSectionsRef = useRef<HTMLDivElement>(null);
   const autoScrollRaf = useRef<number | null>(null);
-  const SCROLL_ZONE = 50; // px from edge to trigger auto-scroll
-  const MAX_SCROLL_SPEED = 8; // px per frame
+  const SCROLL_ZONE = 50;
+  const MAX_SCROLL_SPEED = 8;
 
   const handleDragAutoScroll = (e: React.DragEvent, container: HTMLElement | null) => {
     if (!container) return;
@@ -177,7 +133,6 @@ export default function TemplatesPage() {
       autoScrollRaf.current = requestAnimationFrame(scroll);
     }
   };
-
   const stopAutoScroll = () => {
     if (autoScrollRaf.current) { cancelAnimationFrame(autoScrollRaf.current); autoScrollRaf.current = null; }
   };
@@ -186,12 +141,10 @@ export default function TemplatesPage() {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
       .then(setTemplates).catch(console.error);
   };
-
   const loadCommands = () => {
     invoke<CommandPool[]>("list_commands", { vendor: cmdVendor || undefined })
       .then(setCommands).catch(console.error);
   };
-
   const loadReportTemplates = () => {
     invoke<ReportTemplate[]>("list_report_templates")
       .then(setReportTemplates).catch(console.error);
@@ -213,349 +166,144 @@ export default function TemplatesPage() {
     c.vendor === templateForm.vendor
   ), [commands, templateForm.vendor]);
 
-  // Template handlers
+  // ----- Template handlers -----
   const openAddTemplate = () => {
     setEditingTemplate(null);
     setTemplateForm(EMPTY_TEMPLATE_FORM);
     setTemplateModal(true);
   };
-
   const openEditTemplate = (t: InspectionTemplate) => {
     setEditingTemplate(t);
     setTemplateForm({
-      name: t.name,
-      vendor: t.vendor,
-      model: t.model || "",
-      device_type: t.device_type || "",
-      description: t.description || "",
-      command_ids: t.config?.command_ids || [],
+      name: t.name, vendor: t.vendor, model: t.model || "",
+      device_type: t.device_type || "", description: t.description || "",
+      commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
     setTemplateModal(true);
   };
-
   const handleSaveTemplate = () => {
     if (!templateForm.name.trim()) { triggerShake("template_name"); return; }
-
     const data: Record<string, unknown> = {
       name: templateForm.name,
       vendor: templateForm.vendor,
-      config: JSON.stringify({ command_ids: templateForm.command_ids }),
+      config: JSON.stringify({ commands: templateForm.commands }),
     };
     if (templateForm.model) data.model = templateForm.model;
     if (templateForm.device_type) data.device_type = templateForm.device_type;
     if (templateForm.description) data.description = templateForm.description;
-    if (templateForm.report_template_id !== null) data.report_template_id = templateForm.report_template_id;
+    data.report_template_id = templateForm.report_template_id;
 
-    setSaving(true);
-    setSaveError(null);
-
+    setSaving(true); setSaveError(null);
     const promise = editingTemplate
       ? invoke<InspectionTemplate>("update_template", { templateId: editingTemplate.id, data })
       : invoke<InspectionTemplate>("create_template", { data });
-
     promise
       .then(() => { setTemplateModal(false); loadTemplates(); })
       .catch((e) => { setSaveError(friendlyError(e)); triggerShake("template_name"); })
       .finally(() => setSaving(false));
   };
-
   const handleDeleteTemplate = (id: number) => {
     invoke<void>("delete_template", { templateId: id })
       .then(() => { setConfirmDeleteTemplate(null); loadTemplates(); })
       .catch(console.error);
   };
 
-  // Command handlers
-  const openAddCmd = () => {
-    setEditingCmd(null);
-    setCmdForm(EMPTY_COMMAND_FORM);
-    setCmdSaveError(null);
-    setCmdModal(true);
-  };
-
+  // ----- Command handlers -----
+  const openAddCmd = () => { setEditingCmd(null); setCmdForm(EMPTY_COMMAND_FORM); setCmdSaveError(null); setCmdModal(true); };
   const openEditCmd = (c: CommandPool) => {
-    setEditingCmd(c);
-    setCmdSaveError(null);
-    setCmdForm({
-      vendor: c.vendor,
-      command: c.command,
-      description: c.description || "",
-      category: c.category || "general",
-    });
+    setEditingCmd(c); setCmdSaveError(null);
+    setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general" });
     setCmdModal(true);
   };
-
   const handleSaveCommand = () => {
     if (!cmdForm.command.trim()) { triggerShake("cmd_command"); return; }
-    setCmdSaving(true);
-    setCmdSaveError(null);
+    setCmdSaving(true); setCmdSaveError(null);
     const promise = editingCmd
       ? invoke<CommandPool>("update_command", { commandId: editingCmd.id, data: { ...cmdForm } })
       : invoke<CommandPool>("create_command", { data: { ...cmdForm } });
     promise
       .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); setEditingCmd(null); loadCommands(); })
-      .catch((e) => {
-        setCmdSaveError(friendlyError(e));
-        triggerShake("cmd_command");
-      })
+      .catch((e) => { setCmdSaveError(friendlyError(e)); triggerShake("cmd_command"); })
       .finally(() => setCmdSaving(false));
   };
-
   const handleDeleteCmd = (id: number) => {
     invoke<void>("delete_command", { commandId: id })
       .then(() => { setConfirmDeleteCmd(null); loadCommands(); })
       .catch(console.error);
   };
 
-  // Report template handlers
+  // ----- Report template handlers -----
   const openNewReport = () => {
     setEditingReport(null);
-    setReportForm({
-      name: "", vendor: "", format: "markdown", description: "", mode: "visual",
-      sections: cloneSections(), content: "",
-      custom_css: "", page_header: "", page_footer: "",
-    });
+    setReportForm(EMPTY_REPORT_FORM());
     setReportSaveError(null);
-    setExpandedSection(null);
-    setShowAdvancedStyle(false);
     setReportModalOpen(true);
   };
-
   const openEditReport = (rt: ReportTemplate) => {
     setEditingReport(rt);
-    let sections = cloneSections();
-    const mode = rt.mode || "visual";
-    if (mode === "visual" && rt.config_json) {
+    let config: ReportTemplateConfig = JSON.parse(JSON.stringify(DEFAULT_REPORT_CONFIG));
+    if (rt.config_json) {
       try {
-        const cfg = JSON.parse(rt.config_json) as TemplateConfig;
-        if (cfg.sections?.length) {
-          sections = cfg.sections.map(s => ({
-            type: s.type,
-            enabled: s.enabled,
-            label: s.label,
-            config: { ...(s.config || {}) },
-          } as TemplateSection));
+        const parsed = JSON.parse(rt.config_json);
+        if (parsed && typeof parsed === "object" && parsed.command_table) {
+          config = { ...DEFAULT_REPORT_CONFIG, ...parsed };
         }
-      } catch { /* use defaults */ }
+      } catch { /* fall back to default */ }
     }
     setReportForm({
       name: rt.name,
       vendor: rt.vendor || "",
-      format: rt.format,
       description: rt.description || "",
-      mode,
-      sections,
-      content: rt.content || "",
-      custom_css: rt.custom_css || "",
-      page_header: rt.page_header || "",
-      page_footer: rt.page_footer || "",
+      config,
     });
     setReportSaveError(null);
-    setExpandedSection(null);
     setReportModalOpen(true);
   };
-
   const handleCopyReport = (rt: ReportTemplate) => {
     invoke<ReportTemplate>("create_report_template", {
       data: {
         name: rt.name + " (副本)",
         vendor: rt.vendor,
-        content: rt.content,
-        format: rt.format,
         description: rt.description,
         config_json: rt.config_json,
-        mode: rt.mode,
       },
-    })
-      .then(() => loadReportTemplates())
-      .catch(console.error);
+    }).then(() => loadReportTemplates()).catch(console.error);
   };
-
   const handleSetDefault = (id: number) => {
-    // First unset all defaults, then set the new one
-    invoke<void>("update_report_template", { templateId: id, data: { is_default: true } })
-      .then(() => loadReportTemplates())
-      .catch(console.error);
+    invoke<void>("update_report_template", { templateId: id, data: { is_default: 1 } })
+      .then(() => loadReportTemplates()).catch(console.error);
   };
-
   const handleSaveReport = () => {
-    if (!reportForm.name.trim()) return;
-    setReportSaving(true);
-    setReportSaveError(null);
-
+    if (!reportForm.name.trim()) { triggerShake("report_name"); return; }
+    setReportSaving(true); setReportSaveError(null);
     const data: Record<string, unknown> = {
       name: reportForm.name,
       vendor: reportForm.vendor || null,
-      format: reportForm.format,
       description: reportForm.description,
-      mode: reportForm.mode,
-      custom_css: reportForm.custom_css || "",
-      page_header: reportForm.page_header || "",
-      page_footer: reportForm.page_footer || "",
+      config_json: JSON.stringify(reportForm.config),
     };
-
-    if (reportForm.mode === "visual") {
-      data.config_json = JSON.stringify({ sections: reportForm.sections });
-      data.content = "";
-    } else {
-      data.content = reportForm.content;
-      data.config_json = "";
-    }
-
     const promise = editingReport
       ? invoke<ReportTemplate>("update_report_template", { templateId: editingReport.id, data })
       : invoke<ReportTemplate>("create_report_template", { data });
-
     promise
       .then(() => { setReportModalOpen(false); loadReportTemplates(); })
       .catch((e) => { setReportSaveError(friendlyError(e)); triggerShake("report_name"); })
       .finally(() => setReportSaving(false));
   };
-
-  const handleReportPreview = (id: number) => {
-    setPreviewMode("sample");
-    setRenderedPreview(null);
-    invoke<string>("render_template_preview", { templateId: id })
-      .then(setRenderedPreview)
-      .catch(console.error);
-  };
-
-  const handleReportPreviewReal = (id: number, recordId: number) => {
-    setRenderedPreview(null);
-    invoke<string>("render_template_preview_with_record", { templateId: id, recordId })
-      .then(setRenderedPreview)
-      .catch(console.error);
-  };
-
-  const loadRecentRecords = () => {
-    invoke<{ id: number; device_id: number; created_at: string }[]>("list_recent_records", { limit: 20 })
-      .then(setRecentRecords)
-      .catch(console.error);
-  };
-
-  const handleUploadReport = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".md,.html,.txt";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const name = file.name.replace(/\.[^.]+$/, "");
-      try {
-        await invoke<ReportTemplate>("upload_template", {
-          filePath: (file as unknown as { path: string }).path || file.name,
-          name,
-          vendor: null,
-        });
-        loadReportTemplates();
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    input.click();
-  };
-
   const handleDeleteReport = (id: number) => {
     invoke<void>("delete_report_template", { templateId: id })
       .then(() => { setConfirmDeleteReport(null); loadReportTemplates(); })
       .catch(console.error);
   };
 
-  // Section builder helpers
-  const toggleSection = (index: number) => {
-    const s = reportForm.sections[index];
-    if (!s) return;
-    setReportForm(prev => {
-      const sections = [...prev.sections];
-      sections[index] = { type: s.type, enabled: !s.enabled, label: s.label, config: { ...s.config } };
-      return { ...prev, sections };
-    });
-  };
-
-  const updateSectionConfig = (index: number, config: Record<string, unknown>) => {
-    const s = reportForm.sections[index];
-    if (!s) return;
-    setReportForm(prev => {
-      const sections = [...prev.sections];
-      sections[index] = { type: s.type, enabled: s.enabled, label: s.label, config: { ...s.config, ...config } };
-      return { ...prev, sections };
-    });
-  };
-
-  const toggleSectionField = (index: number, field: string) => {
-    const section = reportForm.sections[index];
-    if (!section) return;
-    const fields = (section.config.fields as string[]) || [];
-    const newFields = fields.includes(field) ? fields.filter(f => f !== field) : [...fields, field];
-    updateSectionConfig(index, { fields: newFields });
-  };
-
-  const addSection = (type: string) => {
-    const def = ADDABLE_SECTION_TYPES.find(s => s.type === type);
-    if (!def) return;
-    setReportForm(prev => ({
-      ...prev,
-      sections: [...prev.sections, {
-        type,
-        enabled: true,
-        label: def.label,
-        config: { ...def.defaultConfig },
-      } as TemplateSection],
-    }));
-    setAddSectionOpen(false);
-  };
-
-  const removeSection = (index: number) => {
-    setReportForm(prev => ({
-      ...prev,
-      sections: prev.sections.filter((_, i) => i !== index),
-    }));
-  };
-
-  const insertVariable = (varName: string) => {
-    const placeholder = `{{${varName}}}`;
-    const target = variableTargetRef.current;
-    let textarea: HTMLTextAreaElement | null = null;
-
-    if (target === "content") {
-      textarea = contentTextareaRef.current;
-    } else if (typeof target === "number") {
-      textarea = customTextRefs.current.get(target) || null;
-    }
-
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const oldVal = textarea.value;
-      const newVal = oldVal.slice(0, start) + placeholder + oldVal.slice(end);
-
-      if (target === "content") {
-        setReportForm(prev => ({ ...prev, content: newVal }));
-      } else if (typeof target === "number") {
-        updateSectionConfig(target, { content: newVal });
-      }
-
-      // Restore cursor position after React re-render
-      requestAnimationFrame(() => {
-        textarea!.focus();
-        textarea!.setSelectionRange(start + placeholder.length, start + placeholder.length);
-      });
-    }
-    setShowVariablePicker(false);
-  };
-
-  // ============================================================
-  // Render
-  // ============================================================
+  // ----- Render -----
 
   return (
     <div className="space-y-6">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-0 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检模板</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1 mb-3">管理巡检模板、命令库和报告模板</p>
-
-        {/* Tab bar */}
         <div className="flex gap-0 border-b border-[hsl(var(--border))]">
           {TABS.map((t) => (
             <button
@@ -573,7 +321,7 @@ export default function TemplatesPage() {
         </div>
       </div>
 
-      {/* ====== Tab: 巡检模板 ====== */}
+      {/* ===== Tab: 巡检模板 ===== */}
       {tab === "templates" && (
         <div>
           <Toolbar>
@@ -588,23 +336,19 @@ export default function TemplatesPage() {
             columns={[
               { key: "name", header: "名称", render: (r) => r.name },
               { key: "vendor", header: "厂商", render: (r) => r.vendor },
-              {
-                key: "command_count", header: "命令数", width: "80px", render: (r) =>
-                  String((r.config?.command_ids || []).length),
-              },
+              { key: "command_count", header: "命令数", width: "80px", render: (r) => String((r.config?.commands || []).length) },
+              { key: "report_template", header: "报告模板", width: "140px", render: (r) => {
+                const rt = reportTemplates.find(t => t.id === r.report_template_id);
+                return rt ? rt.name : <span className="text-[hsl(var(--text-tertiary))]">跟随默认</span>;
+              }},
               { key: "description", header: "描述", render: (r) => r.description || "-" },
-              {
-                key: "updated_at", header: "更新时间", render: (r) =>
-                  new Date(r.updated_at).toLocaleString("zh-CN"),
-              },
-              {
-                key: "actions", header: "操作", width: "140px", render: (r) => (
-                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
-                  </div>
-                ),
-              },
+              { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
+              { key: "actions", header: "操作", width: "140px", render: (r) => (
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
+                </div>
+              )},
             ]}
             data={filteredTemplates}
             rowKey={(r) => r.id}
@@ -616,15 +360,13 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* ====== Tab: 命令库 ====== */}
+      {/* ===== Tab: 命令库 ===== */}
       {tab === "commands" && (
         <div>
           <Toolbar>
             <Button onClick={openAddCmd} size="sm">添加命令</Button>
             <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
           </Toolbar>
-
-          {/* Vendor sub-tabs */}
           <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
             {["全部", ...VENDORS].map((v) => (
               <button
@@ -635,12 +377,9 @@ export default function TemplatesPage() {
                     ? "bg-[hsl(var(--bg-card))] text-[hsl(var(--accent))] border border-b-transparent border-[hsl(var(--border))]"
                     : "text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]"
                 }`}
-              >
-                {v}
-              </button>
+              >{v}</button>
             ))}
           </div>
-
           <CommandList
             commands={filteredCommands}
             onEdit={openEditCmd}
@@ -649,14 +388,11 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* ====== Tab: 报告模板 ====== */}
+      {/* ===== Tab: 报告模板 ===== */}
       {tab === "reports" && (
         <div>
           <Toolbar>
             <Button onClick={openNewReport} size="sm">新建模板</Button>
-            <Button onClick={handleUploadReport} size="sm" variant="secondary">
-              <Upload size={14} className="mr-1" />上传
-            </Button>
           </Toolbar>
           <DataTable<ReportTemplate>
             columns={[
@@ -667,35 +403,20 @@ export default function TemplatesPage() {
                 </div>
               )},
               { key: "vendor", header: "厂商", render: (r) => r.vendor || "通用" },
-              {
-                key: "format", header: "格式", width: "80px", render: (r) => (
-                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    r.format === "html"
-                      ? "bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--danger))]"
-                      : "bg-[hsl(var(--accent)_/_0.1)] text-[hsl(var(--accent))]"
-                  }`}>{r.format === "html" ? "HTML" : "MD"}</span>
-                ),
-              },
               { key: "description", header: "描述", render: (r) => r.description || "-" },
-              {
-                key: "updated_at", header: "更新时间", render: (r) =>
-                  new Date(r.updated_at).toLocaleString("zh-CN"),
-              },
-              {
-                key: "actions", header: "操作", width: "200px", render: (r) => (
-                  <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-                    <Button size="sm" variant="ghost" onClick={() => openEditReport(r)}>编辑</Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleReportPreview(r.id)}>预览</Button>
-                    {!r.is_default && (
-                      <Button size="sm" variant="ghost" onClick={() => handleSetDefault(r.id)}>默认</Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => handleCopyReport(r)}><Copy size={12} /></Button>
-                    {!r.is_default && (
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteReport(r.id)}><Trash2 size={12} /></Button>
-                    )}
-                  </div>
-                ),
-              },
+              { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
+              { key: "actions", header: "操作", width: "200px", render: (r) => (
+                <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" onClick={() => openEditReport(r)}>编辑</Button>
+                  {!r.is_default && (
+                    <Button size="sm" variant="ghost" onClick={() => handleSetDefault(r.id)}>设为默认</Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => handleCopyReport(r)}><Copy size={12} /></Button>
+                  {!r.is_default && (
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteReport(r.id)}><Trash2 size={12} /></Button>
+                  )}
+                </div>
+              )},
             ]}
             data={reportTemplates}
             rowKey={(r) => r.id}
@@ -705,7 +426,7 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* ====== Template Modal ====== */}
+      {/* ===== Inspection Template Modal ===== */}
       {tab === "templates" && (
         <Modal
           open={templateModal}
@@ -723,14 +444,14 @@ export default function TemplatesPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-                <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""} onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
+                <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""}
+                  onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
                 {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
                 <Select value={templateForm.vendor} onChange={(e) => {
-                  const newVendor = e.target.value;
-                  setTemplateForm({ ...templateForm, vendor: newVendor, command_ids: [] });
+                  setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
                 }}>
                   {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
                 </Select>
@@ -756,65 +477,86 @@ export default function TemplatesPage() {
                 value={templateForm.report_template_id ?? ""}
                 onChange={(e) => setTemplateForm({ ...templateForm, report_template_id: e.target.value ? Number(e.target.value) : null })}
               >
-                <option value="">跟随默认</option>
+                <option value="">跟随默认（按厂商自动匹配）</option>
                 {reportTemplates.map((rt) => (
-                  <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}</option>
+                  <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}{rt.vendor ? ` · ${rt.vendor}` : ""}</option>
                 ))}
               </Select>
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
-                已选命令 ({templateForm.command_ids.length}) <span className="text-[10px] text-[hsl(var(--text-tertiary))]">拖拽排序</span>
+                已选命令 ({templateForm.commands.length}) <span className="text-[10px] text-[hsl(var(--text-tertiary))]">拖拽排序，静态信息不进入报告明细</span>
               </label>
-              <div ref={cmdListRef} className="max-h-40 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3"
+              <div ref={cmdListRef} className="max-h-56 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3"
                 onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, cmdListRef.current); }}
                 onDrop={stopAutoScroll}
                 onDragEnd={stopAutoScroll}
               >
-                {templateForm.command_ids.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
-                {templateForm.command_ids.map((cmdId, idx) => {
-                  const cmd = commands.find(c => c.id === cmdId);
+                {templateForm.commands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
+                {templateForm.commands.map((spec, idx) => {
+                  const cmd = commands.find(c => c.id === spec.command_id);
                   if (!cmd) return null;
+                  const updateSpec = (patch: Partial<TemplateCommandConfig>) => {
+                    const next = [...templateForm.commands];
+                    next[idx] = { ...spec, ...patch };
+                    setTemplateForm({ ...templateForm, commands: next });
+                  };
                   return (
                     <div
-                      key={cmdId}
+                      key={spec.command_id}
                       draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", String(idx));
-                        e.dataTransfer.effectAllowed = "move";
-                        // 设置小尺寸拖拽预览
-                        const ghost = document.createElement("div");
-                        ghost.textContent = `${idx + 1}. ${cmd.command}`;
-                        ghost.style.cssText = "position:absolute;top:-9999px;padding:4px 8px;font-size:11px;background:hsl(var(--accent));color:white;border-radius:4px;white-space:nowrap;";
-                        document.body.appendChild(ghost);
-                        e.dataTransfer.setDragImage(ghost, 0, 0);
-                        setTimeout(() => document.body.removeChild(ghost), 0);
-                        e.currentTarget.style.opacity = "0.3";
-                      }}
+                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.3"; }}
                       onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
                       onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
                       onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
                       onDrop={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.style.borderColor = "";
+                        e.preventDefault(); e.currentTarget.style.borderColor = "";
                         const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
                         if (isNaN(fromIdx) || fromIdx === idx) return;
-                        const newIds = [...templateForm.command_ids];
-                        const moved = newIds.splice(fromIdx, 1)[0];
-                        if (moved !== undefined) newIds.splice(idx, 0, moved);
-                        setTemplateForm({ ...templateForm, command_ids: newIds });
+                        const next = [...templateForm.commands];
+                        const moved = next.splice(fromIdx, 1)[0];
+                        if (moved !== undefined) next.splice(idx, 0, moved);
+                        setTemplateForm({ ...templateForm, commands: next });
                       }}
-                      className="flex items-center gap-2 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1 cursor-grab active:cursor-grabbing"
+                      className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1.5 cursor-grab active:cursor-grabbing"
                     >
-                      <GripVertical size={14} className="text-[hsl(var(--text-tertiary))] shrink-0" />
-                      <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-5 text-right">{idx + 1}</span>
-                      <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
-                      {cmd.description && <span className="text-[11px] text-[hsl(var(--text-tertiary))] truncate">— {cmd.description}</span>}
-                      <button
-                        type="button"
-                        onClick={() => setTemplateForm({ ...templateForm, command_ids: templateForm.command_ids.filter(id => id !== cmdId) })}
-                        className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs"
-                      >×</button>
+                      <div className="flex items-center gap-2">
+                        <GripVertical size={14} className="text-[hsl(var(--text-tertiary))] shrink-0" />
+                        <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-5 text-right">{idx + 1}</span>
+                        <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
+                        {cmd.description && <span className="text-[11px] text-[hsl(var(--text-tertiary))] truncate">— {cmd.description}</span>}
+                        <button type="button"
+                          onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
+                          className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs">×</button>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-7 text-[11px]">
+                        <Select className="h-6 w-24 text-[11px]" value={spec.purpose} onChange={(e) => {
+                          const purpose = e.target.value as "inspection" | "static_info";
+                          updateSpec({ purpose, show_in_report: purpose !== "static_info" });
+                        }}>
+                          <option value="inspection">巡检项</option>
+                          <option value="static_info">静态信息</option>
+                        </Select>
+                        <label className="flex items-center gap-1 text-[hsl(var(--text-secondary))]">
+                          <input type="checkbox" checked={spec.show_in_report} onChange={(e) => updateSpec({ show_in_report: e.target.checked })} className="accent-[hsl(var(--accent))]" />
+                          显示到报告
+                        </label>
+                        {spec.purpose === "static_info" && (
+                          <div className="flex flex-wrap gap-1">
+                            {["sysname", "model", "serial_number", "manufacturing_date"].map((field) => (
+                              <label key={field} className="flex items-center gap-1 text-[hsl(var(--text-secondary))]">
+                                <input type="checkbox" checked={spec.extract_fields.includes(field)} onChange={(e) => {
+                                  const fields = e.target.checked
+                                    ? [...spec.extract_fields, field]
+                                    : spec.extract_fields.filter(f => f !== field);
+                                  updateSpec({ extract_fields: fields });
+                                }} className="accent-[hsl(var(--accent))]" />
+                                {field}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -822,14 +564,14 @@ export default function TemplatesPage() {
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">可选命令 ({templateForm.vendor})</label>
               <div className="max-h-36 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
                 {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
-                {vendorFilteredCommands.filter(cmd => !templateForm.command_ids.includes(cmd.id)).map((cmd) => (
+                {vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id)).map((cmd) => (
                   <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
-                    <input
-                      type="checkbox"
-                      checked={false}
-                      onChange={() => setTemplateForm({ ...templateForm, command_ids: [...templateForm.command_ids, cmd.id] })}
-                      className="accent-[hsl(var(--accent))]"
-                    />
+                    <input type="checkbox" checked={false}
+                      onChange={() => setTemplateForm({
+                        ...templateForm,
+                        commands: [...templateForm.commands, { command_id: cmd.id, purpose: "inspection", show_in_report: true, extract_fields: [] }]
+                      })}
+                      className="accent-[hsl(var(--accent))]" />
                     <span className="text-xs">
                       <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
                       {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
@@ -842,7 +584,6 @@ export default function TemplatesPage() {
         </Modal>
       )}
 
-      {/* Template Delete Confirm */}
       <Modal
         open={confirmDeleteTemplate !== null}
         title="确认删除"
@@ -858,7 +599,7 @@ export default function TemplatesPage() {
         <p>确定要删除此模板吗？此操作不可恢复。</p>
       </Modal>
 
-      {/* ====== Command Modal ====== */}
+      {/* ===== Command Modal ===== */}
       {tab === "commands" && (
         <Modal
           open={cmdModal}
@@ -884,15 +625,10 @@ export default function TemplatesPage() {
               <Input
                 value={cmdForm.command}
                 className={shakeFields.has("cmd_command") ? "animate-shake" : ""}
-                onChange={(e) => {
-                  setCmdForm({ ...cmdForm, command: e.target.value });
-                  if (cmdSaveError) setCmdSaveError(null);
-                }}
+                onChange={(e) => { setCmdForm({ ...cmdForm, command: e.target.value }); if (cmdSaveError) setCmdSaveError(null); }}
                 placeholder="display version"
               />
-              {cmdSaveError && (
-                <p className="mt-1 text-xs text-[hsl(var(--danger))]">{cmdSaveError}</p>
-              )}
+              {cmdSaveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{cmdSaveError}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
@@ -908,7 +644,6 @@ export default function TemplatesPage() {
         </Modal>
       )}
 
-      {/* Command Delete Confirm */}
       <Modal
         open={confirmDeleteCmd !== null}
         title="确认删除"
@@ -924,501 +659,28 @@ export default function TemplatesPage() {
         <p>确定要删除此命令吗？此操作不可恢复。</p>
       </Modal>
 
-      {/* Report Template Editor Modal — Split pane: builder + WYSIWYG */}
+      {/* ===== Report Template Editor (split pane) ===== */}
       <Modal
         open={reportModalOpen}
         title={editingReport ? "编辑报告模板" : "新建报告模板"}
-        width="max-w-5xl"
+        width="max-w-6xl"
         onClose={() => setReportModalOpen(false)}
         footer={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setReportModalOpen(false)}>取消</Button>
-            <Button variant="secondary" onClick={() => {
-              if (!editingReport) {
-                setReportSaveError("请先保存模板后再预览");
-                return;
-              }
-              handleReportPreview(editingReport.id);
-            }}>预览真实数据</Button>
             <Button onClick={handleSaveReport} loading={reportSaving}>{editingReport ? "保存" : "创建"}</Button>
           </div>
         }
       >
-        <div className="space-y-3" style={{ maxHeight: "72vh", overflowY: "auto" }}>
-          {/* Top row: name + vendor + format + mode */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模板名称</label>
-              <Input value={reportForm.name} className={shakeFields.has("report_name") ? "animate-shake" : ""} onChange={(e) => { setReportForm({ ...reportForm, name: e.target.value }); setReportSaveError(null); }} placeholder="如：标准巡检报告" />
-              {reportSaveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{reportSaveError}</p>}
-            </div>
-            <div className="w-28">
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={reportForm.vendor} onChange={(e) => setReportForm({ ...reportForm, vendor: e.target.value })}>
-                <option value="">通用</option>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
-            </div>
-            <div className="w-24">
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">格式</label>
-              <Select value={reportForm.format} onChange={(e) => setReportForm({ ...reportForm, format: e.target.value as "markdown" | "html" })}>
-                <option value="markdown">MD</option>
-                <option value="html">HTML</option>
-              </Select>
-            </div>
-            <div className="w-24">
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模式</label>
-              <Select value={reportForm.mode} onChange={(e) => setReportForm({ ...reportForm, mode: e.target.value as "visual" | "advanced" })}>
-                <option value="visual">可视化</option>
-                <option value="advanced">代码</option>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述</label>
-            <Input value={reportForm.description} onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })} placeholder="模板用途描述" />
-          </div>
-
-          {/* ---- VISUAL MODE: split pane ---- */}
-          {reportForm.mode === "visual" && (
-            <div className="flex gap-4" style={{ minHeight: "420px" }}>
-              {/* Left: Building blocks panel */}
-              <div className="w-1/2 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-[hsl(var(--text-secondary))]">
-                    🧱 积木拼装区 <span className="text-[10px] text-[hsl(var(--text-tertiary))]">（拖拽手柄排序）</span>
-                  </span>
-                  <span className="text-[10px] text-[hsl(var(--text-tertiary))] bg-[hsl(var(--bg-hover))] px-2 py-0.5 rounded-full">
-                    {reportForm.sections.filter(s => s.enabled).length}/{reportForm.sections.length} 已启用
-                  </span>
-                </div>
-                <div ref={reportSectionsRef} className="space-y-2 flex-1 overflow-y-auto pr-1" style={{ maxHeight: "400px" }}
-                  onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, reportSectionsRef.current); }}
-                  onDrop={stopAutoScroll}
-                  onDragEnd={stopAutoScroll}
-                >
-                  {reportForm.sections.map((section, i) => {
-                    const meta = SECTION_META[section.type] || { description: "", icon: "📄" };
-                    const isExpanded = expandedSection === section.type;
-                    return (
-                      <div
-                        key={section.type}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("text/plain", String(i));
-                          setTimeout(() => {
-                            (e.currentTarget as HTMLElement).style.opacity = "0.4";
-                            (e.currentTarget as HTMLElement).style.transform = "scale(0.95)";
-                          }, 0);
-                        }}
-                        onDragEnd={(e) => {
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.opacity = "";
-                          el.style.transform = "";
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.borderColor = "hsl(var(--accent))";
-                          el.style.boxShadow = "0 0 0 1px hsl(var(--accent) / 0.3)";
-                          el.style.transform = "scale(1.02)";
-                        }}
-                        onDragLeave={(e) => {
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.borderColor = "";
-                          el.style.boxShadow = "";
-                          el.style.transform = "";
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.borderColor = "";
-                          el.style.boxShadow = "";
-                          el.style.transform = "";
-                          const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
-                          if (!isNaN(fromIdx) && fromIdx !== i) {
-                            setReportForm(prev => {
-                              const sections = [...prev.sections];
-                              const [moved] = sections.splice(fromIdx, 1);
-                              if (moved) sections.splice(i, 0, moved);
-                              return { ...prev, sections };
-                            });
-                          }
-                        }}
-                        className={`group rounded-lg transition-all duration-150 select-none ${
-                          section.enabled
-                            ? "bg-[hsl(var(--bg-card))] border-2 border-[hsl(var(--border))] shadow-sm hover:shadow-md"
-                            : "bg-[hsl(var(--bg-app))] border-2 border-dashed border-[hsl(var(--border-light))] opacity-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 px-2 py-2">
-                          {/* Drag handle — the grip */}
-                          <div className="shrink-0 text-[hsl(var(--text-tertiary))] group-hover:text-[hsl(var(--text-primary))] transition-colors cursor-grab active:cursor-grabbing">
-                            <GripVertical size={16} />
-                          </div>
-                          {/* Toggle */}
-                          <input
-                            type="checkbox"
-                            checked={section.enabled}
-                            onChange={() => toggleSection(i)}
-                            className="accent-[hsl(var(--accent))] shrink-0 w-3.5 h-3.5"
-                          />
-                          <span className="text-base">{meta.icon}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className={`text-xs font-medium ${section.enabled ? "text-[hsl(var(--text-primary))]" : "text-[hsl(var(--text-tertiary))]"}`}>
-                              {section.label}
-                            </div>
-                            <div className="text-[10px] text-[hsl(var(--text-tertiary))] leading-tight">{meta.description}</div>
-                          </div>
-                          {/* Config gear */}
-                          {["basic_info", "inspection_results", "title", "custom_text", "header_footer", "device_summary_table"].includes(section.type) && section.enabled && (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setExpandedSection(isExpanded ? null : section.type + i); }}
-                              className={`shrink-0 p-1 rounded-md transition-colors ${
-                                isExpanded
-                                  ? "text-[hsl(var(--accent))] bg-[hsl(var(--accent)_/_0.1)]"
-                                  : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))]"
-                              }`}
-                              title="配置"
-                            ><Settings size={13} /></button>
-                          )}
-                          {/* Remove button (only for non-default sections) */}
-                          {ADDABLE_SECTION_TYPES.some(s => s.type === section.type) && (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); removeSection(i); }}
-                              className="shrink-0 p-1 rounded-md text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] hover:bg-[hsl(var(--danger)_/_0.1)] transition-colors"
-                              title="移除此区块"
-                            ><Trash2 size={13} /></button>
-                          )}
-                        </div>
-                        {/* Expanded config */}
-                        {isExpanded && section.enabled && (
-                          <div className="px-3 pb-2.5 border-t border-[hsl(var(--border-light))] pt-2 ml-9">
-                            {section.type === "basic_info" && (
-                              <div className="space-y-2">
-                                <div>
-                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的字段：</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {BASIC_INFO_FIELDS.map((f) => {
-                                      const fields = (section.config.fields as string[]) || [];
-                                      const checked = fields.includes(f.key);
-                                      return (
-                                        <span
-                                          key={f.key}
-                                          onClick={() => toggleSectionField(i, f.key)}
-                                          className={`px-2 py-1 rounded-md text-[11px] cursor-pointer border transition-all ${
-                                            checked
-                                              ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))] font-medium"
-                                              : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))] hover:border-[hsl(var(--border))] hover:text-[hsl(var(--text-secondary))]"
-                                          }`}
-                                        >{f.label}</span>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                                <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
-                                  <input type="checkbox" checked={section.config.show_header as boolean ?? true}
-                                    onChange={(e) => updateSectionConfig(i, { show_header: e.target.checked })}
-                                    className="accent-[hsl(var(--accent))] w-3 h-3" />
-                                  显示区块标题
-                                </label>
-                              </div>
-                            )}
-                            {section.type === "inspection_results" && (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-4">
-                                  <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))] cursor-pointer">
-                                    <input type="checkbox" checked={section.config.show_output as boolean ?? true}
-                                      onChange={(e) => updateSectionConfig(i, { show_output: e.target.checked })}
-                                      className="accent-[hsl(var(--accent))] w-3 h-3" />
-                                    显示原始输出
-                                  </label>
-                                  <label className="flex items-center gap-1.5 text-[11px] text-[hsl(var(--text-secondary))]">
-                                    截断行数
-                                    <input type="number" value={section.config.max_output_lines as number ?? 60}
-                                      onChange={(e) => updateSectionConfig(i, { max_output_lines: Number(e.target.value) || 60 })}
-                                      min={5} max={500}
-                                      className="w-14 h-6 px-1.5 text-[11px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--accent))]" />
-                                  </label>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">按类别过滤：</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {CATEGORIES.map((cat) => {
-                                      const filterCats = (section.config.filter_category as string[]) || [];
-                                      const checked = filterCats.length === 0 || filterCats.includes(cat);
-                                      return (
-                                        <span
-                                          key={cat}
-                                          onClick={() => {
-                                            const cur = (section.config.filter_category as string[]) || [];
-                                            const next = cur.includes(cat) ? cur.filter(c => c !== cat) : [...cur, cat];
-                                            updateSectionConfig(i, { filter_category: next });
-                                          }}
-                                          className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer border transition-all ${
-                                            checked
-                                              ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))]"
-                                              : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))]"
-                                          }`}
-                                        >{cat}</span>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {section.type === "title" && (
-                              <div>
-                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">标题模板（支持变量）：</div>
-                                <Input value={(section.config.title_pattern as string) || ""} onChange={(e) => updateSectionConfig(i, { title_pattern: e.target.value })} placeholder="{{device_name}} 巡检报告" className="text-xs h-7" />
-                              </div>
-                            )}
-                            {section.type === "custom_text" && (
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))]">自定义内容（支持变量）：</div>
-                                  <button type="button" onClick={() => { variableTargetRef.current = i; setShowVariablePicker(true); }} className="text-[10px] text-[hsl(var(--accent))] hover:underline">插入变量</button>
-                                </div>
-                                <textarea
-                                  ref={(el) => { if (el) customTextRefs.current.set(i, el); }}
-                                  value={(section.config.content as string) || ""}
-                                  onChange={(e) => updateSectionConfig(i, { content: e.target.value })}
-                                  onFocus={() => { variableTargetRef.current = i; }}
-                                  className="w-full h-24 font-mono text-[11px] p-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
-                                  placeholder="输入自定义文本，用 {{变量名}} 插入动态内容"
-                                />
-                              </div>
-                            )}
-                            {section.type === "header_footer" && (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <label className="text-[10px] font-medium text-[hsl(var(--text-secondary))]">位置：</label>
-                                  <Select value={(section.config.position as string) || "header"} onChange={(e) => updateSectionConfig(i, { position: e.target.value })} className="text-xs h-6 w-24">
-                                    <option value="header">页眉</option>
-                                    <option value="footer">页脚</option>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1">内容（支持变量）：</div>
-                                  <Input value={(section.config.content as string) || ""} onChange={(e) => updateSectionConfig(i, { content: e.target.value })} placeholder="XX公司 网络设备巡检报告" className="text-xs h-7" />
-                                </div>
-                              </div>
-                            )}
-                            {section.type === "device_summary_table" && (
-                              <div>
-                                <div className="text-[10px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">选择要显示的列：</div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {BASIC_INFO_FIELDS.map((f) => {
-                                    const fields = (section.config.fields as string[]) || [];
-                                    const checked = fields.includes(f.key);
-                                    return (
-                                      <span
-                                        key={f.key}
-                                        onClick={() => toggleSectionField(i, f.key)}
-                                        className={`px-2 py-1 rounded-md text-[11px] cursor-pointer border transition-all ${
-                                          checked
-                                            ? "bg-[hsl(var(--accent)_/_0.1)] border-[hsl(var(--accent))] text-[hsl(var(--accent))] font-medium"
-                                            : "bg-[hsl(var(--bg-app))] border-[hsl(var(--border-light))] text-[hsl(var(--text-tertiary))] hover:border-[hsl(var(--border))] hover:text-[hsl(var(--text-secondary))]"
-                                        }`}
-                                      >{f.label}</span>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Add Section button */}
-                <div className="relative mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setAddSectionOpen(!addSectionOpen)}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] border border-dashed border-[hsl(var(--border-light))] hover:border-[hsl(var(--accent))] rounded-md transition-colors"
-                  >
-                    <Plus size={13} /> 添加区块
-                  </button>
-                  {addSectionOpen && (
-                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-lg z-10 py-1">
-                      {ADDABLE_SECTION_TYPES.map((st) => (
-                        <button
-                          key={st.type}
-                          type="button"
-                          onClick={() => addSection(st.type)}
-                          className="w-full px-3 py-1.5 text-left text-[11px] text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))] flex items-center gap-2"
-                        >
-                          <span>{SECTION_META[st.type]?.icon || "📄"}</span>
-                          <span>{st.label}</span>
-                          <span className="text-[10px] text-[hsl(var(--text-tertiary))] ml-auto">{SECTION_META[st.type]?.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right: WYSIWYG preview */}
-              <div className="w-1/2 border border-[hsl(var(--border))] rounded-lg bg-white flex flex-col shadow-inner">
-                <div className="px-3 py-1.5 border-b border-[hsl(var(--border-light))] bg-[hsl(var(--bg-hover))] rounded-t-lg flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">👁 实时预览</span>
-                  <span className="text-[10px] text-[hsl(var(--text-tertiary))]">（示例数据模拟最终报告效果）</span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-2.5" style={{ maxHeight: "400px", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-                  {reportForm.sections.filter(s => s.enabled).length === 0 && (
-                    <div className="text-center py-12">
-                      <span className="text-3xl">🧱</span>
-                      <p className="text-xs text-[hsl(var(--text-tertiary))] mt-2">从左侧拖拽积木块来组装报告</p>
-                    </div>
-                  )}
-                  {reportForm.sections.filter(s => s.enabled).map((section, i) => (
-                    <WysiwygBlock key={section.type + i} section={section} format={reportForm.format} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ADVANCED MODE */}
-          {reportForm.mode === "advanced" && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-[hsl(var(--text-secondary))]">
-                  模板代码（{`{{变量}}`} 语法）
-                </label>
-                <button type="button" onClick={() => { variableTargetRef.current = "content"; setShowVariablePicker(true); }} className="text-[11px] text-[hsl(var(--accent))] hover:underline">插入变量</button>
-              </div>
-              <textarea
-                ref={contentTextareaRef}
-                value={reportForm.content}
-                onChange={(e) => setReportForm({ ...reportForm, content: e.target.value })}
-                onFocus={() => { variableTargetRef.current = "content"; }}
-                className="w-full h-72 font-mono text-xs p-3 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
-                placeholder={reportForm.format === "markdown"
-                  ? "# {{device_name}} 巡检报告\n\n> 生成时间: {{report_timestamp}}\n\n## 基本信息\n..."
-                  : "<!DOCTYPE html>\n<html>\n..."
-                }
-              />
-            </div>
-          )}
-
-          {/* Page Header / Footer */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">页眉</label>
-              <Input value={reportForm.page_header} onChange={(e) => setReportForm({ ...reportForm, page_header: e.target.value })} placeholder="XX公司 网络设备巡检报告" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">页脚</label>
-              <Input value={reportForm.page_footer} onChange={(e) => setReportForm({ ...reportForm, page_footer: e.target.value })} placeholder="机密文件 | 仅限内部使用" />
-            </div>
-          </div>
-
-          {/* Advanced Style (CSS) */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowAdvancedStyle(!showAdvancedStyle)}
-              className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors"
-            >
-              {showAdvancedStyle ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              高级样式（自定义 CSS）
-            </button>
-            {showAdvancedStyle && (
-              <div className="mt-2 space-y-2">
-                <textarea
-                  value={reportForm.custom_css}
-                  onChange={(e) => setReportForm({ ...reportForm, custom_css: e.target.value })}
-                  className="w-full h-32 font-mono text-[11px] p-2.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))] text-[hsl(var(--text-primary))] resize-none focus:outline-none focus:border-[hsl(var(--accent))]"
-                  placeholder=".report-title { color: #1a56db; }\n.info td.label { font-weight: 600; }"
-                />
-                <div className="text-[10px] text-[hsl(var(--text-tertiary))]">
-                  可用类名：<code>.report-title</code> <code>.report-meta</code> <code>.info</code> <code>.result</code> <code>.ai-analysis</code> <code>.overall</code> <code>.custom-text</code> <code>.report-header</code> <code>.report-footer</code>
-                </div>
-              </div>
-            )}
-          </div>
-
-        </div>
-
-        {/* Variable Picker Popover */}
-        {showVariablePicker && (
-          <VariablePicker
-            onSelect={insertVariable}
-            onClose={() => setShowVariablePicker(false)}
-          />
-        )}
+        <ReportTemplateEditor
+          form={reportForm}
+          onChange={setReportForm}
+          shakeName={shakeFields.has("report_name")}
+          saveError={reportSaveError}
+          onErrorClear={() => setReportSaveError(null)}
+        />
       </Modal>
 
-      {/* Report Template Rendered Preview */}
-      <Modal
-        open={renderedPreview !== null}
-        title="模板渲染预览"
-        width="max-w-2xl"
-        onClose={() => setRenderedPreview(null)}
-        footer={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setRenderedPreview(null)}>关闭</Button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          {/* Preview mode toggle */}
-          <div className="flex items-center gap-3">
-            <div className="flex rounded-md border border-[hsl(var(--border))] overflow-hidden">
-              <button
-                onClick={() => { setPreviewMode("sample"); if (editingReport) handleReportPreview(editingReport.id); }}
-                className={`px-3 py-1 text-xs transition-colors ${previewMode === "sample" ? "bg-[hsl(var(--accent))] text-white" : "bg-[hsl(var(--bg-app))] text-[hsl(var(--text-secondary))]"}`}
-              >示例数据</button>
-              <button
-                onClick={() => { setPreviewMode("real"); loadRecentRecords(); }}
-                className={`px-3 py-1 text-xs transition-colors ${previewMode === "real" ? "bg-[hsl(var(--accent))] text-white" : "bg-[hsl(var(--bg-app))] text-[hsl(var(--text-secondary))]"}`}
-              >真实数据</button>
-            </div>
-            {previewMode === "real" && (
-              <Select
-                value={selectedRecordId ?? ""}
-                onChange={(e) => {
-                  const rid = Number(e.target.value);
-                  setSelectedRecordId(rid);
-                  if (editingReport && rid) handleReportPreviewReal(editingReport.id, rid);
-                }}
-                className="text-xs h-7"
-              >
-                <option value="">选择巡检记录...</option>
-                {recentRecords.map((r) => (
-                  <option key={r.id} value={r.id}>记录 #{r.id} (设备 #{r.device_id})</option>
-                ))}
-              </Select>
-            )}
-          </div>
-          <div className="max-h-[60vh] overflow-auto">
-            {renderedPreview ? (
-              renderedPreview.trim().startsWith("<") ? (
-                <div dangerouslySetInnerHTML={{ __html: renderedPreview }} />
-              ) : (
-                <div className="prose prose-sm max-w-none text-[hsl(var(--text-primary))] [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-medium [&_h1]:mt-4 [&_h2]:mt-3 [&_h3]:mt-2 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_code]:text-xs [&_code]:bg-[hsl(var(--bg-hover))] [&_code]:px-1 [&_code]:rounded [&_pre]:bg-[hsl(var(--bg-card))] [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-auto [&_pre]:max-h-60 [&_pre]:text-xs [&_table]:w-full [&_table]:text-xs [&_th]:text-left [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[hsl(var(--bg-hover))] [&_td]:px-2 [&_td]:py-1 [&_td]:border-b [&_td]:border-[hsl(var(--border-light))]]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {renderedPreview}
-                  </ReactMarkdown>
-                </div>
-              )
-            ) : (
-              <p className="text-sm text-[hsl(var(--text-tertiary))] text-center py-8">
-                {previewMode === "real" && !selectedRecordId ? "请选择一条巡检记录" : "加载中..."}
-              </p>
-            )}
-          </div>
-        </div>
-      </Modal>
-
-      {/* Report Template Delete Confirm */}
       <Modal
         open={confirmDeleteReport !== null}
         title="确认删除"
@@ -1438,205 +700,591 @@ export default function TemplatesPage() {
 }
 
 // ============================================================
-// WYSIWYG Preview Block
+// Report Template Editor — 列定义驱动 + A4 实时预览
 // ============================================================
 
-function chunked<T>(arr: T[], n: number): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < arr.length; i += n) result.push(arr.slice(i, i + n));
-  return result;
-}
+const SAMPLE_DEVICE = {
+  name: "SW-CORE-01",
+  ip: "192.168.1.1",
+  vendor: "H3C",
+  model: "S6850-56HF",
+  sn: "210235A1A1234567",
+  mfg_date: "2024-08-12",
+  inspect_time: "2026-06-13 09:30:00",
+};
 
-function WysiwygBlock({ section, format: _format }: { section: TemplateSection; format: string }) {
-  const meta = SECTION_META[section.type] || { description: "", icon: "📄" };
-  const fieldLabel = (f: string) => {
-    const m: Record<string, string> = {
-      device_name: "设备名称", device_ip: "IP 地址", vendor: "厂商", model: "型号",
-      sn: "序列号", hostname: "主机名", os_release: "操作系统", kernel: "内核",
-      cpu_cores: "CPU 核心数", mem_total: "内存总量", manufacturing_date: "生产日期",
-    };
-    return m[f] || f;
-  };
+const SAMPLE_ROWS = [
+  { item: "查看设备版本", cmd: "display version",
+    output: "H3C Comware Software, Version 7.1.075 R6628P12\nUptime: 60 days 4 hours",
+    status: "ok", finding: "", suggestion: "" },
+  { item: "查看 CPU 使用率", cmd: "display cpu-usage",
+    output: "Slot 0 CPU 0 usage:\n  in last 5 seconds: 78%\n  in last 1 minute:  72%",
+    status: "warning", finding: "CPU 使用率偏高 (78%)",
+    suggestion: "建议关注 CPU 负载趋势，必要时检查 CPU 占用进程" },
+  { item: "查看内存使用率", cmd: "display memory-usage",
+    output: "System Total Memory(MB):   8192\nMemory Used(MB):           3686 (45%)",
+    status: "ok", finding: "", suggestion: "" },
+  { item: "查看接口状态", cmd: "display interface brief",
+    output: "GE1/0/1   UP    1000Mbps  full\nGE1/0/2   DOWN  --        --",
+    status: "info", finding: "GE1/0/2 处于 DOWN 状态", suggestion: "确认是否为预期未使用接口" },
+];
+
+const STATUS_DEF: Record<string, { label: string; bg: string; color: string }> = {
+  ok:       { label: "正常", bg: "#E2F0D9", color: "#385723" },
+  info:     { label: "提示", bg: "#DEEBF7", color: "#1F4E79" },
+  warning:  { label: "注意", bg: "#FFF2CC", color: "#806000" },
+  critical: { label: "严重", bg: "#FBE5D6", color: "#843C0C" },
+};
+
+function ReportTemplateEditor({
+  form, onChange, shakeName, saveError, onErrorClear,
+}: {
+  form: ReportForm;
+  onChange: (f: ReportForm) => void;
+  shakeName: boolean;
+  saveError: string | null;
+  onErrorClear: () => void;
+}) {
+  const update = (patch: Partial<ReportForm>) => onChange({ ...form, ...patch });
+  const updateConfig = (patch: Partial<ReportTemplateConfig>) =>
+    onChange({ ...form, config: { ...form.config, ...patch } });
 
   return (
-    <div className="rounded-md border border-[hsl(var(--border-light))] overflow-hidden text-[11px] bg-white shadow-sm">
-      {/* Section header bar */}
-      <div className="px-2.5 py-1.5 bg-[hsl(var(--bg-hover))] border-b border-[hsl(var(--border-light))] flex items-center gap-1.5">
-        <span className="text-xs">{meta.icon}</span>
-        <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">{section.label}</span>
+    <div className="grid grid-cols-12 gap-4" style={{ maxHeight: "75vh" }}>
+      {/* 左侧表单 */}
+      <div className="col-span-5 overflow-y-auto pr-2 space-y-3" style={{ maxHeight: "75vh" }}>
+        {/* 元信息 */}
+        <div className="space-y-2 pb-3 border-b border-[hsl(var(--border-light))]">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">模板名称</label>
+              <Input
+                value={form.name}
+                className={shakeName ? "animate-shake" : ""}
+                onChange={(e) => { update({ name: e.target.value }); onErrorClear(); }}
+                placeholder="如：H3C 月度巡检"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+              <Select value={form.vendor} onChange={(e) => update({ vendor: e.target.value })}>
+                <option value="">通用</option>
+                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+              </Select>
+            </div>
+          </div>
+          {saveError && <p className="text-[11px] text-[hsl(var(--danger))]">{saveError}</p>}
+          <div>
+            <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">描述</label>
+            <Input value={form.description} onChange={(e) => update({ description: e.target.value })} placeholder="模板用途说明" />
+          </div>
+        </div>
+
+        <CollapsibleSection title="封面" defaultOpen>
+          <div className="space-y-2">
+            <Field label="主标题（支持 {{vendor}}）">
+              <Input value={form.config.cover.title}
+                onChange={(e) => updateConfig({ cover: { ...form.config.cover, title: e.target.value } })} />
+            </Field>
+            <Field label="副标题">
+              <Input value={form.config.cover.subtitle}
+                onChange={(e) => updateConfig({ cover: { ...form.config.cover, subtitle: e.target.value } })} />
+            </Field>
+            <Field label="主色调">
+              <div className="flex items-center gap-2">
+                <input type="color" value={form.config.cover.primary_color}
+                  onChange={(e) => updateConfig({ cover: { ...form.config.cover, primary_color: e.target.value } })}
+                  className="h-7 w-10 rounded border border-[hsl(var(--border))]" />
+                <Input value={form.config.cover.primary_color}
+                  onChange={(e) => updateConfig({ cover: { ...form.config.cover, primary_color: e.target.value } })} />
+              </div>
+            </Field>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="设备信息" defaultOpen>
+          <label className="flex items-center gap-2 text-[11px] mb-2">
+            <input type="checkbox" checked={form.config.device_info.enabled}
+              onChange={(e) => updateConfig({ device_info: { ...form.config.device_info, enabled: e.target.checked } })}
+              className="accent-[hsl(var(--accent))]" />
+            启用此区块
+          </label>
+          {form.config.device_info.enabled && (
+            <>
+              <Field label="布局">
+                <Select value={form.config.device_info.layout}
+                  onChange={(e) => updateConfig({ device_info: { ...form.config.device_info, layout: e.target.value as "two_column" | "table" } })}>
+                  <option value="two_column">两列（标签|值）</option>
+                  <option value="table">横向表格</option>
+                </Select>
+              </Field>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">字段（拖拽调整顺序）</label>
+                <DraggableList
+                  items={form.config.device_info.fields}
+                  onReorder={(fields) => updateConfig({ device_info: { ...form.config.device_info, fields } })}
+                  renderItem={(f, i) => (
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" checked={f.visible}
+                        onChange={(e) => {
+                          const fields = [...form.config.device_info.fields];
+                          fields[i] = { ...f, visible: e.target.checked };
+                          updateConfig({ device_info: { ...form.config.device_info, fields } });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="accent-[hsl(var(--accent))] shrink-0" />
+                      <input type="text" value={f.label}
+                        onChange={(e) => {
+                          const fields = [...form.config.device_info.fields];
+                          fields[i] = { ...f, label: e.target.value };
+                          updateConfig({ device_info: { ...form.config.device_info, fields } });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 min-w-0 text-[11px] px-1.5 py-0.5 rounded border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))]" />
+                      <span className="text-[10px] text-[hsl(var(--text-tertiary))] shrink-0">{f.key}</span>
+                    </div>
+                  )}
+                  itemKey={(f) => f.key}
+                />
+              </div>
+            </>
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="巡检明细表" defaultOpen>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">列定义（拖拽调整顺序，宽度为百分比）</label>
+            <DraggableList
+              items={form.config.command_table.columns}
+              onReorder={(columns) => updateConfig({ command_table: { ...form.config.command_table, columns } })}
+              renderItem={(col, i) => (
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={col.visible}
+                    onChange={(e) => {
+                      const columns = [...form.config.command_table.columns];
+                      columns[i] = { ...col, visible: e.target.checked };
+                      updateConfig({ command_table: { ...form.config.command_table, columns } });
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="accent-[hsl(var(--accent))] shrink-0" />
+                  <input type="text" value={col.label}
+                    onChange={(e) => {
+                      const columns = [...form.config.command_table.columns];
+                      columns[i] = { ...col, label: e.target.value };
+                      updateConfig({ command_table: { ...form.config.command_table, columns } });
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 min-w-0 text-[11px] px-1.5 py-0.5 rounded border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))]" />
+                  <span className="text-[10px] text-[hsl(var(--text-tertiary))] shrink-0">{col.key}</span>
+                  <input type="number" min={4} max={80} value={col.width}
+                    onChange={(e) => {
+                      const columns = [...form.config.command_table.columns];
+                      columns[i] = { ...col, width: Number(e.target.value) || 10 };
+                      updateConfig({ command_table: { ...form.config.command_table, columns } });
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-12 text-[11px] px-1 py-0.5 rounded border border-[hsl(var(--border))] bg-[hsl(var(--bg-app))]" />
+                  <span className="text-[10px] text-[hsl(var(--text-tertiary))] shrink-0">%</span>
+                </div>
+              )}
+              itemKey={(col) => col.key}
+            />
+            <Field label="输出截断行数（0 = 不截断）">
+              <Input type="number" value={String(form.config.command_table.output_max_lines)}
+                onChange={(e) => updateConfig({ command_table: { ...form.config.command_table, output_max_lines: Math.max(0, Number(e.target.value) || 0) } })} />
+            </Field>
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="巡检总结" defaultOpen={false}>
+          <label className="flex items-center gap-2 text-[11px] mb-2">
+            <input type="checkbox" checked={form.config.summary.enabled}
+              onChange={(e) => updateConfig({ summary: { ...form.config.summary, enabled: e.target.checked } })}
+              className="accent-[hsl(var(--accent))]" />
+            启用此区块
+          </label>
+          {form.config.summary.enabled && (
+            <div className="space-y-2">
+              <Field label="区块标题">
+                <Input value={form.config.summary.title}
+                  onChange={(e) => updateConfig({ summary: { ...form.config.summary, title: e.target.value } })} />
+              </Field>
+              <label className="flex items-center gap-2 text-[11px]">
+                <input type="checkbox" checked={form.config.summary.show_problem_table}
+                  onChange={(e) => updateConfig({ summary: { ...form.config.summary, show_problem_table: e.target.checked } })}
+                  className="accent-[hsl(var(--accent))]" />
+                显示问题汇总表（只列 警告 / 严重）
+              </label>
+            </div>
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="页眉/页脚" defaultOpen={false}>
+          <div className="space-y-2">
+            <Field label="页眉（支持 {{vendor}}）">
+              <Input value={form.config.header}
+                onChange={(e) => updateConfig({ header: e.target.value })} />
+            </Field>
+            <Field label="页脚（支持 {{page}} {{total}}）">
+              <Input value={form.config.footer}
+                onChange={(e) => updateConfig({ footer: e.target.value })} />
+            </Field>
+          </div>
+        </CollapsibleSection>
       </div>
 
-      {/* Preview body */}
-      <div className="px-3 py-2 space-y-1.5">
-        {section.type === "title" && (
-          <div className="text-center py-1">
-            <div className="font-bold text-sm text-[hsl(var(--text-primary))]">示例设备 巡检报告</div>
-            <div className="text-[10px] text-[hsl(var(--text-tertiary))] mt-0.5">生成时间: 2026-05-31 14:30:00</div>
-          </div>
-        )}
-
-        {section.type === "basic_info" && (
-          <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
-            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
-              <tbody>
-                {chunked(((section.config.fields as string[]) || []), 2).map((pair, ri) => (
-                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
-                    {pair.map((f, ci) => (
-                      <React.Fragment key={f}>
-                        <td className="py-1 px-2 font-medium text-[hsl(var(--text-secondary))] bg-[hsl(var(--bg-hover))] w-[25%] border-r border-[hsl(var(--border-light))]">
-                          {fieldLabel(f)}
-                        </td>
-                        <td className={`py-1 px-2 text-[hsl(var(--text-tertiary))] ${ci < pair.length - 1 ? "border-r border-[hsl(var(--border-light))]" : ""} w-[25%]`}>
-                          {`{{${f}}}`}
-                        </td>
-                      </React.Fragment>
-                    ))}
-                    {pair.length === 1 && (
-                      <>
-                        <td className="py-1 px-2 w-[25%]"></td>
-                        <td className="py-1 px-2 w-[25%]"></td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {section.type === "inspection_results" && (
-          <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
-            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
-              <thead>
-                <tr className="bg-[hsl(var(--bg-hover))]">
-                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))] w-[30px]">序号</th>
-                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">巡检项目</th>
-                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">巡检结果</th>
-                  <th className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-[hsl(var(--border-light))]">评判结论</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { cmd: "display version", output: "H3C Comware Software, Version 7.1.075", status: "正常", finding: "软件版本为推荐版本", suggestion: "" },
-                  { cmd: "display cpu-usage", output: "Slot 0 CPU 0 usage: 78%", status: "警告", finding: "CPU 使用率偏高 (78%)", suggestion: "建议关注 CPU 负载趋势" },
-                  { cmd: "display memory-usage", output: "Used: 45%  Free: 55%", status: "正常", finding: "内存使用率 45%", suggestion: "" },
-                ].map((row, ri) => (
-                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
-                    <td className="py-1 px-1.5 text-center text-[hsl(var(--text-tertiary))] border-r border-[hsl(var(--border-light))]">{ri + 1}</td>
-                    <td className="py-1 px-1.5 text-[hsl(var(--text-primary))] border-r border-[hsl(var(--border-light))] font-medium">{row.cmd}</td>
-                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] text-[10px] font-mono">{row.output}</td>
-                    <td className="py-1 px-1.5 text-[hsl(var(--text-secondary))] text-[10px]">
-                      <span className={row.status === "正常" ? "text-[hsl(var(--success))]" : row.status === "警告" ? "text-[hsl(var(--warning))]" : "text-[hsl(var(--danger))]"}>
-                        {row.status}
-                      </span>
-                      <span>：{row.finding}</span>
-                      {row.suggestion && <span className="text-[hsl(var(--text-tertiary))]">；建议：{row.suggestion}</span>}
-                    </td>
-                  </tr>
-                ))}
-                {/* 总结行 */}
-                <tr className="bg-[hsl(var(--bg-hover))]">
-                  <td colSpan={4} className="py-1.5 px-2 text-[10px] text-[hsl(var(--text-secondary))] border-t border-[hsl(var(--border))]">
-                    <span className="font-medium">综合评判：</span>设备整体运行基本正常，CPU 使用率偏高需关注
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {section.type === "ai_analysis" && (
-          <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
-            <p className="text-[hsl(var(--text-secondary))] text-[10px] leading-relaxed">
-              设备整体运行状态良好。CPU 使用率偏高需要关注，建议监控趋势并在必要时进行扩容评估。内存和软件版本均处于正常范围。
-            </p>
-          </div>
-        )}
-
-        {section.type === "overall_assessment" && (
-          <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
-            <div className="text-[10px] space-y-0.5 text-[hsl(var(--text-secondary))]">
-              <div className="flex gap-2"><span className="font-medium">综合判断：</span><span className="text-[hsl(var(--warning))] font-medium">⚠ 警告</span></div>
-              <div className="flex gap-2"><span className="font-medium">建议：</span><span>关注 CPU 负载趋势，排查链路异常日志</span></div>
-            </div>
-          </div>
-        )}
-
-        {section.type === "custom_text" && (
-          <div>
-            <div className="text-[10px] text-[hsl(var(--text-secondary))] leading-relaxed whitespace-pre-wrap">
-              {(section.config.content as string) || <span className="text-[hsl(var(--text-tertiary))] italic">（未配置内容）</span>}
-            </div>
-          </div>
-        )}
-
-        {section.type === "header_footer" && (
-          <div className="text-[10px] text-[hsl(var(--text-secondary))]">
-            <div className="text-[hsl(var(--text-tertiary))] mb-0.5">
-              {section.config.position === "footer" ? "📌 页脚" : "📌 页眉"}
-            </div>
-            <div>{(section.config.content as string) || <span className="italic text-[hsl(var(--text-tertiary))]">（未配置内容）</span>}</div>
-          </div>
-        )}
-
-        {section.type === "device_summary_table" && (
-          <div>
-            <div className="font-medium text-[hsl(var(--text-primary))] text-xs mb-1">{section.label}</div>
-            <table className="w-full text-[10px] border-collapse border border-[hsl(var(--border-light))]">
-              <thead>
-                <tr className="bg-[hsl(var(--bg-hover))]">
-                  {((section.config.fields as string[]) || []).map((f) => (
-                    <th key={f} className="py-1 px-1.5 text-left font-medium text-[hsl(var(--text-secondary))] border-b border-r border-[hsl(var(--border-light))]">{fieldLabel(f)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { device_name: "核心交换机-A", device_ip: "192.168.1.1", vendor: "H3C", model: "S5560X" },
-                  { device_name: "汇聚交换机-B", device_ip: "192.168.1.2", vendor: "H3C", model: "S5130" },
-                ].map((row, ri) => (
-                  <tr key={ri} className="border-b border-[hsl(var(--border-light))] last:border-0">
-                    {((section.config.fields as string[]) || []).map((f) => (
-                      <td key={f} className="py-1 px-1.5 text-[hsl(var(--text-secondary))] border-r border-[hsl(var(--border-light))] last:border-r-0">{(row as Record<string, string>)[f] || "-"}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="text-[10px] text-[hsl(var(--text-tertiary))] text-center mt-1">... 共 N 台设备</div>
-          </div>
-        )}
+      {/* 右侧 A4 预览 */}
+      <div className="col-span-7 flex flex-col" style={{ maxHeight: "75vh" }}>
+        <div className="px-3 py-1.5 text-[11px] font-medium bg-[hsl(var(--bg-hover))] border border-[hsl(var(--border))] rounded-t-md text-[hsl(var(--text-secondary))]">
+          实时预览（示例数据，按 A4 比例缩放展示）
+        </div>
+        <div className="flex-1 overflow-auto bg-[hsl(var(--bg-app))] border border-t-0 border-[hsl(var(--border))] rounded-b-md p-4">
+          <DocxPreview config={form.config} />
+        </div>
       </div>
     </div>
   );
 }
 
+// ----- 表单辅助组件 -----
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-[hsl(var(--border))] rounded-md">
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-[hsl(var(--bg-hover))] hover:bg-[hsl(var(--bg-active))] rounded-t-md text-left">
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span className="text-[12px] font-medium text-[hsl(var(--text-primary))]">{title}</span>
+      </button>
+      {open && <div className="p-2.5">{children}</div>}
+    </div>
+  );
+}
+
+function DraggableList<T>({
+  items, onReorder, renderItem, itemKey,
+}: {
+  items: T[];
+  onReorder: (items: T[]) => void;
+  renderItem: (item: T, idx: number) => React.ReactNode;
+  itemKey: (item: T) => string | number;
+}) {
+  return (
+    <div className="space-y-1">
+      {items.map((item, i) => (
+        <div
+          key={itemKey(item)}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", String(i));
+            e.dataTransfer.effectAllowed = "move";
+            e.currentTarget.style.opacity = "0.4";
+          }}
+          onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
+          onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
+          onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.currentTarget.style.borderColor = "";
+            const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
+            if (isNaN(fromIdx) || fromIdx === i) return;
+            const next = [...items];
+            const [moved] = next.splice(fromIdx, 1);
+            if (moved !== undefined) next.splice(i, 0, moved);
+            onReorder(next);
+          }}
+          className="flex items-center gap-1.5 px-2 py-1.5 bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />
+          <div className="flex-1 min-w-0">{renderItem(item, i)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ----- A4 预览 -----
+
+function applyVars(s: string, device: typeof SAMPLE_DEVICE): string {
+  return s
+    .replace(/\{\{vendor\}\}/g, device.vendor)
+    .replace(/\{\{device_name\}\}/g, device.name)
+    .replace(/\{\{page\}\}/g, "1")
+    .replace(/\{\{total\}\}/g, "3");
+}
+
+function DocxPreview({ config }: { config: ReportTemplateConfig }) {
+  const dev = SAMPLE_DEVICE;
+  const accent = config.cover.primary_color;
+  const title = applyVars(config.cover.title, dev);
+  const headerText = applyVars(config.header, dev);
+  const footerText = applyVars(config.footer, dev);
+  const visibleColumns = config.command_table.columns.filter((c) => c.visible);
+  const totalW = visibleColumns.reduce((acc, c) => acc + Math.max(c.width, 1), 0) || 100;
+  const visibleFields: DeviceField[] = config.device_info.fields.filter((f) => f.visible);
+
+  const valueOf = (key: DeviceField["key"]) => {
+    switch (key) {
+      case "name": return dev.name;
+      case "ip": return dev.ip;
+      case "vendor": return dev.vendor;
+      case "model": return dev.model;
+      case "sn": return dev.sn;
+      case "mfg_date": return dev.mfg_date;
+      case "inspect_time": return dev.inspect_time;
+      default: return "";
+    }
+  };
+
+  // CLI 提示符：真实 sysname 来自设备配置；预览中用 aHope 模拟，不使用设备名称
+  const promptOf = (): string => {
+    const v = dev.vendor.toLowerCase();
+    const sysname = "aHope";
+    if (v.includes("cisco") || v.includes("思科") || v.includes("ruijie") || v.includes("锐捷")) {
+      return `${sysname}>`;
+    }
+    return `<${sysname}>`;
+  };
+
+  const cellFor = (col: TableColumn, row: typeof SAMPLE_ROWS[number], idx: number): React.ReactNode => {
+    switch (col.key) {
+      case "seq": return idx + 1;
+      case "item": return row.item;
+      case "output": {
+        const text = `${promptOf()}${row.cmd}\n${row.output}`;
+        return <pre style={{ margin: 0, fontFamily: "Consolas, monospace", fontSize: 10, whiteSpace: "pre-wrap" }}>{text}</pre>;
+      }
+      case "ai_judgment": {
+        const m = STATUS_DEF[row.status];
+        const lines: string[] = [];
+        if (m) lines.push(`【${m.label}】`);
+        if (row.finding) lines.push(row.finding);
+        if (row.suggestion) lines.push(`建议：${row.suggestion}`);
+        return (
+          <div style={{ color: m?.color, fontWeight: 500 }}>
+            {lines.map((line, k) => <div key={k}>{line}</div>)}
+          </div>
+        );
+      }
+      default: return "";
+    }
+  };
+
+  const problems = SAMPLE_ROWS.filter((r) => r.status === "warning" || r.status === "critical");
+
+  return (
+    <div
+      style={{
+        width: "210mm",
+        minHeight: "297mm",
+        margin: "0 auto",
+        background: "white",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+        padding: "20mm 18mm",
+        boxSizing: "border-box",
+        color: "#222",
+        fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
+        fontSize: 11,
+        transformOrigin: "top center",
+        transform: "scale(0.78)",
+      }}
+    >
+      {/* 页眉 */}
+      {headerText.trim() && (
+        <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderBottom: "1px solid #ddd", paddingBottom: 4, marginBottom: 12 }}>
+          {headerText.replace(/\{\{[^}]+\}\}/g, "")}
+        </div>
+      )}
+
+      {/* 封面 */}
+      <div style={{ textAlign: "center", padding: "60px 0 40px" }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: accent }}>{title}</div>
+        {config.cover.subtitle && (
+          <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{applyVars(config.cover.subtitle, dev)}</div>
+        )}
+        <div style={{ marginTop: 80, fontSize: 14 }}>设备：{dev.name}</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>生成日期：{dev.inspect_time.slice(0, 10)}</div>
+      </div>
+
+      <div style={{ height: 1, background: "#eee", margin: "20px 0" }} />
+
+      {/* 设备信息 */}
+      {config.device_info.enabled && visibleFields.length > 0 && (
+        <>
+          <SectionHeading text="基本信息" color={accent} />
+          {config.device_info.layout === "table" ? (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, border: "1.2px solid #000" }}>
+              <thead>
+                <tr>
+                  {visibleFields.map((f) => (
+                    <th key={f.key} style={{ background: "#F2F2F2", padding: "8px 6px", border: "0.6px solid #000", fontWeight: 600, textAlign: "center", verticalAlign: "middle" }}>{f.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {visibleFields.map((f) => (
+                    <td key={f.key} style={{ padding: "8px 6px", border: "0.6px solid #000", textAlign: "center", verticalAlign: "middle" }}>{valueOf(f.key)}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            // 仿模板 4 列布局：标签 | 值 | 标签 | 值
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, border: "1.2px solid #000" }}>
+              <tbody>
+                {(() => {
+                  const rows: React.ReactNode[] = [];
+                  for (let i = 0; i < visibleFields.length; i += 2) {
+                    const f1 = visibleFields[i];
+                    if (!f1) continue;
+                    const f2 = visibleFields[i + 1];
+                    rows.push(
+                      <tr key={i}>
+                        <td style={{ background: "#F2F2F2", padding: "8px", border: "0.6px solid #000", fontWeight: 600, width: "20%", verticalAlign: "middle" }}>{f1.label}</td>
+                        <td style={{ padding: "8px", border: "0.6px solid #000", width: "32%", verticalAlign: "middle" }}>{valueOf(f1.key)}</td>
+                        <td style={{ background: "#F2F2F2", padding: "8px", border: "0.6px solid #000", fontWeight: 600, width: "15%", verticalAlign: "middle" }}>{f2 ? f2.label : ""}</td>
+                        <td style={{ padding: "8px", border: "0.6px solid #000", verticalAlign: "middle" }}>{f2 ? valueOf(f2.key) : ""}</td>
+                      </tr>
+                    );
+                  }
+                  return rows;
+                })()}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+
+      {/* 巡检明细 */}
+      <div style={{ marginTop: 16 }}>
+        <SectionHeading text="巡检记录" color={accent} />
+        {visibleColumns.length === 0 ? (
+          <div style={{ color: "#888", fontSize: 11 }}>未启用任何列</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, tableLayout: "fixed", border: "1.2px solid #000" }}>
+            <colgroup>
+              {visibleColumns.map((c, i) => (
+                <col key={i} style={{ width: `${(Math.max(c.width, 1) / totalW) * 100}%` }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                {visibleColumns.map((c) => (
+                  <th key={c.key} style={{ background: "white", color: "#000", padding: "8px 6px", border: "0.6px solid #000", fontWeight: 700, textAlign: "center", verticalAlign: "middle" }}>
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {SAMPLE_ROWS.map((row, i) => (
+                <tr key={i}>
+                  {visibleColumns.map((col) => {
+                    const fill = col.key === "ai_judgment" ? STATUS_DEF[row.status]?.bg : undefined;
+                    const isOutput = col.key === "output";
+                    return (
+                      <td key={col.key} style={{
+                        padding: "6px",
+                        border: "0.6px solid #000",
+                        background: fill,
+                        verticalAlign: isOutput ? "top" : "middle",
+                        textAlign: isOutput ? "left" : "center",
+                        wordBreak: "break-word",
+                      }}>
+                        {cellFor(col, row, i)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* 总结 */}
+      {config.summary.enabled && (
+        <div style={{ marginTop: 16 }}>
+          <SectionHeading text={config.summary.title || "巡检总结"} color={accent} />
+          <div style={{ fontSize: 11, fontWeight: 600 }}>整体状态：警告</div>
+          <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.6 }}>
+            设备整体运行基本正常，CPU 使用率偏高需关注；GE1/0/2 接口未启用，建议确认是否为预期。
+          </div>
+          {config.summary.show_problem_table && problems.length > 0 && (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 12, marginTop: 12, marginBottom: 6 }}>问题汇总</div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, border: "1.2px solid #000" }}>
+                <thead>
+                  <tr>
+                    {["状态", "巡检项目", "发现", "建议"].map((h) => (
+                      <th key={h} style={{ background: "white", color: "#000", padding: "8px 6px", border: "0.6px solid #000", fontWeight: 700, textAlign: "center", verticalAlign: "middle" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {problems.map((p, i) => {
+                    const m = STATUS_DEF[p.status];
+                    const cellBase = { padding: "6px", border: "0.6px solid #000", textAlign: "center" as const, verticalAlign: "middle" as const };
+                    return (
+                      <tr key={i}>
+                        <td style={{ ...cellBase, background: m?.bg, color: m?.color, fontWeight: 600 }}>{m?.label}</td>
+                        <td style={cellBase}>{p.item}</td>
+                        <td style={cellBase}>{p.finding}</td>
+                        <td style={cellBase}>{p.suggestion}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 页脚 */}
+      {footerText.trim() && (
+        <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderTop: "1px solid #ddd", paddingTop: 4, marginTop: 24 }}>
+          {footerText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionHeading({ text, color: _color }: { text: string; color: string }) {
+  return (
+    <div style={{
+      fontSize: 14, fontWeight: 700, color: "#222",
+      marginTop: 14, marginBottom: 8,
+      lineHeight: 1.5,
+      fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
+    }}>{text}</div>
+  );
+}
+
 // ============================================================
-// Command List (collapsible by category)
+// Command List
 // ============================================================
 
 const CATEGORY_LABELS: Record<string, string> = {
-  version: "版本信息",
-  clock: "系统时钟",
-  cpu: "CPU",
-  memory: "内存",
-  hardware: "硬件信息",
-  interface: "接口",
-  vlan: "VLAN",
-  log: "日志",
-  protocol: "协议",
-  wireless: "无线",
-  general: "通用",
+  version: "版本信息", clock: "系统时钟", cpu: "CPU", memory: "内存",
+  hardware: "硬件信息", interface: "接口", vlan: "VLAN", log: "日志",
+  protocol: "协议", wireless: "无线", general: "通用",
 };
 
 function CommandList({
-  commands,
-  onEdit,
-  onDelete,
+  commands, onEdit, onDelete,
 }: {
   commands: CommandPool[];
   onEdit: (c: CommandPool) => void;
@@ -1647,8 +1295,7 @@ function CommandList({
   const toggle = (cat: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat);
-      else next.add(cat);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
       return next;
     });
   };
@@ -1660,20 +1307,15 @@ function CommandList({
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(cmd);
     }
-    const ordered = [...map.entries()].sort(([a], [b]) => {
+    return [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
       const ib = CATEGORIES.indexOf(b as typeof CATEGORIES[number]);
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
     });
-    return ordered;
   }, [commands]);
 
   if (commands.length === 0) {
-    return (
-      <div className="text-center py-8 text-sm text-[hsl(var(--text-tertiary))]">
-        暂无命令
-      </div>
-    );
+    return <div className="text-center py-8 text-sm text-[hsl(var(--text-tertiary))]">暂无命令</div>;
   }
 
   return (
@@ -1682,46 +1324,23 @@ function CommandList({
         const open = !collapsed.has(cat);
         return (
           <div key={cat} className="rounded-lg border border-[hsl(var(--border))] overflow-hidden">
-            <button
-              onClick={() => toggle(cat)}
-              className="w-full flex items-center gap-2 px-3 py-2 bg-[hsl(var(--bg-hover))] hover:bg-[hsl(var(--bg-active))] transition-colors text-left"
-            >
+            <button onClick={() => toggle(cat)}
+              className="w-full flex items-center gap-2 px-3 py-2 bg-[hsl(var(--bg-hover))] hover:bg-[hsl(var(--bg-active))] transition-colors text-left">
               {open ? <ChevronDown size={14} className="text-[hsl(var(--text-tertiary))]" /> : <ChevronRight size={14} className="text-[hsl(var(--text-tertiary))]" />}
-              <span className="text-xs font-medium text-[hsl(var(--text-primary))]">
-                {CATEGORY_LABELS[cat] || cat}
-              </span>
-              <span className="text-[11px] text-[hsl(var(--text-tertiary))] ml-auto">
-                {cmds.length} 条
-              </span>
+              <span className="text-xs font-medium text-[hsl(var(--text-primary))]">{CATEGORY_LABELS[cat] || cat}</span>
+              <span className="text-[11px] text-[hsl(var(--text-tertiary))] ml-auto">{cmds.length} 条</span>
             </button>
             {open && (
               <div className="divide-y divide-[hsl(var(--border-light))]">
                 {cmds.map((cmd) => (
-                  <div
-                    key={cmd.id}
-                    className="flex items-center gap-3 px-4 py-2 hover:bg-[hsl(var(--bg-hover))] transition-colors group"
-                  >
-                    <code className="flex-1 text-xs bg-[hsl(var(--bg-hover))] px-2 py-1 rounded font-mono text-[hsl(var(--text-primary))]">
-                      {cmd.command}
-                    </code>
-                    {cmd.description && (
-                      <span className="text-xs text-[hsl(var(--text-tertiary))] max-w-[200px] truncate hidden sm:block">
-                        {cmd.description}
-                      </span>
-                    )}
+                  <div key={cmd.id} className="flex items-center gap-3 px-4 py-2 hover:bg-[hsl(var(--bg-hover))] transition-colors group">
+                    <code className="flex-1 text-xs bg-[hsl(var(--bg-hover))] px-2 py-1 rounded font-mono text-[hsl(var(--text-primary))]">{cmd.command}</code>
+                    {cmd.description && <span className="text-xs text-[hsl(var(--text-tertiary))] max-w-[200px] truncate hidden sm:block">{cmd.description}</span>}
                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      <button
-                        onClick={() => onEdit(cmd)}
-                        className="p-1 rounded hover:bg-[hsl(var(--bg-active))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))]"
-                        title="编辑"
-                      >
+                      <button onClick={() => onEdit(cmd)} className="p-1 rounded hover:bg-[hsl(var(--bg-active))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))]" title="编辑">
                         <Pencil size={13} />
                       </button>
-                      <button
-                        onClick={() => onDelete(cmd.id)}
-                        className="p-1 rounded hover:bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))]"
-                        title="删除"
-                      >
+                      <button onClick={() => onDelete(cmd.id)} className="p-1 rounded hover:bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))]" title="删除">
                         <Trash2 size={13} />
                       </button>
                     </div>

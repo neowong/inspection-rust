@@ -245,9 +245,22 @@ pub fn auto_generate_template(
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("{}-巡检模板", vendor));
 
-    // Store command_ids as the template config
+    // Store command specs as the template config
+    let commands: Vec<serde_json::Value> = generated["command_ids"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|v| v.as_i64())
+        .map(|id| serde_json::json!({
+            "command_id": id,
+            "purpose": "inspection",
+            "show_in_report": true,
+            "extract_fields": [],
+        }))
+        .collect();
     let config_value = serde_json::json!({
-        "command_ids": generated["command_ids"],
+        "commands": commands,
     });
     let config_str = config_value.to_string();
 

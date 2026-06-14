@@ -113,5 +113,104 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 8")?;
     }
 
+    if version < 9 {
+        // 报告模板：把旧的"区块拼装"配置重置为新的"列定义驱动"配置
+        // 所有模板的 format 切到 'docx'；config_json 旧格式的统一回填默认值
+        let new_config = crate::services::report_config::default_config_json();
+
+        conn.execute_batch("UPDATE report_templates SET format = 'docx', mode = 'visual';")?;
+
+        conn.execute(
+            "UPDATE report_templates SET config_json = ?1 \
+             WHERE config_json IS NULL OR TRIM(config_json) = '' OR config_json LIKE '%\"sections\"%'",
+            rusqlite::params![&new_config],
+        )?;
+
+        // 兜底：保证至少存在一条 is_default 模板
+        let has_default: i64 = conn
+            .prepare("SELECT COUNT(*) FROM report_templates WHERE is_default = 1")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get(0)))
+            .unwrap_or(0);
+        if has_default == 0 {
+            conn.execute(
+                "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, config_json, mode) \
+                 VALUES ('内置默认模板', NULL, '', '', 'docx', 1, '系统默认报告模板', ?1, 'visual')",
+                rusqlite::params![&new_config],
+            )?;
+        }
+
+        conn.execute_batch("PRAGMA user_version = 9")?;
+    }
+
+    if version < 10 {
+        // 报告模板列定义改版：去掉 ai_finding 列，巡检明细只保留 4 列
+        // 不再兼容旧报告模板，所有模板统一重置为新默认结构
+        let new_config = crate::services::report_config::default_config_json();
+        conn.execute(
+            "UPDATE report_templates SET config_json = ?1, format = 'docx', mode = 'visual'",
+            rusqlite::params![&new_config],
+        )?;
+        conn.execute_batch("PRAGMA user_version = 10")?;
+    }
+
+    if version < 11 {
+        // 设备静态信息：真实 CLI sysname，用于报告还原终端提示符
+        let has_sysname: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'sysname'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_sysname {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN sysname TEXT;")?;
+        }
+        conn.execute_batch("PRAGMA user_version = 11")?;
+    }
+
+    if version < 12 {
+        // 本次巡检静态信息快照：sysname/model/SN/出厂日期等
+        let has_static_info: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('inspection_records') WHERE name = 'static_info'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_static_info {
+            conn.execute_batch("ALTER TABLE inspection_records ADD COLUMN static_info TEXT;")?;
+        }
+        conn.execute_batch("PRAGMA user_version = 12")?;
+    }
+
+    if version < 13 {
+        // 巡检模板配置升级：command_ids → commands[{command_id,purpose,show_in_report,extract_fields}]
+        let mut stmt = conn.prepare("SELECT id, config FROM inspection_templates")?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)))?;
+        let mut updates: Vec<(i64, String)> = Vec::new();
+        for row in rows {
+            let (id, config_opt) = row?;
+            let Some(config_str) = config_opt else { continue; };
+            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&config_str) else { continue; };
+            if value.get("commands").is_some() { continue; }
+            let Some(ids) = value.get("command_ids").and_then(|v| v.as_array()) else { continue; };
+            let commands: Vec<serde_json::Value> = ids.iter()
+                .filter_map(|v| v.as_i64())
+                .map(|id| serde_json::json!({
+                    "command_id": id,
+                    "purpose": "inspection",
+                    "show_in_report": true,
+                    "extract_fields": [],
+                }))
+                .collect();
+            value = serde_json::json!({ "commands": commands });
+            updates.push((id, serde_json::to_string(&value)?));
+        }
+        drop(stmt);
+        for (id, config) in updates {
+            conn.execute(
+                "UPDATE inspection_templates SET config = ?1, updated_at = datetime('now') WHERE id = ?2",
+                rusqlite::params![config, id],
+            )?;
+        }
+        conn.execute_batch("PRAGMA user_version = 13")?;
+    }
+
     Ok(())
 }

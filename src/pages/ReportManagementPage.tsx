@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { InspectionRecord, Device } from "../types";
 import { parseCommandOutputs, parseAiResult } from "../lib/utils";
 import DataTable from "../components/DataTable";
@@ -10,6 +8,13 @@ import Card from "../components/ui/Card";
 import StatBadge from "../components/StatBadge";
 import StatusBadge from "../components/StatusBadge";
 import { batchStatusColor } from "../lib/status";
+
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  ok:       { label: "正常", color: "var(--success)" },
+  info:     { label: "提示", color: "var(--info)" },
+  warning:  { label: "注意", color: "var(--warning)" },
+  critical: { label: "严重", color: "var(--danger)" },
+};
 
 export default function ReportManagementPage() {
   const [batches, setBatches] = useState<any[]>([]);
@@ -26,18 +31,16 @@ export default function ReportManagementPage() {
   const [batchAnalyzing, setBatchAnalyzing] = useState<number | null>(null);
   // Report generation
   const [generating, setGenerating] = useState<number | null>(null);
-  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchGenerating, setBatchGenerating] = useState<"" | "zip" | "combined">("");
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
-  // Report content viewing
-  const [reportContent, setReportContent] = useState<string | null>(null);
-  const [contentLoading, setContentLoading] = useState(false);
   // Download / delete
   const [downloading, setDownloading] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   // Error
   const [errorMsg, setErrorMsg] = useState("");
+  const [info, setInfo] = useState("");
 
   useEffect(() => {
     loadBatches();
@@ -61,7 +64,6 @@ export default function ReportManagementPage() {
     setExpandedRecordId(null);
     setFullRecord(null);
     setLogResult(null);
-    setReportContent(null);
     try {
       const full: any = await invoke("get_batch", { batchId: batch.id });
       setSelectedBatch(full);
@@ -89,68 +91,82 @@ export default function ReportManagementPage() {
       .finally(() => setRecordLoading(false));
   }, []);
 
+  const refreshAfterMutation = useCallback((recordId?: number) => {
+    if (recordId) {
+      invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
+    }
+    if (selectedBatch?.id) {
+      invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
+    }
+    loadBatches();
+  }, [selectedBatch?.id, loadBatches]);
+
   // ----- AI Analysis -----
   const handleAnalyzeRecord = (recordId: number) => {
-    setAnalyzing(recordId);
-    setErrorMsg("");
+    setAnalyzing(recordId); setErrorMsg("");
     invoke("analyze_record", { recordId })
-      .then(() => {
-        setAnalyzing(null);
-        invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
-        if (selectedBatch?.id) invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
-        loadBatches();
-      })
+      .then(() => { setAnalyzing(null); refreshAfterMutation(recordId); })
       .catch((e) => { setAnalyzing(null); setErrorMsg(String(e)); });
   };
 
   const handleAnalyzeBatch = (batchId: number) => {
-    setBatchAnalyzing(batchId);
-    setErrorMsg("");
+    setBatchAnalyzing(batchId); setErrorMsg("");
     invoke("analyze_batch", { batchId })
-      .then(() => {
-        setBatchAnalyzing(null);
-        if (expandedRecordId) {
-          invoke<InspectionRecord>("get_record", { recordId: expandedRecordId }).then(setFullRecord).catch(console.error);
-        }
-        if (selectedBatch?.id) invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
-        loadBatches();
-      })
+      .then(() => { setBatchAnalyzing(null); refreshAfterMutation(expandedRecordId ?? undefined); })
       .catch((e) => { setBatchAnalyzing(null); setErrorMsg(String(e)); });
   };
 
-  // ----- Report generation -----
-  const handleGenerateReport = (recordId: number) => {
-    setGenerating(recordId);
-    setErrorMsg("");
-    invoke<string>("generate_report", { recordId })
-      .then(() => {
-        setGenerating(null);
-        invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
-        if (selectedBatch?.id) invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
-        loadBatches();
-      })
-      .catch((e) => { setGenerating(null); setErrorMsg(String(e)); });
-  };
-
-  const handleGenerateBatchReports = () => {
-    if (!selectedBatch) return;
-    setBatchGenerating(true);
-    setErrorMsg("");
-    invoke<string[]>("generate_batch_reports", { batchId: selectedBatch.id })
-      .then(() => { setBatchGenerating(false); selectBatch(selectedBatch); loadBatches(); })
-      .catch((e) => { setBatchGenerating(false); setErrorMsg(String(e)); });
-  };
-
+  // ----- DOCX Generation -----
   const handleGenerateDocx = (recordId: number) => {
-    setGenerating(recordId);
-    setErrorMsg("");
+    setGenerating(recordId); setErrorMsg(""); setInfo("");
     invoke<string>("generate_docx_report", { recordId })
       .then(() => {
         setGenerating(null);
-        invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
-        if (selectedBatch?.id) invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
+        setInfo("报告已生成");
+        setTimeout(() => setInfo(""), 2500);
+        refreshAfterMutation(recordId);
       })
       .catch((e) => { setGenerating(null); setErrorMsg(String(e)); });
+  };
+
+  const handleBatchZip = async () => {
+    if (!selectedBatch) return;
+    setBatchGenerating("zip"); setErrorMsg(""); setInfo("");
+    try {
+      const path = await invoke<string>("generate_batch_docx_zip", { batchId: selectedBatch.id });
+      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
+      await invoke("save_generated_file", {
+        sourcePath: path,
+        suggestedName: `${safeName}-巡检报告.zip`,
+        extension: "zip",
+      });
+      setInfo("已生成 ZIP 报告，请在保存对话框选择目标位置");
+      setTimeout(() => setInfo(""), 3000);
+    } catch (e) {
+      setErrorMsg(String(e));
+    } finally {
+      setBatchGenerating("");
+    }
+  };
+
+  const handleBatchCombined = async () => {
+    if (!selectedBatch) return;
+    setBatchGenerating("combined"); setErrorMsg(""); setInfo("");
+    try {
+      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
+      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
+      await invoke("save_generated_file", {
+        sourcePath: path,
+        suggestedName: `${safeName}-合并报告.docx`,
+        extension: "docx",
+      });
+      setInfo("已生成合并 DOCX，请在保存对话框选择目标位置");
+      setTimeout(() => setInfo(""), 3000);
+    } catch (e) {
+      setErrorMsg(String(e));
+    } finally {
+      setBatchGenerating("");
+    }
   };
 
   // ----- Log analysis -----
@@ -163,7 +179,7 @@ export default function ReportManagementPage() {
       .finally(() => setLogAnalyzing(false));
   };
 
-  // ----- Download / Delete / View -----
+  // ----- Download / Delete -----
   const handleDownload = (recordId: number) => {
     setDownloading(recordId);
     invoke("download_report", { recordId })
@@ -179,27 +195,12 @@ export default function ReportManagementPage() {
       if (expandedRecordId === recordId) {
         setExpandedRecordId(null);
         setFullRecord(null);
-        setReportContent(null);
       }
-      if (selectedBatch?.id) selectBatch(selectedBatch);
-      loadBatches();
+      refreshAfterMutation();
     } catch (e: any) {
       setErrorMsg(String(e));
     } finally {
       setDeleting(null);
-    }
-  };
-
-  const handleViewReport = async (recordId: number) => {
-    setContentLoading(true);
-    setReportContent(null);
-    try {
-      const content: string = await invoke("read_report_content", { recordId });
-      setReportContent(content);
-    } catch (e: any) {
-      setErrorMsg(String(e));
-    } finally {
-      setContentLoading(false);
     }
   };
 
@@ -209,27 +210,33 @@ export default function ReportManagementPage() {
 
   const batchCompleted = selectedBatch?.status === "completed" || selectedBatch?.status === "partially_completed";
 
-  // ----- Columns -----
   const recordColumns = [
-    { key: "device", header:"设备", render: (r: any) => {
+    { key: "device", header: "设备", render: (r: any) => {
       const d = deviceMap.get(r.device_id);
       return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`;
     }},
-    { key: "status", header:"状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
-    { key: "ai_status", header:"AI", width: "w-20", render: (r: any) => r.ai_status === "completed" ? <span className="text-[hsl(var(--success))] text-xs font-medium">已完成</span> : r.ai_status === "processing" ? <span className="text-[hsl(var(--warning))] text-xs">分析中</span> : r.ai_status === "none" ? "-" : r.ai_status },
-    { key: "report", header:"报告", width: "w-16", render: (r: any) => r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : "-" },
-    {
-      key: "actions", header:"操作", width: "w-72",
+    { key: "status", header: "状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+    { key: "ai_status", header: "AI", width: "w-20", render: (r: any) =>
+      r.ai_status === "completed" ? <span className="text-[hsl(var(--success))] text-xs font-medium">已完成</span>
+        : r.ai_status === "processing" ? <span className="text-[hsl(var(--warning))] text-xs">分析中</span>
+        : r.ai_status === "none" ? "-" : r.ai_status
+    },
+    { key: "report", header: "报告", width: "w-16", render: (r: any) =>
+      r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : "-" },
+    { key: "actions", header: "操作", width: "w-72",
       render: (r: any) => (
         <div className="flex gap-1 flex-wrap">
           <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); loadRecordDetail(r.id); }}>详情</Button>
-          <Button variant="ghost" size="sm" loading={analyzing === r.id} disabled={r.ai_status === "processing"} onClick={(e: any) => { e.stopPropagation(); handleAnalyzeRecord(r.id); }}>AI分析</Button>
-          <Button variant="ghost" size="sm" loading={generating === r.id} onClick={(e: any) => { e.stopPropagation(); handleGenerateReport(r.id); }}>生成报告</Button>
-          <Button variant="ghost" size="sm" loading={generating === r.id} onClick={(e: any) => { e.stopPropagation(); handleGenerateDocx(r.id); }}>DOCX</Button>
+          <Button variant="ghost" size="sm" loading={analyzing === r.id} disabled={r.ai_status === "processing"}
+            onClick={(e: any) => { e.stopPropagation(); handleAnalyzeRecord(r.id); }}>AI 分析</Button>
+          <Button variant="ghost" size="sm" loading={generating === r.id}
+            onClick={(e: any) => { e.stopPropagation(); handleGenerateDocx(r.id); }}>生成报告</Button>
           {r.report_path && (
             <>
-              <Button variant="ghost" size="sm" loading={downloading === r.id} onClick={(e: any) => { e.stopPropagation(); handleDownload(r.id); }}>下载</Button>
-              <Button variant="ghost" size="sm" loading={deleting === r.id} onClick={(e: any) => { e.stopPropagation(); handleDelete(r.id); }}>删报告</Button>
+              <Button variant="ghost" size="sm" loading={downloading === r.id}
+                onClick={(e: any) => { e.stopPropagation(); handleDownload(r.id); }}>下载</Button>
+              <Button variant="ghost" size="sm" loading={deleting === r.id}
+                onClick={(e: any) => { e.stopPropagation(); handleDelete(r.id); }}>删除</Button>
             </>
           )}
         </div>
@@ -241,13 +248,18 @@ export default function ReportManagementPage() {
     <div>
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm">
         <h1 className="text-lg font-bold">报告管理</h1>
-        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">AI 分析、报告生成、浏览和清理</p>
+        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">AI 分析、DOCX 报告生成与下载</p>
       </div>
 
       {errorMsg && (
-        <div className="mb-4 px-3 py-2 rounded-lg text-sm bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--danger))] flex items-center justify-between">
+        <div className="mb-3 px-3 py-2 rounded-lg text-sm bg-[hsl(var(--danger)_/_0.1)] text-[hsl(var(--danger))] flex items-center justify-between">
           <span>{errorMsg}</span>
           <button onClick={() => setErrorMsg("")} className="ml-2 text-xs hover:underline">关闭</button>
+        </div>
+      )}
+      {info && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-sm bg-[hsl(var(--success)_/_0.1)] text-[hsl(var(--success))]">
+          {info}
         </div>
       )}
 
@@ -295,8 +307,12 @@ export default function ReportManagementPage() {
                 <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `批次 #${selectedBatch.id}`}</h2>
                 {batchCompleted && (
                   <>
-                    <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id} onClick={() => handleAnalyzeBatch(selectedBatch.id)}>AI 分析全部</Button>
-                    <Button size="sm" variant="ghost" loading={batchGenerating} onClick={handleGenerateBatchReports}>生成全部报告</Button>
+                    <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id}
+                      onClick={() => handleAnalyzeBatch(selectedBatch.id)}>AI 分析全部</Button>
+                    <Button size="sm" variant="ghost" loading={batchGenerating === "zip"}
+                      onClick={handleBatchZip}>下载 ZIP</Button>
+                    <Button size="sm" variant="ghost" loading={batchGenerating === "combined"}
+                      onClick={handleBatchCombined}>下载合并 DOCX</Button>
                   </>
                 )}
               </div>
@@ -324,14 +340,16 @@ export default function ReportManagementPage() {
                     </h3>
                     <div className="flex gap-1.5 flex-wrap">
                       <Button variant="ghost" size="sm" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
-                      <Button variant="ghost" size="sm" loading={analyzing === fullRecord.id} disabled={fullRecord.ai_status === "processing"} onClick={() => handleAnalyzeRecord(fullRecord.id)}>AI 分析</Button>
-                      <Button variant="ghost" size="sm" loading={generating === fullRecord.id} onClick={() => handleGenerateReport(fullRecord.id)}>生成报告</Button>
-                      <Button variant="ghost" size="sm" loading={generating === fullRecord.id} onClick={() => handleGenerateDocx(fullRecord.id)}>DOCX</Button>
+                      <Button variant="ghost" size="sm" loading={analyzing === fullRecord.id} disabled={fullRecord.ai_status === "processing"}
+                        onClick={() => handleAnalyzeRecord(fullRecord.id)}>AI 分析</Button>
+                      <Button variant="ghost" size="sm" loading={generating === fullRecord.id}
+                        onClick={() => handleGenerateDocx(fullRecord.id)}>生成报告</Button>
                       {fullRecord.report_path && (
                         <>
-                          <Button variant="ghost" size="sm" onClick={() => handleViewReport(fullRecord.id)}>查看报告</Button>
-                          <Button variant="ghost" size="sm" loading={downloading === fullRecord.id} onClick={() => handleDownload(fullRecord.id)}>下载</Button>
-                          <Button variant="ghost" size="sm" loading={deleting === fullRecord.id} onClick={() => handleDelete(fullRecord.id)}>删报告</Button>
+                          <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}
+                            onClick={() => handleDownload(fullRecord.id)}>下载</Button>
+                          <Button variant="ghost" size="sm" loading={deleting === fullRecord.id}
+                            onClick={() => handleDelete(fullRecord.id)}>删除</Button>
                         </>
                       )}
                     </div>
@@ -392,26 +410,45 @@ export default function ReportManagementPage() {
                   )}
                   {logResult?.error && <p className="text-xs text-[hsl(var(--danger))] mb-3">{String(logResult.error)}</p>}
 
-                  {/* AI result */}
+                  {/* AI result —— 纯结构化展示，无 markdown 渲染 */}
                   {aiResult && (
                     <div className="mb-3">
-                      <h4 className="text-xs font-semibold text-[hsl(var(--text-secondary))] mb-1">AI 分析结果</h4>
-                      <div className="prose prose-sm max-w-none text-xs text-[hsl(var(--text-primary))] prose-headings:text-[hsl(var(--text-primary))] prose-code:text-[hsl(var(--accent))] prose-code:bg-[hsl(var(--bg-hover))] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[hsl(var(--bg-hover))] prose-pre:text-[hsl(var(--text-secondary))]">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {(() => {
-                            let md = `## 总结\n\n${aiResult.summary || ""}`;
-                            if (aiResult.items?.length) {
-                              md += `\n\n## 逐项分析\n\n| 命令 | 状态 | 发现 | 建议 |\n|------|------|------|------|\n`;
-                              for (const it of aiResult.items) md += `| ${it.command || "-"} | ${it.status || "-"} | ${it.finding || "-"} | ${it.suggestion || "-"} |\n`;
-                            }
-                            return md;
-                          })()}
-                        </ReactMarkdown>
-                      </div>
+                      <h4 className="text-xs font-semibold text-[hsl(var(--text-secondary))] mb-2">AI 分析结果</h4>
+                      {aiResult.summary && (
+                        <p className="text-xs text-[hsl(var(--text-primary))] mb-2 whitespace-pre-wrap">{aiResult.summary}</p>
+                      )}
+                      {Array.isArray(aiResult.items) && aiResult.items.length > 0 && (
+                        <div className="overflow-auto">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-[hsl(var(--bg-hover))] text-[hsl(var(--text-secondary))]">
+                                <th className="p-1.5 text-left border border-[hsl(var(--border))] w-[28%]">命令</th>
+                                <th className="p-1.5 text-left border border-[hsl(var(--border))] w-[12%]">状态</th>
+                                <th className="p-1.5 text-left border border-[hsl(var(--border))] w-[30%]">发现</th>
+                                <th className="p-1.5 text-left border border-[hsl(var(--border))]">建议</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {aiResult.items.map((it: any, i: number) => {
+                                const m = STATUS_META[it.status as string];
+                                return (
+                                  <tr key={i}>
+                                    <td className="p-1.5 border border-[hsl(var(--border))] font-mono text-[hsl(var(--accent))]">{it.command || "-"}</td>
+                                    <td className="p-1.5 border border-[hsl(var(--border))]" style={m ? { color: `hsl(${m.color})` } : undefined}>
+                                      {m ? m.label : (it.status || "-")}
+                                    </td>
+                                    <td className="p-1.5 border border-[hsl(var(--border))]">{it.finding || "-"}</td>
+                                    <td className="p-1.5 border border-[hsl(var(--border))]">{it.suggestion || "-"}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Progress indicator for processing */}
                   {fullRecord.ai_status === "processing" && (
                     <div className="flex items-center gap-2 text-xs text-[hsl(var(--warning))]">
                       <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -419,22 +456,9 @@ export default function ReportManagementPage() {
                     </div>
                   )}
 
-                  {/* Report path */}
                   {fullRecord.report_path && (
                     <p className="text-xs text-[hsl(var(--text-secondary))]">报告文件: <code className="text-[hsl(var(--accent))] bg-[hsl(var(--bg-hover))] px-1 rounded">{fullRecord.report_path}</code></p>
                   )}
-                </Card>
-              )}
-
-              {/* Report content viewer */}
-              {contentLoading && <Card><p className="text-sm text-[hsl(var(--text-tertiary))]">加载报告...</p></Card>}
-              {reportContent !== null && (
-                <Card>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold">报告内容</h3>
-                    <button onClick={() => setReportContent(null)} className="text-xs text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">关闭</button>
-                  </div>
-                  <pre className="max-h-[500px] overflow-auto text-xs font-mono whitespace-pre-wrap">{reportContent}</pre>
                 </Card>
               )}
             </>

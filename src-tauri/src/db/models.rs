@@ -22,6 +22,7 @@ pub struct Device {
     pub last_checked_at: Option<String>,
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
+    pub sysname: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -42,6 +43,7 @@ pub struct DeviceCreate {
     pub last_checked_at: Option<String>,
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
+    pub sysname: Option<String>,
 }
 
 /// 更新设备 - 前端请求 DTO（全部可选）
@@ -60,6 +62,7 @@ pub struct DeviceUpdate {
     pub last_checked_at: Option<String>,
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
+    pub sysname: Option<String>,
 }
 
 // ============================
@@ -191,6 +194,7 @@ pub struct InspectionRecord {
     pub status: String,
     pub error_message: Option<String>,
     pub command_outputs: Option<String>,
+    pub static_info: Option<String>,
     pub ai_status: String,
     pub ai_result: Option<String>,
     pub ai_analysis: Option<String>,
@@ -270,31 +274,17 @@ pub struct ReportTemplate {
 pub struct ReportTemplateCreate {
     pub name: String,
     pub vendor: Option<String>,
-    pub content: Option<String>,
-    pub format: Option<String>,
     pub description: Option<String>,
-    pub sample_data: Option<String>,
     pub config_json: Option<String>,
-    pub mode: Option<String>,
-    pub custom_css: Option<String>,
-    pub page_header: Option<String>,
-    pub page_footer: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ReportTemplateUpdate {
     pub name: Option<String>,
     pub vendor: Option<String>,
-    pub content: Option<String>,
-    pub format: Option<String>,
     pub is_default: Option<i64>,
     pub description: Option<String>,
-    pub sample_data: Option<String>,
     pub config_json: Option<String>,
-    pub mode: Option<String>,
-    pub custom_css: Option<String>,
-    pub page_header: Option<String>,
-    pub page_footer: Option<String>,
 }
 
 // ============================
@@ -324,7 +314,7 @@ pub fn now_str() -> String {
 
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
-     ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, \
+     ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, \
      created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
@@ -338,7 +328,7 @@ pub const BATCH_COLUMNS: &str =
     "id, name, status, triggered_by, device_ids, started_at, completed_at, created_at, updated_at";
 
 pub const RECORD_COLUMNS: &str =
-    "id, batch_id, device_id, status, error_message, command_outputs, ai_status, ai_result, \
+    "id, batch_id, device_id, status, error_message, command_outputs, static_info, ai_status, ai_result, \
      ai_analysis, ai_suggestions, command_judgments, summary_judgment, report_path, \
      started_at, completed_at, created_at, updated_at";
 
@@ -370,8 +360,9 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         last_checked_at: row.get(11)?,
         serial_number: row.get(12)?,
         manufacturing_date: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
+        sysname: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
     })
 }
 
@@ -436,17 +427,18 @@ pub fn record_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionRecord
         status: row.get(3)?,
         error_message: row.get(4)?,
         command_outputs: row.get(5)?,
-        ai_status: row.get(6)?,
-        ai_result: row.get(7)?,
-        ai_analysis: row.get(8)?,
-        ai_suggestions: row.get(9)?,
-        command_judgments: row.get(10)?,
-        summary_judgment: row.get(11)?,
-        report_path: row.get(12)?,
-        started_at: row.get(13)?,
-        completed_at: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        static_info: row.get(6)?,
+        ai_status: row.get(7)?,
+        ai_result: row.get(8)?,
+        ai_analysis: row.get(9)?,
+        ai_suggestions: row.get(10)?,
+        command_judgments: row.get(11)?,
+        summary_judgment: row.get(12)?,
+        report_path: row.get(13)?,
+        started_at: row.get(14)?,
+        completed_at: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
     })
 }
 
@@ -459,6 +451,7 @@ pub fn record_summary_from_row(row: &rusqlite::Row) -> rusqlite::Result<Inspecti
         status: row.get(3)?,
         error_message: row.get(4)?,
         command_outputs: None,
+        static_info: None,
         ai_status: row.get(5)?,
         ai_result: None,
         ai_analysis: None,

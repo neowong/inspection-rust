@@ -142,7 +142,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -157,6 +157,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.last_checked_at,
             data.serial_number,
             data.manufacturing_date,
+            data.sysname,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -214,6 +215,7 @@ pub fn update_device(
     updater.push_opt("last_checked_at", &data.last_checked_at);
     updater.push_opt("serial_number", &data.serial_number);
     updater.push_opt("manufacturing_date", &data.manufacturing_date);
+    updater.push_opt("sysname", &data.sysname);
 
     // 处理密码加密
     if let Some(ref pass) = data.ssh_password_encrypted {
@@ -479,10 +481,11 @@ pub async fn detect_device_model(
     use crate::services::inspection_runner::{self, SSHSessionSource};
 
     // 仅支持 H3C
-    let cmd = match vendor.as_str() {
+    let manu_cmd = match vendor.as_str() {
         "H3C" | "华三" => "display device manuinfo",
         _ => return Err("当前仅支持 H3C 设备自动检测型号".to_string()),
     };
+    let sysname_cmd = "display current-configuration | include sysname";
 
     tokio::task::spawn_blocking(move || {
         let source = SSHSessionSource {
@@ -502,19 +505,30 @@ pub async fn detect_device_model(
 
         let output = inspection_runner::send_command(
             &mut channel,
-            cmd,
+            manu_cmd,
             &base_prompt,
             &source.password,
             &source.host,
             &vendor,
         )?;
 
+        let sysname_output = inspection_runner::send_command(
+            &mut channel,
+            sysname_cmd,
+            &base_prompt,
+            &source.password,
+            &source.host,
+            &vendor,
+        ).unwrap_or_default();
+
         let _ = channel.close();
         let _ = session.disconnect(None, "done", None);
 
         // 从输出中提取信息
         let cleaned = inspection_runner::clean_output(&output, &base_prompt);
-        let info = parse_h3c_device_info(&cleaned);
+        let sysname_cleaned = inspection_runner::clean_output(&sysname_output, &base_prompt);
+        let mut info = parse_h3c_device_info(&cleaned);
+        info.sysname = parse_sysname(&sysname_cleaned);
         Ok(serde_json::json!(info).to_string())
     })
     .await
@@ -527,6 +541,7 @@ struct H3cDeviceInfo {
     model: Option<String>,
     serial_number: Option<String>,
     manufacturing_date: Option<String>,
+    sysname: Option<String>,
 }
 
 /// 从 H3C display device manuinfo 输出中解析设备信息
@@ -554,7 +569,20 @@ fn parse_h3c_device_info(output: &str) -> H3cDeviceInfo {
         }
     }
 
-    H3cDeviceInfo { model, serial_number, manufacturing_date }
+    H3cDeviceInfo { model, serial_number, manufacturing_date, sysname: None }
+}
+
+fn parse_sysname(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_lowercase().starts_with("sysname ") {
+            let name = trimmed.split_whitespace().nth(1).unwrap_or("").trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// 从 H3C 键值行中提取值，格式: "KEY          : VALUE"

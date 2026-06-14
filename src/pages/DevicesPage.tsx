@@ -25,12 +25,13 @@ interface DeviceForm {
   template_id: number | null;
   serial_number: string;
   manufacturing_date: string;
+  sysname: string;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
-  serial_number: "", manufacturing_date: "",
+  serial_number: "", manufacturing_date: "", sysname: "",
 };
 
 export default function DevicesPage() {
@@ -106,6 +107,7 @@ export default function DevicesPage() {
       template_id: d.template_id,
       serial_number: d.serial_number || "",
       manufacturing_date: d.manufacturing_date || "",
+      sysname: d.sysname || "",
     });
     setModalOpen(true);
   };
@@ -128,6 +130,7 @@ export default function DevicesPage() {
             model: info.model || form.model,
             serial_number: info.serial_number || form.serial_number,
             manufacturing_date: info.manufacturing_date || form.manufacturing_date,
+            sysname: info.sysname || form.sysname,
           });
         } catch {
           // 兼容旧格式（纯字符串）
@@ -158,6 +161,7 @@ export default function DevicesPage() {
     if (form.template_id !== null) data.template_id = form.template_id;
     if (form.serial_number) data.serial_number = form.serial_number;
     if (form.manufacturing_date) data.manufacturing_date = form.manufacturing_date;
+    if (form.sysname) data.sysname = form.sysname;
 
     setSaving(true);
     setSaveError(null);
@@ -176,13 +180,14 @@ export default function DevicesPage() {
         // 静默检测在线状态
         invoke("check_device_status", { deviceId: devId }).then(() => loadDevices()).catch(() => {});
 
-        // 静默补全型号/SN/出厂日期（H3C 且有 SSH 凭据时）
+        // 静默补全型号/SN/出厂日期/sysname（H3C 且有 SSH 凭据时）
         const needModel = !form.model.trim();
         const needSn = !form.serial_number.trim();
         const needDate = !form.manufacturing_date.trim();
+        const needSysname = !form.sysname.trim();
         const canDetect = form.ssh_username.trim() && form.ssh_password.trim()
           && (form.vendor === "H3C" || form.vendor === "华三");
-        if ((needModel || needSn || needDate) && canDetect) {
+        if ((needModel || needSn || needDate || needSysname) && canDetect) {
           invoke<string>("detect_device_model", {
             ip: form.ip.trim(), sshPort: form.ssh_port,
             sshUsername: form.ssh_username.trim(), sshPassword: form.ssh_password,
@@ -194,6 +199,7 @@ export default function DevicesPage() {
               if (needModel && info.model) patch.model = info.model;
               if (needSn && info.serial_number) patch.serial_number = info.serial_number;
               if (needDate && info.manufacturing_date) patch.manufacturing_date = info.manufacturing_date;
+              if (needSysname && info.sysname) patch.sysname = info.sysname;
               if (Object.keys(patch).length > 0) {
                 invoke("update_device", { deviceId: devId, data: patch }).then(() => loadDevices());
               }
@@ -467,6 +473,10 @@ export default function DevicesPage() {
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
               <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Sysname（终端提示符）</label>
+            <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测，如 aHope" />
           </div>
         </div>
       </Modal>

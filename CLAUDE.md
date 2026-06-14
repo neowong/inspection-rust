@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-网络设备巡检系统 (Network Device Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷），执行巡检命令收集状态数据，调用 AI（OpenAI/Anthropic）分析结果并生成 Markdown 报告。
+网络设备巡检系统 (Network Device Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷），执行巡检命令收集状态数据，调用 AI（OpenAI/Anthropic/DeepSeek）分析结果并生成可编辑 DOCX 报告。
 
 ## Tech Stack
 
@@ -72,11 +72,8 @@ inspection-rust/
 │   │       ├── crypto.rs         # Fernet encryption (password/API key)
 │   │       ├── inspection_runner.rs  # SSH execution via ssh2 (netmiko-style)
 │   │       ├── ai_inspection.rs  # AI analysis prompt + API call
-│   │       ├── report_generator.rs   # Markdown report builder
-│   │       ├── report_builder.rs     # HTML batch report builder
-│   │       ├── template_engine.rs    # Template rendering (visual/advanced modes)
-│   │       ├── template_variables.rs # Template variable definitions + context builder
-│   │       ├── docx_engine.rs    # DOCX template engine (variable replacement + dynamic rows)
+│   │       ├── report_config.rs  # DOCX report template config schema + command descriptions
+│   │       ├── docx_engine.rs    # DOCX report generator (code-built Word tables, static_info, batch zip/combined)
 │   │       ├── html_util.rs      # Shared html_escape utility
 │   │       ├── json_util.rs      # Shared JSON parse helpers (parse_json_map, parse_json_object)
 │   │       ├── template_generator.rs # Auto-generate templates from command pool
@@ -112,8 +109,8 @@ inspection-rust/
 - **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`
 - **Dashboard cards**: Clickable with `cursor-pointer` + `navigate(path)`. Summary + detail cards both have path field.
 - **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
-- **DOCX report engine**: Uses `docx-rs` (0.4) for Word template processing. `docx_engine.rs` handles variable replacement (`{{var}}`) and dynamic table row cloning (rows containing `{{seq}}` are cloned per command). Multi-line output uses `Break::new(BreakType::TextWrapping)`. Command order preserved via `IndexMap` from `inspection_runner`.
-- **Command order**: `inspection_runner::run_commands` returns `IndexMap<String, String>` to preserve execution order. Template editor supports drag-and-drop command reordering.
+- **DOCX report engine**: Uses `docx-rs` (0.4) to generate Word reports directly from `ReportTemplateConfig` (stored in `report_templates.config_json`), not from uploaded `.docx` templates. Report columns default to `序号 / 项目 / 巡检内容 / 评判结论`; command outputs are rendered as `<sysname>command` plus original output (first bare command echo stripped). Device static info comes from `inspection_records.static_info` first, then `devices.sysname`/device fallback. Header/footer use Word paragraph borders for single separator lines.
+- **Command order / static info commands**: `inspection_runner::run_commands` returns `IndexMap<String, String>` to preserve execution order. Inspection template config uses `commands[{command_id,purpose,show_in_report,extract_fields}]`; commands with `purpose: "static_info"` can extract `sysname`, `model`, `serial_number`, `manufacturing_date` into `inspection_records.static_info` and are hidden from report details when `show_in_report=false`. Template editor supports drag-and-drop command reordering.
 - **SpinInput component**: Custom number input with hidden native spinners + ChevronUp/Down buttons. Use `<SpinInput>` instead of `<input type="number">` for timeout/port fields.
 - **Toolbox IP validation**: All tools that take IP input (`scan_ports`, `scan_udp_ports`, `snmp_v2c_get`, `snmp_v3_get`, `check_zabbix_agent`) validate with `parse::<IpAddr>()` at entry, returning "请输入有效的 IP 地址" on failure.
 - **UDP scan**: Uses `socket.connect()` before `send()`/`recv()` — connected UDP sockets receive ICMP Port Unreachable as `ECONNREFUSED`. Without `connect()`, ICMP errors are not delivered. Protocol probes for DNS(53), SNMP(161), NTP(123).

@@ -33,6 +33,7 @@ open = "5"
 regex = "1"
 toml = "0.8"
 docx-rs = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 indexmap = { version = "2", features = ["serde"] }
 digest = "0.10"
 md-5 = "0.10"
