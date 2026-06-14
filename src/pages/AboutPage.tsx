@@ -2,33 +2,80 @@ import { BrainCircuit, FileText, Heart, Network, Play, Server, TerminalSquare, W
 import Card from "../components/ui/Card";
 
 const FLOW_STEPS = [
-  { title: "配置 AI", desc: "在系统设置中添加并激活模型配置", icon: BrainCircuit },
-  { title: "维护命令库", desc: "按厂商维护巡检命令与中文说明", icon: TerminalSquare },
-  { title: "设计报告模板", desc: "配置 DOCX 样式、列定义和实时预览", icon: FileText },
-  { title: "创建巡检模板", desc: "选择巡检项与静态信息采集命令", icon: Network },
-  { title: "添加设备", desc: "录入 SSH 信息并绑定巡检模板", icon: Server },
-  { title: "执行巡检", desc: "批量 SSH 执行并保存本次静态快照", icon: Play },
-  { title: "AI 分析", desc: "生成状态、发现和建议", icon: BrainCircuit },
-  { title: "导出 DOCX", desc: "下载单设备、ZIP 或合并 Word 报告", icon: FileText },
+  { title: "配置 AI", desc: "设置 OpenAI / Anthropic / DeepSeek 等模型连接", note: "没有 AI 也能巡检；启用后可自动生成评判结论。", icon: BrainCircuit },
+  { title: "维护命令库", desc: "按厂商维护命令文本、分类和中文说明", note: "命令说明会成为报告中的“项目”名称。", icon: TerminalSquare },
+  { title: "设计报告模板", desc: "在线配置 DOCX 封面、表格列和页眉页脚", note: "右侧 A4 预览可实时查看报告排版效果。", icon: FileText },
+  { title: "创建巡检模板", desc: "选择巡检项和静态信息采集命令", note: "静态信息命令可提取 sysname、SN、型号等，但不进入报告明细。", icon: Network },
+  { title: "添加设备", desc: "录入设备 IP、厂商、SSH 凭据并绑定模板", note: "H3C 设备可自动检测型号、SN、出厂日期和 sysname。", icon: Server },
+  { title: "执行巡检", desc: "批量 SSH 执行命令并保存本次巡检快照", note: "巡检结果按设备保存，静态信息会同步为本次报告快照。", icon: Play },
+  { title: "AI 分析", desc: "对巡检输出生成状态、发现和建议", note: "AI 评判会整合到报告“评判结论”列。", icon: BrainCircuit },
+  { title: "导出 DOCX", desc: "生成单设备、ZIP 或合并 Word 报告", note: "DOCX 可继续编辑，适合交付、归档和二次整理。", icon: FileText },
 ];
 
-function FlowStep({ step, index }: { step: typeof FLOW_STEPS[number]; index: number }) {
-  const Icon = step.icon;
+function FlowDiagram() {
   return (
-    <div className="relative rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--accent)_/_0.12)] text-[hsl(var(--accent))]">
-          <Icon size={18} />
+    <div className="overflow-x-auto pb-2">
+      <div className="min-w-[900px]">
+        <div className="grid grid-cols-[1fr_34px_1fr_34px_1fr_34px_1fr] items-stretch gap-0">
+          {FLOW_STEPS.slice(0, 4).map((step, index) => (
+            <FlowDiagramItem key={step.title} step={step} index={index} showArrow={index < 3} />
+          ))}
         </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-[hsl(var(--accent))]">{String(index + 1).padStart(2, "0")}</span>
-            <h3 className="text-sm font-semibold text-[hsl(var(--text-primary))]">{step.title}</h3>
+        <div className="my-4 flex justify-end pr-[12.5%]">
+          <div className="flex items-center gap-2 text-[11px] text-[hsl(var(--text-tertiary))]">
+            <span className="h-px w-20 bg-[hsl(var(--border))]" />
+            <span>继续执行</span>
+            <span className="text-[hsl(var(--accent))]">↓</span>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-[hsl(var(--text-secondary))]">{step.desc}</p>
+        </div>
+        <div className="grid grid-cols-[1fr_34px_1fr_34px_1fr_34px_1fr] items-stretch gap-0">
+          {FLOW_STEPS.slice(4).map((step, idx) => {
+            const index = idx + 4;
+            return <FlowDiagramItem key={step.title} step={step} index={index} showArrow={idx < 3} />;
+          })}
         </div>
       </div>
     </div>
+  );
+}
+
+function FlowDiagramItem({
+  step,
+  index,
+  showArrow,
+}: {
+  step: typeof FLOW_STEPS[number];
+  index: number;
+  showArrow: boolean;
+}) {
+  const Icon = step.icon;
+  return (
+    <>
+      <div className="relative rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4 shadow-sm">
+        <div className="absolute -top-2 left-4 rounded-full bg-[hsl(var(--accent))] px-2 py-0.5 text-[10px] font-bold text-white">
+          {String(index + 1).padStart(2, "0")}
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--accent)_/_0.12)] text-[hsl(var(--accent))]">
+            <Icon size={19} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-[hsl(var(--text-primary))]">{step.title}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-[hsl(var(--text-secondary))]">{step.desc}</p>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg bg-[hsl(var(--bg-hover))] px-3 py-2 text-[11px] leading-relaxed text-[hsl(var(--text-tertiary))]">
+          注：{step.note}
+        </div>
+      </div>
+      {showArrow && (
+        <div className="flex items-center justify-center">
+          <div className="relative h-px w-full bg-[hsl(var(--border))]">
+            <span className="absolute -right-1.5 -top-[5px] text-[hsl(var(--border))]">▶</span>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -77,15 +124,11 @@ export default function AboutPage() {
       </Card>
 
       <Card>
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
+        <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
           <Wrench size={18} className="text-[hsl(var(--accent))]" />
           推荐使用流程
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {FLOW_STEPS.map((step, index) => (
-            <FlowStep key={step.title} step={step} index={index} />
-          ))}
-        </div>
+        <FlowDiagram />
       </Card>
 
       <Card>
