@@ -48,7 +48,7 @@ inspection-rust/
 │       ├── InspectionPage.tsx    # Batch creation, running, monitoring
 │       ├── ReportsPage.tsx       # AI analysis, reports, report templates
 │       ├── AiConfigPage.tsx      # (legacy, deprecated — AI config merged into SettingsPage)
-│       └── SettingsPage.tsx      # System settings + AI model config CRUD (integrated)
+│       └── SettingsPage.tsx      # AI model config CRUD (integrated)
 ├── src-tauri/                    # Rust backend
 │   ├── Cargo.toml
 │   ├── tauri.conf.json           # App config (1400x900, no devUrl)
@@ -66,8 +66,7 @@ inspection-rust/
 │   │   │   ├── inspections.rs    # Batch CRUD + run/pause/stop/restart/retry
 │   │   │   ├── reports.rs        # AI analysis, report generation, report templates
 │   │   │   ├── ai_config.rs      # AI model config CRUD + activate/deactivate
-│   │   │   ├── tools.rs           # Toolbox: scan hosts/ports/UDP, web check, SNMP v2c/v3, Zabbix agent
-│   │   │   └── settings.rs       # System settings
+│   │   │   └── tools.rs           # Toolbox: scan hosts/ports/UDP, web check, SNMP v2c/v3, Zabbix agent
 │   │   └── services/
 │   │       ├── crypto.rs         # Fernet encryption (password/API key)
 │   │       ├── inspection_runner.rs  # SSH execution via ssh2 (netmiko-style)
@@ -81,7 +80,7 @@ inspection-rust/
 │   │       ├── web_checker.rs    # HTTP/HTTPS status check, IP defaults to HTTP
 │   │       ├── snmp_checker.rs   # SNMP v2c + v3 USM (MD5/SHA1/SHA256 auth, DES/AES128 priv)
 │   │       └── zabbix_checker.rs # Zabbix agent passive mode detection (protocol frame)
-│   └── sql/001_init.sql          # 9 tables: devices, device_status_logs, inspection_templates, command_pool, inspection_batches, inspection_records, ai_model_configs, report_templates, system_settings
+│   └── sql/001_init.sql          # 8 tables: devices, device_status_logs, inspection_templates, command_pool, inspection_batches, inspection_records, ai_model_configs, report_templates
 ```
 
 ## Key Patterns

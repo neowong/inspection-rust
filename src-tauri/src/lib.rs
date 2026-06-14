@@ -234,10 +234,8 @@ pub fn run() {
             commands::tools::snmp_get,
             commands::tools::snmp_v3_get,
             commands::tools::check_zabbix_agent,
-            // Settings
-            commands::settings::get_settings,
-            commands::settings::update_settings,
-            // Stats & Health
+            // Stats
+
             get_stats,
         ])
         .run(tauri::generate_context!())
