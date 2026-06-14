@@ -128,14 +128,6 @@ export default function AboutPage() {
       </Card>
 
       <Card>
-        <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
-          <Wrench size={18} className="text-[hsl(var(--accent))]" />
-          推荐使用流程
-        </div>
-        <WorkflowSvg />
-      </Card>
-
-      <Card>
         <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
           <Heart size={18} className="text-[hsl(var(--danger))]" />
           支持作者
@@ -147,6 +139,14 @@ export default function AboutPage() {
           <DonatePlaceholder title="微信打赏" subtitle="待替换为微信收款码" />
           <DonatePlaceholder title="支付宝打赏" subtitle="待替换为支付宝收款码" />
         </div>
+      </Card>
+
+      <Card>
+        <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
+          <Wrench size={18} className="text-[hsl(var(--accent))]" />
+          推荐使用流程
+        </div>
+        <WorkflowSvg />
       </Card>
     </div>
   );
