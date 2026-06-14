@@ -40,6 +40,7 @@ coverage/
 # Runtime data and generated reports
 data/
 src-tauri/data/reports/
+release/
 
 # Stray files
 *.png

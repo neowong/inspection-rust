@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, FolderTree, Server, Play, Settings, ChevronLeft, FileSearch, FileText, Wrench } from "lucide-react";
+import { LayoutDashboard, FolderTree, Server, Play, Settings, ChevronLeft, FileSearch, FileText, Wrench, Info } from "lucide-react";
 
-type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings" | "about";
 
 interface NavItem {
   key: PageKey;
@@ -33,6 +33,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
     label: "系统",
     items: [
       { key: "settings",  label: "系统设置", path: "/settings",  icon: Settings },
+      { key: "about",     label: "关于",     path: "/about",     icon: Info },
     ],
   },
 ];
