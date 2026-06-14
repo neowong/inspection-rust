@@ -212,5 +212,27 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 13")?;
     }
 
+    if version < 14 {
+        // 报告模板瘦身：彻底移除 md/html 时代遗留列，仅保留 DOCX 在线模板所需字段
+        conn.execute_batch(
+            "ALTER TABLE report_templates RENAME TO report_templates_old;
+             CREATE TABLE report_templates (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name TEXT NOT NULL,
+                 vendor TEXT,
+                 is_default INTEGER NOT NULL DEFAULT 0,
+                 description TEXT DEFAULT '',
+                 config_json TEXT DEFAULT '',
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO report_templates (id, name, vendor, is_default, description, config_json, created_at, updated_at)
+                 SELECT id, name, vendor, is_default, description, config_json, created_at, updated_at
+                 FROM report_templates_old;
+             DROP TABLE report_templates_old;"
+        )?;
+        conn.execute_batch("PRAGMA user_version = 14")?;
+    }
+
     Ok(())
 }

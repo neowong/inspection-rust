@@ -5,7 +5,7 @@ interface StatBadgeProps {
 }
 
 export default function StatBadge({ label, value, color }: StatBadgeProps) {
-  const c = color.startsWith("text") ? `hsl(var(--${color}))` : `hsl(var(--${color}))`;
+  const c = `hsl(var(--${color}))`;
   const bg = color.startsWith("text") ? "bg-[hsl(var(--bg-hover))]" : `bg-[hsl(var(--${color})_/_0.1)]`;
   return (
     <div className={`rounded-lg ${bg} px-3 py-2 text-center`}>

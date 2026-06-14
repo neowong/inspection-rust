@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "./layouts/AppShell";
-import { useGlobalShortcuts } from "./hooks/useKeyboardShortcut";
 import DashboardPage from "./pages/DashboardPage";
 import DevicesPage from "./pages/DevicesPage";
 import TemplatesPage from "./pages/TemplatesPage";
@@ -11,7 +10,6 @@ import LogAnalysisPage from "./pages/LogAnalysisPage";
 import ToolsPage from "./pages/ToolsPage";
 
 export default function App() {
-  useGlobalShortcuts();
   return (
     <Routes>
       <Route element={<AppShell />}>

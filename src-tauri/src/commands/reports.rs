@@ -591,8 +591,8 @@ pub fn create_report_template(
         .unwrap_or_else(report_config::default_config_json);
 
     conn.execute(
-        "INSERT INTO report_templates (name, vendor, file_path, content, format, is_default, description, config_json, mode) \
-         VALUES (?1, ?2, '', '', 'docx', 0, ?3, ?4, 'visual')",
+        "INSERT INTO report_templates (name, vendor, is_default, description, config_json) \
+         VALUES (?1, ?2, 0, ?3, ?4)",
         rusqlite::params![data.name, data.vendor, description, config_json],
     ).map_err(|e| e.to_string())?;
 

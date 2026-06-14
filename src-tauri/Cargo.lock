@@ -1787,7 +1787,6 @@ dependencies = [
  "hmac",
  "indexmap 2.14.0",
  "md-5",
- "open",
  "parking_lot",
  "rand 0.8.6",
  "regex",
@@ -1809,7 +1808,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "uuid",
  "zip 2.4.2",
 ]
 

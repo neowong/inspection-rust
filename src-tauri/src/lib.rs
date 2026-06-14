@@ -5,15 +5,10 @@ pub mod services;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
-use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
 }
-
-/// Cached result of the last background AI health check.
-static LAST_AI_HEALTH: std::sync::Mutex<Option<services::ai_health::AiHealthResult>> =
-    std::sync::Mutex::new(None);
 
 impl AppState {
     pub fn new(db_path: &str) -> Self {
@@ -174,17 +169,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| {
-            // Background task: AI health check every 5 minutes (async reqwest, needs tokio)
-            let ai_db = app.state::<AppState>().db.clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                    poll_ai_health(&ai_db).await;
-                }
-            });
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // Devices
@@ -196,24 +181,17 @@ pub fn run() {
             commands::devices::batch_delete_devices,
             commands::devices::check_device_status,
             commands::devices::check_all_devices_status,
-            commands::devices::get_device_status_log,
             commands::devices::detect_device_model,
             // Templates
             commands::templates::list_templates,
-            commands::templates::get_template,
             commands::templates::create_template,
             commands::templates::update_template,
             commands::templates::delete_template,
-            commands::templates::batch_delete_templates,
-            commands::templates::auto_generate_template,
             // Command Pool
-            commands::templates::list_vendors,
             commands::templates::list_commands,
-            commands::templates::get_command,
             commands::templates::create_command,
             commands::templates::update_command,
             commands::templates::delete_command,
-            commands::templates::batch_delete_commands,
             // Batches (inspections)
             commands::inspections::list_batches,
             commands::inspections::create_batch,
@@ -224,17 +202,12 @@ pub fn run() {
             commands::inspections::restart_batch,
             commands::inspections::retry_device,
             commands::inspections::delete_batch,
-            commands::inspections::batch_delete_batches,
-            // Records
-            commands::inspections::delete_record,
-            commands::inspections::batch_delete_records,
             // Reports & AI
             commands::reports::get_record,
             commands::reports::analyze_record,
             commands::reports::analyze_batch,
             commands::reports::download_report,
             commands::reports::save_generated_file,
-            commands::reports::get_active_ai_config,
             // AI Config
             commands::ai_config::list_ai_configs,
             commands::ai_config::create_ai_config,
@@ -247,15 +220,11 @@ pub fn run() {
             commands::reports::create_report_template,
             commands::reports::update_report_template,
             commands::reports::delete_report_template,
-            commands::reports::batch_delete_report_templates,
-            commands::reports::list_recent_records,
             commands::reports::generate_docx_report,
             commands::reports::generate_batch_docx_zip,
             commands::reports::generate_batch_docx_combined,
             commands::reports::delete_record_report,
-            commands::reports::export_batch_csv,
             commands::reports::analyze_record_logs,
-            commands::reports::analyze_batch_logs,
             commands::reports::parse_log_text,
             // Tools
             commands::tools::scan_live_hosts,
@@ -270,9 +239,6 @@ pub fn run() {
             commands::settings::update_settings,
             // Stats & Health
             get_stats,
-            health_check,
-            check_ai_health,
-            get_ai_health_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -300,11 +266,6 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
         "pending_batch_count": pending_batch_count,
         "completed_batch_count": completed_batch_count,
     }))
-}
-
-#[tauri::command]
-fn health_check() -> serde_json::Value {
-    serde_json::json!({"status": "ok", "version": "3.0.0"})
 }
 
 /// Background poller: TCP-connect each device's SSH port in parallel and update status.
@@ -378,122 +339,6 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         online_count.load(std::sync::atomic::Ordering::Relaxed),
         offline_count.load(std::sync::atomic::Ordering::Relaxed)
     );
-}
-
-/// 查询激活的 AI 配置并解密 API Key，返回 (config, api_key, base_url)
-fn get_active_ai_config(
-    conn: &rusqlite::Connection,
-) -> Result<
-    Option<(crate::db::models::AiModelConfig, String, String)>,
-    String,
-> {
-    use crate::db::models::AiModelConfig;
-    use crate::services::crypto::CryptoService;
-
-    let config: Option<AiModelConfig> = crate::db::query::query_one(
-        conn,
-        "SELECT id, name, provider, model_id, api_key_encrypted, base_url, \
-         is_active, created_at, updated_at \
-         FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
-        &[],
-        |row| {
-            Ok(AiModelConfig {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                provider: row.get(2)?,
-                model_id: row.get(3)?,
-                api_key_encrypted: row.get(4)?,
-                base_url: row.get(5)?,
-                is_active: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-            })
-        },
-    )?;
-
-    match config {
-        Some(c) => {
-            let api_key = CryptoService::decrypt(&c.api_key_encrypted)?;
-            let base_url = c.base_url.clone().unwrap_or_default();
-            Ok(Some((c, api_key, base_url)))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Background task: check the active AI config's API health.
-async fn poll_ai_health(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
-    let config_data = {
-        let conn = match db.try_lock() {
-            Some(c) => c,
-            None => {
-                tracing::warn!("AI 健康检查跳过: DB 被锁定");
-                return;
-            }
-        };
-        match get_active_ai_config(&conn) {
-            Ok(Some(d)) => Some(d),
-            Ok(None) => {
-                tracing::debug!("AI 健康检查跳过: 无激活的 AI 配置");
-                if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-                    *cache = None;
-                }
-                return;
-            }
-            Err(e) => {
-                tracing::warn!("AI 健康检查跳过: {}", e);
-                return;
-            }
-        }
-    };
-
-    if let Some((config, api_key, base_url)) = config_data {
-        let result = services::ai_health::check_ai_health(
-            &config.provider,
-            &api_key,
-            &config.model_id,
-            &base_url,
-        )
-        .await;
-
-        if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-            *cache = Some(result);
-        }
-    }
-}
-
-/// Manually trigger an AI health check for the active config.
-#[tauri::command]
-async fn check_ai_health(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (config, api_key, base_url) = {
-        let conn = state.db.lock();
-        get_active_ai_config(&conn)?
-            .ok_or_else(|| "未找到激活的 AI 配置，请先在设置中配置并激活一个 AI 模型".to_string())?
-    };
-
-    let result = services::ai_health::check_ai_health(
-        &config.provider,
-        &api_key,
-        &config.model_id,
-        &base_url,
-    )
-    .await;
-
-    if let Ok(mut cache) = LAST_AI_HEALTH.lock() {
-        *cache = Some(result.clone());
-    }
-
-    Ok(serde_json::to_value(&result).map_err(|e| e.to_string())?)
-}
-
-/// Get the last cached AI health check result (from background poller).
-#[tauri::command]
-fn get_ai_health_status() -> Result<Option<serde_json::Value>, String> {
-    let cache = LAST_AI_HEALTH.lock().map_err(|e| e.to_string())?;
-    match &*cache {
-        Some(result) => Ok(Some(serde_json::to_value(result).map_err(|e| e.to_string())?)),
-        None => Ok(None),
-    }
 }
 
 /// Load optional config from `inspection.toml` next to the exe.

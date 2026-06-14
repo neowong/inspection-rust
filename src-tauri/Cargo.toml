@@ -23,13 +23,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-uuid = { version = "1", features = ["v4"] }
 fernet = "0.2"
 futures = "0.3"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 dirs = "6"
 parking_lot = "0.12"
-open = "5"
 regex = "1"
 toml = "0.8"
 docx-rs = "0.4"

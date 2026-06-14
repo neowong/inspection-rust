@@ -74,7 +74,6 @@ inspection-rust/
 │   │       ├── ai_inspection.rs  # AI analysis prompt + API call
 │   │       ├── report_config.rs  # DOCX report template config schema + command descriptions
 │   │       ├── docx_engine.rs    # DOCX report generator (code-built Word tables, static_info, batch zip/combined)
-│   │       ├── html_util.rs      # Shared html_escape utility
 │   │       ├── json_util.rs      # Shared JSON parse helpers (parse_json_map, parse_json_object)
 │   │       ├── template_generator.rs # Auto-generate templates from command pool
 │   │       ├── live_scanner.rs   # ICMP ping + TCP fallback(135/445) sweep, CIDR parsing, parallel scan

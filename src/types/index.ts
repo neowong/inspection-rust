@@ -120,15 +120,6 @@ export interface ReportTemplate {
   is_default: boolean;
   description: string;
   config_json: string;
-  // 以下字段为兼容旧 DB 列保留，新代码不再读写
-  file_path: string;
-  content: string;
-  format: string;
-  sample_data: string;
-  mode: string;
-  custom_css: string;
-  page_header: string;
-  page_footer: string;
   created_at: string;
   updated_at: string;
 }
