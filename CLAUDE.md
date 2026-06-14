@@ -46,9 +46,9 @@ inspection-rust/
 │       ├── DevicesPage.tsx       # Device CRUD + status check
 │       ├── TemplatesPage.tsx     # Inspection templates + command pool CRUD
 │       ├── InspectionPage.tsx    # Batch creation, running, monitoring
-│       ├── ReportsPage.tsx       # AI analysis, reports, report templates
-│       ├── AiConfigPage.tsx      # (legacy, deprecated — AI config merged into SettingsPage)
-│       └── SettingsPage.tsx      # AI model config CRUD (integrated)
+│       ├── ReportManagementPage.tsx # AI analysis, DOCX reports
+│       ├── SettingsPage.tsx      # AI model config CRUD (integrated)
+│       └── AboutPage.tsx         # Open-source about page, donation placeholders, SVG workflow
 ├── src-tauri/                    # Rust backend
 │   ├── Cargo.toml
 │   ├── tauri.conf.json           # App config (1400x900, no devUrl)

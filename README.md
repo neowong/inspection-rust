@@ -1,6 +1,6 @@
-# 网络设备巡检系统
+# OpenInspect 网络设备巡检系统
 
-基于 Rust + Tauri v2 的桌面端网络设备巡检工具，通过 SSH 连接网络设备执行巡检命令，调用 AI 分析结果并生成报告。
+OpenInspect 是基于 Rust + Tauri v2 的桌面端网络设备巡检工具，通过 SSH 连接网络设备执行巡检命令，调用 AI 分析结果并生成可编辑 DOCX 报告。
 
 ## 功能特性
 
@@ -11,6 +11,7 @@
 - **报告生成** — 生成可编辑 DOCX 报告，支持在线模板编辑、A4 实时预览、静态信息采集与批量导出
 - **工具箱** — 存活扫描、端口扫描、WEB 检测、SNMP v2c/v3、Zabbix Agent 探测
 - **日志分析** — 设备日志解析与分析
+- **关于页面** — 展示 OpenInspect 项目说明、SVG 使用流程图和打赏二维码占位
 
 ## 技术栈
 
@@ -62,7 +63,7 @@ npx tauri build          # 生产安装包 (.deb / .AppImage)
 ```
 inspection-rust/
 ├── src/                  # React 前端
-│   ├── pages/            # 7 个页面：仪表盘/工具箱/日志/设备/模板/巡检/报告/设置
+│   ├── pages/            # 页面：仪表盘/工具箱/日志/设备/模板/巡检/报告/设置/关于
 │   ├── components/       # 通用组件 (DataTable, Modal, Button 等)
 │   └── hooks/            # 自定义 Hooks
 ├── src-tauri/            # Rust 后端
@@ -74,4 +75,4 @@ inspection-rust/
 
 ## 许可证
 
-私有项目，未经授权禁止使用。
+开源许可证待补充。发布前请根据实际需要选择 MIT、Apache-2.0 或其它许可证。
