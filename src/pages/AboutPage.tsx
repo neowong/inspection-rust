@@ -1,81 +1,85 @@
-import { BrainCircuit, FileText, Heart, Network, Play, Server, TerminalSquare, Wrench } from "lucide-react";
+import { Heart, Network, Wrench } from "lucide-react";
 import Card from "../components/ui/Card";
 
-const FLOW_STEPS = [
-  { title: "配置 AI", desc: "设置 OpenAI / Anthropic / DeepSeek 等模型连接", note: "没有 AI 也能巡检；启用后可自动生成评判结论。", icon: BrainCircuit },
-  { title: "维护命令库", desc: "按厂商维护命令文本、分类和中文说明", note: "命令说明会成为报告中的“项目”名称。", icon: TerminalSquare },
-  { title: "设计报告模板", desc: "在线配置 DOCX 封面、表格列和页眉页脚", note: "右侧 A4 预览可实时查看报告排版效果。", icon: FileText },
-  { title: "创建巡检模板", desc: "选择巡检项和静态信息采集命令", note: "静态信息命令可提取 sysname、SN、型号等，但不进入报告明细。", icon: Network },
-  { title: "添加设备", desc: "录入设备 IP、厂商、SSH 凭据并绑定模板", note: "H3C 设备可自动检测型号、SN、出厂日期和 sysname。", icon: Server },
-  { title: "执行巡检", desc: "批量 SSH 执行命令并保存本次巡检快照", note: "巡检结果按设备保存，静态信息会同步为本次报告快照。", icon: Play },
-  { title: "AI 分析", desc: "对巡检输出生成状态、发现和建议", note: "AI 评判会整合到报告“评判结论”列。", icon: BrainCircuit },
-  { title: "导出 DOCX", desc: "生成单设备、ZIP 或合并 Word 报告", note: "DOCX 可继续编辑，适合交付、归档和二次整理。", icon: FileText },
-];
+function WorkflowSvg() {
+  const steps = [
+    ["01", "配置 AI", "设置 AI 模型连接", "可选步骤；启用后自动生成巡检评判。"],
+    ["02", "维护命令库", "录入厂商命令与中文说明", "命令说明会作为报告里的巡检项目名称。"],
+    ["03", "设计报告模板", "配置 DOCX 样式和列定义", "右侧 A4 预览用于确认最终报告版式。"],
+    ["04", "创建巡检模板", "选择巡检项与静态信息命令", "静态信息命令提取 sysname/SN/型号，不进报告明细。"],
+    ["05", "添加设备", "录入 IP、厂商、SSH 和模板", "设备可自动检测型号、SN、出厂日期和 sysname。"],
+    ["06", "执行巡检", "批量 SSH 执行命令", "保存命令输出和本次巡检静态信息快照。"],
+    ["07", "AI 分析", "生成状态、发现和建议", "评判内容会合并到报告的“评判结论”列。"],
+    ["08", "导出 DOCX", "生成 Word 巡检报告", "支持单设备、批量 ZIP 和合并 DOCX。"],
+  ];
 
-function FlowDiagram() {
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="min-w-[900px]">
-        <div className="grid grid-cols-[1fr_34px_1fr_34px_1fr_34px_1fr] items-stretch gap-0">
-          {FLOW_STEPS.slice(0, 4).map((step, index) => (
-            <FlowDiagramItem key={step.title} step={step} index={index} showArrow={index < 3} />
-          ))}
-        </div>
-        <div className="my-4 flex justify-end pr-[12.5%]">
-          <div className="flex items-center gap-2 text-[11px] text-[hsl(var(--text-tertiary))]">
-            <span className="h-px w-20 bg-[hsl(var(--border))]" />
-            <span>继续执行</span>
-            <span className="text-[hsl(var(--accent))]">↓</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-[1fr_34px_1fr_34px_1fr_34px_1fr] items-stretch gap-0">
-          {FLOW_STEPS.slice(4).map((step, idx) => {
-            const index = idx + 4;
-            return <FlowDiagramItem key={step.title} step={step} index={index} showArrow={idx < 3} />;
-          })}
-        </div>
-      </div>
+    <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-3">
+      <svg viewBox="0 0 980 900" className="min-w-[880px] w-full" role="img" aria-label="OpenInspect 使用流程图">
+        <defs>
+          <linearGradient id="flowNode" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#38BDF8" />
+            <stop offset="1" stopColor="#22C55E" />
+          </linearGradient>
+          <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+            <path d="M2,2 L10,6 L2,10 Z" fill="#64748B" />
+          </marker>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#020617" floodOpacity="0.16" />
+          </filter>
+        </defs>
+
+        <rect x="20" y="20" width="940" height="860" rx="22" fill="#F8FAFC" />
+        <text x="490" y="60" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="26" fontWeight="700" fill="#0F172A">
+          OpenInspect 使用流程
+        </text>
+        <text x="490" y="88" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="14" fill="#64748B">
+          从模板准备到批量巡检，再到 AI 分析和 DOCX 报告交付
+        </text>
+
+        {/* 主流程连线 */}
+        <path
+          d="M190 145 L190 780"
+          stroke="#94A3B8"
+          strokeWidth="3"
+          strokeDasharray="8 8"
+          markerEnd="url(#arrow)"
+          fill="none"
+        />
+
+        {steps.map(([no, title, desc, note], i) => {
+          const y = 130 + i * 90;
+          return (
+            <g key={no}>
+              {/* 节点 */}
+              <rect x="80" y={y} width="220" height="62" rx="16" fill="white" stroke="#CBD5E1" strokeWidth="1.5" filter="url(#shadow)" />
+              <circle cx="112" cy={y + 31} r="21" fill="url(#flowNode)" />
+              <text x="112" y={y + 36} textAnchor="middle" fontFamily="Inter, Arial, sans-serif" fontSize="13" fontWeight="700" fill="white">
+                {no}
+              </text>
+              <text x="145" y={y + 26} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="17" fontWeight="700" fill="#0F172A">
+                {title}
+              </text>
+              <text x="145" y={y + 48} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">
+                {desc}
+              </text>
+
+              {/* 注释连接线 */}
+              <path d={`M300 ${y + 31} L365 ${y + 31}`} stroke="#94A3B8" strokeWidth="1.5" markerEnd="url(#arrow)" fill="none" />
+
+              {/* 注释框 */}
+              <rect x="375" y={y + 5} width="520" height="52" rx="12" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.2" />
+              <text x="397" y={y + 28} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fontWeight="700" fill="#334155">
+                注释
+              </text>
+              <text x="397" y={y + 47} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">
+                {note}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
-  );
-}
-
-function FlowDiagramItem({
-  step,
-  index,
-  showArrow,
-}: {
-  step: typeof FLOW_STEPS[number];
-  index: number;
-  showArrow: boolean;
-}) {
-  const Icon = step.icon;
-  return (
-    <>
-      <div className="relative rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4 shadow-sm">
-        <div className="absolute -top-2 left-4 rounded-full bg-[hsl(var(--accent))] px-2 py-0.5 text-[10px] font-bold text-white">
-          {String(index + 1).padStart(2, "0")}
-        </div>
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--accent)_/_0.12)] text-[hsl(var(--accent))]">
-            <Icon size={19} />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-[hsl(var(--text-primary))]">{step.title}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-[hsl(var(--text-secondary))]">{step.desc}</p>
-          </div>
-        </div>
-        <div className="mt-3 rounded-lg bg-[hsl(var(--bg-hover))] px-3 py-2 text-[11px] leading-relaxed text-[hsl(var(--text-tertiary))]">
-          注：{step.note}
-        </div>
-      </div>
-      {showArrow && (
-        <div className="flex items-center justify-center">
-          <div className="relative h-px w-full bg-[hsl(var(--border))]">
-            <span className="absolute -right-1.5 -top-[5px] text-[hsl(var(--border))]">▶</span>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -128,7 +132,7 @@ export default function AboutPage() {
           <Wrench size={18} className="text-[hsl(var(--accent))]" />
           推荐使用流程
         </div>
-        <FlowDiagram />
+        <WorkflowSvg />
       </Card>
 
       <Card>
