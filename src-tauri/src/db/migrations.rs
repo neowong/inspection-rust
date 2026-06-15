@@ -234,5 +234,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("PRAGMA user_version = 14")?;
     }
 
+    if version < 15 {
+        // 报告最大输出行数已移动到报告模板配置中，删除旧 system_settings 表
+        conn.execute_batch("DROP TABLE IF EXISTS system_settings; PRAGMA user_version = 15")?;
+    }
+
     Ok(())
 }

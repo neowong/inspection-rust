@@ -280,16 +280,6 @@ pub struct ReportTemplateUpdate {
 }
 
 // ============================
-// 系统设置 (System Settings)
-// ============================
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SystemSettings {
-    pub id: i64,
-    pub report_max_output_lines: i64,
-}
-
-// ============================
 // 公共工具函数
 // ============================
 

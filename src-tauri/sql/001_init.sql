@@ -122,15 +122,6 @@ CREATE TABLE IF NOT EXISTS report_templates (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- 系统设置表（单行）
-CREATE TABLE IF NOT EXISTS system_settings (
-    id                    INTEGER PRIMARY KEY CHECK(id = 1),
-    report_max_output_lines INTEGER NOT NULL DEFAULT 100    -- 报告最大输出行数
-);
-
--- 插入默认系统设置
-INSERT OR IGNORE INTO system_settings (id, report_max_output_lines) VALUES (1, 100);
-
 -- ============================================================
 -- 索引
 -- ============================================================

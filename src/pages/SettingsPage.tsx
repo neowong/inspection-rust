@@ -10,10 +10,6 @@ import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 
-interface SystemSettings {
-  report_max_output_lines: number;
-}
-
 interface ConfigForm {
   name: string;
   provider: string;
@@ -29,11 +25,6 @@ const API_FORMATS = [
 ];
 
 export default function SettingsPage() {
-  // System settings state
-  const [reportMaxOutputLines, setReportMaxOutputLines] = useState(100);
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [settingsSaved, setSettingsSaved] = useState(false);
-
   // AI config state
   const [configs, setConfigs] = useState<AiModelConfig[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,32 +35,12 @@ export default function SettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
 
-  // Load system settings
-  useEffect(() => {
-    invoke<SystemSettings>("get_settings")
-      .then((s) => setReportMaxOutputLines(s.report_max_output_lines))
-      .catch(console.error);
-  }, []);
-
   // Load AI configs
   const loadConfigs = () => {
     invoke<AiModelConfig[]>("list_ai_configs").then(setConfigs).catch(console.error);
   };
 
   useEffect(() => { loadConfigs(); }, []);
-
-  // Save system settings
-  const handleSaveSettings = () => {
-    setSettingsLoading(true);
-    setSettingsSaved(false);
-    invoke<void>("update_settings", { reportMaxOutputLines })
-      .then(() => {
-        setSettingsSaved(true);
-        setTimeout(() => setSettingsSaved(false), 2000);
-      })
-      .catch(console.error)
-      .finally(() => setSettingsLoading(false));
-  };
 
   // AI config handlers
   const openAdd = () => {
@@ -144,36 +115,6 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">系统设置</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">配置系统运行参数和 AI 模型</p>
       </div>
-
-      {/* System Settings Section */}
-      <Card className="max-w-lg">
-        <h2 className="text-base font-semibold text-[hsl(var(--text-primary))] mb-4">基本设置</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-[hsl(var(--text-primary))] mb-1.5">
-              报告最大输出行数
-            </label>
-            <Input
-              type="number"
-              value={reportMaxOutputLines}
-              onChange={(e) => setReportMaxOutputLines(Number(e.target.value))}
-              min={10}
-              max={10000}
-            />
-            <p className="text-xs text-[hsl(var(--text-tertiary))] mt-1">
-              生成报告时每台设备命令输出的最大行数，超出部分将被截断
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={handleSaveSettings} loading={settingsLoading}>
-              保存设置
-            </Button>
-            {settingsSaved && (
-              <span className="text-sm text-[hsl(var(--success))]">设置已保存</span>
-            )}
-          </div>
-        </div>
-      </Card>
 
       {/* AI Config Section */}
       <Card>
