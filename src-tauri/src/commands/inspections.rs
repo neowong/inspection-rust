@@ -825,7 +825,8 @@ pub fn stop_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// 重启指定批次，重置所有失败/已停止的记录为 pending，批次状态重置为 pending。
+/// 重启指定批次，重置所有非 running/pending 的记录为 pending，批次状态重置为 pending。
+/// 支持对已完成批次重新巡检。
 #[tauri::command]
 pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
     let conn = state.db.lock();
@@ -840,11 +841,15 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
 
     let now = now_str();
 
-    // Reset failed/stopped records to "pending"
+    // Reset all non-running/pending records to "pending" (包括 completed/failed/stopped)
+    // 清除巡检输出、AI 分析结果和报告路径，回到初始状态
     conn.execute(
         "UPDATE inspection_records SET status = 'pending', error_message = NULL, \
-         command_outputs = '{}', static_info = '{}', completed_at = NULL, updated_at = ?1 \
-         WHERE batch_id = ?2 AND (status = 'failed' OR status = 'stopped')",
+         command_outputs = '{}', static_info = '{}', completed_at = NULL, \
+         ai_status = 'pending', ai_result = NULL, ai_analysis = NULL, \
+         ai_suggestions = NULL, command_judgments = NULL, summary_judgment = NULL, \
+         report_path = NULL, updated_at = ?1 \
+         WHERE batch_id = ?2 AND status NOT IN ('pending', 'running')",
         rusqlite::params![now, batch_id],
     )
     .map_err(|e| e.to_string())?;
@@ -858,6 +863,15 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
     .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// 重新巡检：重置记录后立即执行，无需再手动点"执行"。
+#[tauri::command]
+pub async fn restart_and_run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    // 1. 重置
+    restart_batch(batch_id, state.clone())?;
+    // 2. 立即执行
+    run_batch(batch_id, state).await
 }
 
 /// 重试单条巡检记录，重置为 pending 后立即重新执行 SSH 巡检。

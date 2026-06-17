@@ -200,6 +200,7 @@ pub fn run() {
             commands::inspections::pause_batch,
             commands::inspections::stop_batch,
             commands::inspections::restart_batch,
+            commands::inspections::restart_and_run_batch,
             commands::inspections::retry_device,
             commands::inspections::delete_batch,
             // Reports & AI

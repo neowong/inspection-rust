@@ -474,10 +474,6 @@ export default function DevicesPage() {
               <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Sysname（终端提示符）</label>
-            <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测，如 aHope" />
-          </div>
         </div>
       </Modal>
 

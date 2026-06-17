@@ -83,15 +83,10 @@ function WorkflowSvg() {
   );
 }
 
-function DonatePlaceholder({ title, subtitle }: { title: string; subtitle: string }) {
+function DonateQrCode({ title, subtitle, src }: { title: string; subtitle: string; src: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4 text-center">
-      <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-lg bg-[hsl(var(--bg-hover))] text-[hsl(var(--text-tertiary))]">
-        <div>
-          <div className="text-xs font-medium">二维码占位</div>
-          <div className="mt-1 text-[10px]">后续替换图片</div>
-        </div>
-      </div>
+    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4 text-center">
+      <img src={src} alt={title} className="mx-auto h-48 w-48 rounded-lg object-contain" />
       <div className="mt-3 text-sm font-medium text-[hsl(var(--text-primary))]">{title}</div>
       <div className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">{subtitle}</div>
     </div>
@@ -133,11 +128,11 @@ export default function AboutPage() {
           支持作者
         </div>
         <p className="mt-2 text-sm text-[hsl(var(--text-secondary))]">
-          如果这个项目对你的网络巡检工作有帮助，可以通过打赏支持后续维护。当前二维码为占位，后续可替换为正式收款码图片。
+          如果这个项目对你的网络巡检工作有帮助，可以通过扫码打赏支持后续维护。
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <DonatePlaceholder title="微信打赏" subtitle="待替换为微信收款码" />
-          <DonatePlaceholder title="支付宝打赏" subtitle="待替换为支付宝收款码" />
+          <DonateQrCode title="微信打赏" subtitle="扫码支持作者" src="/wx.png" />
+          <DonateQrCode title="支付宝打赏" subtitle="扫码支持作者" src="/zfb.png" />
         </div>
       </Card>
 

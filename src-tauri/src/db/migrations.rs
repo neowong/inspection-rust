@@ -239,5 +239,63 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         conn.execute_batch("DROP TABLE IF EXISTS system_settings; PRAGMA user_version = 15")?;
     }
 
+    if version < 16 {
+        // 内置 H3C 专用报告模板
+        let h3c_config = serde_json::json!({
+            "cover": {
+                "title": "H3C 网络设备巡检报告",
+                "subtitle": "运维巡检中心",
+                "logo_path": "",
+                "primary_color": "#0066CC"
+            },
+            "device_info": {
+                "enabled": true,
+                "layout": "two_column",
+                "fields": [
+                    { "key": "name",         "label": "设备名称",   "visible": true },
+                    { "key": "ip",           "label": "管理地址",   "visible": true },
+                    { "key": "vendor",       "label": "设备厂商",   "visible": true },
+                    { "key": "model",        "label": "设备型号",   "visible": true },
+                    { "key": "sn",           "label": "序列号",     "visible": true },
+                    { "key": "mfg_date",     "label": "出厂日期",   "visible": true },
+                    { "key": "inspect_time", "label": "巡检时间",   "visible": true }
+                ]
+            },
+            "command_table": {
+                "columns": [
+                    { "key": "seq",         "label": "序号",     "width": 6,  "visible": true },
+                    { "key": "item",        "label": "巡检项目", "width": 16, "visible": true },
+                    { "key": "output",      "label": "巡检内容", "width": 58, "visible": true },
+                    { "key": "ai_judgment", "label": "评判结论", "width": 20, "visible": true }
+                ],
+                "output_max_lines": 15
+            },
+            "summary": {
+                "enabled": true,
+                "title": "巡检总结",
+                "show_problem_table": true
+            },
+            "header": "H3C 设备巡检报告",
+            "footer": "第 {{page}} 页 / 共 {{total}} 页"
+        });
+        let h3c_config_str = serde_json::to_string(&h3c_config).unwrap_or_default();
+
+        // 检查是否已存在同名模板，避免重复插入
+        let exists: i64 = conn
+            .prepare("SELECT COUNT(*) FROM report_templates WHERE name = 'H3C 专用模板'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get(0)))
+            .unwrap_or(0);
+
+        if exists == 0 {
+            conn.execute(
+                "INSERT INTO report_templates (name, vendor, is_default, description, config_json) \
+                 VALUES ('H3C 专用模板', 'H3C', 0, 'H3C Comware 设备巡检报告模板，含序列号和出厂日期', ?1)",
+                rusqlite::params![h3c_config_str],
+            )?;
+        }
+
+        conn.execute_batch("PRAGMA user_version = 16")?;
+    }
+
     Ok(())
 }

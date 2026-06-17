@@ -80,6 +80,9 @@ async fn analyze_record_inner(
         .map_err(|e| e.to_string())?;
 
         let map = parse_command_outputs(&record.command_outputs)?;
+        if map.is_empty() {
+            return Err("该记录无命令输出，请先完成巡检".to_string());
+        }
         (map, record.device_id)
     };
 
@@ -150,12 +153,28 @@ async fn analyze_record_inner(
 
         if let Some(items_array) = items {
             let cmd_descs = report_config::load_command_descriptions(&conn);
+            let original_keys: Vec<&String> = command_outputs_map.keys().collect();
             for item in items_array {
-                if let Some(cmd) = item.get("command").and_then(|v| v.as_str()) {
+                if let Some(cmd_raw) = item.get("command").and_then(|v| v.as_str()) {
                     let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("?");
                     let finding = item.get("finding").and_then(|v| v.as_str()).unwrap_or("");
-                    let cmd_label = cmd_descs.get(cmd).map(|s| s.as_str()).unwrap_or(cmd);
+                    let cmd_label = cmd_descs.get(cmd_raw).map(|s| s.as_str()).unwrap_or(cmd_raw);
                     tracing::info!("  AI分析结果 [{}] {} → {} ({})", status, cmd_label, finding, record_id_owned);
+
+                    // 用原始命令 key 做匹配，避免 AI 返回的命令名与存储的 key 不一致
+                    let matched_key = original_keys.iter().find(|k| k.as_str() == cmd_raw)
+                        .or_else(|| {
+                            let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+                            let cmd_norm = norm(cmd_raw);
+                            original_keys.iter().find(|k| norm(k) == cmd_norm)
+                        })
+                        .or_else(|| {
+                            let cmd_lower = cmd_raw.to_lowercase();
+                            original_keys.iter().find(|k| k.to_lowercase().contains(&cmd_lower) || cmd_lower.contains(&k.to_lowercase()))
+                        })
+                        .map(|k| k.to_string());
+
+                    let store_key = matched_key.unwrap_or_else(|| cmd_raw.to_string());
 
                     let mut jdg = serde_json::Map::new();
                     jdg.insert("status".to_string(), serde_json::Value::String(status.to_string()));
@@ -168,7 +187,7 @@ async fn analyze_record_inner(
                             suggestions.push(suggestion.to_string());
                         }
                     }
-                    judgments.insert(cmd.to_string(), serde_json::Value::Object(jdg));
+                    judgments.insert(store_key, serde_json::Value::Object(jdg));
                 }
             }
         }
@@ -209,16 +228,31 @@ pub async fn analyze_record(
     analyze_record_inner(&*state, record_id).await
 }
 
+/// 分析批次内所有记录的 AI 结果。
+/// `force = true` 时重新分析已完成的记录（重新分析全部）。
 #[tauri::command]
 pub async fn analyze_batch(
-    batch_id: i64, state: State<'_, AppState>,
+    batch_id: i64, force: Option<bool>, state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
+    let force = force.unwrap_or(false);
     let record_ids: Vec<i64> = {
         let conn = state.db.lock();
-        let sql = format!(
-            "SELECT {} FROM inspection_records WHERE batch_id = ?1 AND ai_status != 'completed'",
-            RECORD_COLUMNS
-        );
+        let sql = if force {
+            // 强制模式：分析所有有命令输出的记录（包括已完成的）
+            format!(
+                "SELECT {} FROM inspection_records WHERE batch_id = ?1 \
+                 AND command_outputs IS NOT NULL AND command_outputs != '{{}}'",
+                RECORD_COLUMNS
+            )
+        } else {
+            // 普通模式：跳过已完成分析的记录，同时跳过无命令输出的记录
+            format!(
+                "SELECT {} FROM inspection_records WHERE batch_id = ?1 \
+                 AND ai_status != 'completed' \
+                 AND command_outputs IS NOT NULL AND command_outputs != '{{}}'",
+                RECORD_COLUMNS
+            )
+        };
         let records: Vec<InspectionRecord> =
             crate::db::query::query_all(&conn, &sql, rusqlite::params![batch_id], record_from_row)?;
         records.into_iter().map(|r| r.id).collect()

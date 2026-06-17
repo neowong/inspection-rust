@@ -33,7 +33,6 @@ export default function InspectionPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [retrying, setRetrying] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Record detail
   const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
@@ -78,21 +77,29 @@ export default function InspectionPage() {
   // ----- Batch actions -----
   const handleAction = (batchId: number, action: string) => {
     setActionLoading(batchId);
-    setErrorMsg(null);
     invoke(`${action}_batch`, { batchId })
       .then(() => {
         setActionLoading(null);
         loadBatches();
       })
-      .catch((e) => { setActionLoading(null); setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)); });
+      .catch((e) => { setActionLoading(null); console.error(typeof e === "string" ? e : JSON.stringify(e)); });
+  };
+
+  const handleRestartAndRun = (batchId: number) => {
+    setActionLoading(batchId);
+    invoke("restart_and_run_batch", { batchId })
+      .then(() => {
+        setActionLoading(null);
+        loadBatches();
+      })
+      .catch((e) => { setActionLoading(null); console.error(typeof e === "string" ? e : JSON.stringify(e)); });
   };
 
   const handleRetry = (recordId: number) => {
     setRetrying(recordId);
-    setErrorMsg(null);
     invoke("retry_device", { recordId })
       .then(() => { setRetrying(null); loadBatches(); })
-      .catch((e) => { setRetrying(null); setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)); });
+      .catch((e) => { setRetrying(null); console.error(typeof e === "string" ? e : JSON.stringify(e)); });
   };
 
   // ----- Record detail -----
@@ -101,7 +108,7 @@ export default function InspectionPage() {
     setRecordLoading(true);
     invoke<InspectionRecord>("get_record", { recordId: expandedRecordId })
       .then(setFullRecord)
-      .catch((e) => setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)))
+      .catch((e) => console.error(typeof e === "string" ? e : JSON.stringify(e)))
       .finally(() => setRecordLoading(false));
   }, [expandedRecordId]);
 
@@ -120,12 +127,10 @@ export default function InspectionPage() {
   const handleCreate = async () => {
     if (!batchForm.name.trim()) {
       triggerShake("name");
-      setErrorMsg("请输入批次名称");
       return;
     }
     if (batchForm.device_ids.length === 0) {
       triggerShake("devices");
-      setErrorMsg("请至少选择一个设备");
       return;
     }
     try {
@@ -139,7 +144,7 @@ export default function InspectionPage() {
       setModalOpen(false);
       loadBatches();
     } catch (e: any) {
-      setErrorMsg(typeof e === "string" ? e : JSON.stringify(e));
+      console.error(typeof e === "string" ? e : JSON.stringify(e));
     }
   };
 
@@ -197,6 +202,9 @@ export default function InspectionPage() {
                   {(b.status === "stopped" || b.status === "paused" || b.status === "failed") && (
                     <Button size="sm" variant="ghost" loading={actionLoading === b.id} onClick={() => handleAction(b.id, "restart")}>重启</Button>
                   )}
+                  {(b.status === "completed" || b.status === "partially_completed") && (
+                    <Button size="sm" variant="ghost" loading={actionLoading === b.id} onClick={() => handleRestartAndRun(b.id)}>重新巡检</Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(b.id)}>删除</Button>
                 </div>
               </div>
@@ -207,12 +215,6 @@ export default function InspectionPage() {
 
       {/* ── Right: Detail panel ── */}
       <div className="flex-1 overflow-y-auto space-y-4">
-        {errorMsg && (
-          <div className="p-3 bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] rounded-md text-sm text-[hsl(var(--danger))] flex items-start gap-2">
-            <span className="flex-1">{errorMsg}</span>
-            <button onClick={() => setErrorMsg(null)} className="text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))] shrink-0">×</button>
-          </div>
-        )}
 
         {!selectedBatch ? (
           <div className="flex items-center justify-center h-full text-[hsl(var(--text-tertiary))]">
@@ -253,16 +255,17 @@ export default function InspectionPage() {
                 <DataTable
                   columns={[
                     { key: "device", header:"设备", render: (r: any) => { const d = deviceMap.get(r.device_id); return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`; }},
-                    { key: "status", header:"状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+                    { key: "status", header:"巡检状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
                     { key: "progress", header:"详情", render: (r: any) => (r.status === "failed" && r.error_message) ? <span className="text-xs text-[hsl(var(--danger))]">{r.error_message}</span> : r.status === "running" ? <span className="text-xs text-[hsl(var(--warning))]">执行中...</span> : r.status === "completed" ? <span className="text-xs text-[hsl(var(--text-secondary))]">{r.completed_at?.slice(0, 19) || "已完成"}</span> : <span className="text-xs text-[hsl(var(--text-secondary))]">{r.status}</span> },
                     {
                       key: "actions", header:"操作", width: "w-24",
                       render: (r: any) => (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); setExpandedRecordId(r.id); }}>详情</Button>
-                          {(r.status === "failed" || r.status === "stopped") && (
-                            <Button variant="ghost" size="sm" loading={retrying === r.id} onClick={(e: any) => { e.stopPropagation(); handleRetry(r.id); }}>重试</Button>
-                          )}
+                          <Button variant="ghost" size="sm" loading={retrying === r.id}
+                            onClick={(e: any) => { e.stopPropagation(); handleRetry(r.id); setExpandedRecordId(r.id); }}>
+                            重新巡检
+                          </Button>
                         </div>
                       ),
                     },
@@ -285,9 +288,7 @@ export default function InspectionPage() {
                     记录详情 — {(() => { const d = deviceMap.get(fullRecord.device_id); return d ? `${d.name} (${d.ip})` : `#${fullRecord.device_id}`; })()}
                   </h3>
                   <div className="flex gap-1.5">
-                    {(fullRecord.status === "failed" || fullRecord.status === "stopped") && (
-                      <Button variant="ghost" size="sm" loading={retrying === fullRecord.id} onClick={() => handleRetry(fullRecord.id)}>重试</Button>
-                    )}
+                    <Button variant="ghost" size="sm" loading={retrying === fullRecord.id} onClick={() => handleRetry(fullRecord.id)}>重新巡检</Button>
                     <Button variant="ghost" size="sm" onClick={() => setExpandedRecordId(null)}>关闭</Button>
                   </div>
                 </div>
@@ -315,6 +316,14 @@ export default function InspectionPage() {
 
                 {fullRecord.report_path && (
                   <p className="text-xs text-[hsl(var(--text-secondary))] mt-3">报告已生成: <code className="text-[hsl(var(--accent))] bg-[hsl(var(--bg-hover))] px-1 rounded">{fullRecord.report_path}</code></p>
+                )}
+
+                {/* AI analysis result summary */}
+                {fullRecord.ai_status === "completed" && fullRecord.summary_judgment && (
+                  <div className="mt-3 p-2 rounded bg-[hsl(var(--bg-hover))] text-xs">
+                    <span className="font-medium text-[hsl(var(--text-secondary))]">AI 评判: </span>
+                    <span className="text-[hsl(var(--text-primary))]">{fullRecord.summary_judgment}</span>
+                  </div>
                 )}
               </Card>
             )}
@@ -367,7 +376,7 @@ export default function InspectionPage() {
           <Button variant="ghost" onClick={() => setConfirmDelete(null)}>取消</Button>
           <Button variant="danger" onClick={async () => {
             if (confirmDelete === null) return;
-            try { await invoke("delete_batch", { batchId: confirmDelete }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { setErrorMsg(typeof e === "string" ? e : JSON.stringify(e)); setConfirmDelete(null); }
+            try { await invoke("delete_batch", { batchId: confirmDelete }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(typeof e === "string" ? e : JSON.stringify(e)); setConfirmDelete(null); }
           }}>确认删除</Button>
         </div>
       </Modal>
