@@ -46,7 +46,7 @@ export default function DashboardPage() {
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">仪表盘</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">
-          网络设备巡检系统概览
+          AI巡检助手概览
         </p>
       </div>
 

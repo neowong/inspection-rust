@@ -1,5 +1,5 @@
 {
-  "productName": "网络设备巡检系统",
+  "productName": "AI巡检助手",
   "version": "3.0.0",
   "identifier": "com.inspection.rust",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "网络设备巡检系统",
+        "title": "AI巡检助手",
         "width": 1400,
         "height": 900,
         "minWidth": 1024,

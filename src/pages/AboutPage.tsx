@@ -15,7 +15,7 @@ function WorkflowSvg() {
 
   return (
     <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-3">
-      <svg viewBox="0 0 980 900" className="min-w-[880px] w-full" role="img" aria-label="OpenInspect 使用流程图">
+      <svg viewBox="0 0 980 900" className="min-w-[880px] w-full" role="img" aria-label="AI巡检助手 使用流程图">
         <defs>
           <linearGradient id="flowNode" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="#38BDF8" />
@@ -31,7 +31,7 @@ function WorkflowSvg() {
 
         <rect x="20" y="20" width="940" height="860" rx="22" fill="#F8FAFC" />
         <text x="490" y="60" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="26" fontWeight="700" fill="#0F172A">
-          OpenInspect 使用流程
+          AI巡检助手 使用流程
         </text>
         <text x="490" y="88" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="14" fill="#64748B">
           从模板准备到批量巡检，再到 AI 分析和 DOCX 报告交付
@@ -107,9 +107,9 @@ export default function AboutPage() {
             <Network size={30} />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-bold text-[hsl(var(--text-primary))]">OpenInspect</h2>
+            <h2 className="text-xl font-bold text-[hsl(var(--text-primary))]">AI巡检助手</h2>
             <p className="mt-1 text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
-              OpenInspect 是面向网络工程师的桌面巡检工具，用于集中管理网络设备、维护巡检命令模板、批量执行 SSH 巡检、调用 AI 生成评判结论，并输出可编辑的 DOCX 巡检报告。
+              AI巡检助手 是面向网络工程师的桌面巡检工具，用于集中管理网络设备、维护巡检命令模板、批量执行 SSH 巡检、调用 AI 生成评判结论，并输出可编辑的 DOCX 巡检报告。
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-[hsl(var(--text-secondary))]">
               <span className="rounded-full bg-[hsl(var(--bg-hover))] px-2 py-1">设备巡检</span>

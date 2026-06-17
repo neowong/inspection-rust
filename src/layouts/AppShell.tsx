@@ -70,13 +70,14 @@ export default function AppShell() {
         >
 
           {/* Brand */}
-          <div className={`flex items-center justify-center h-14 border-b px-2`}
+          <div className={`flex items-center h-14 border-b px-3 gap-2 ${collapsed ? "justify-center" : ""}`}
             style={{ borderColor: "hsl(var(--sidebar-hover))" }}>
             <img
-              src={collapsed ? "/open-inspection-mark.svg" : "/open-inspection-logo.svg"}
-              alt="OpenInspect"
-              className={collapsed ? "h-9 w-9 object-contain" : "max-h-10 max-w-full object-contain"}
+              src="/router.svg"
+              alt="AI巡检助手"
+              className="h-9 w-9 object-contain shrink-0"
             />
+            {!collapsed && <span className="text-base font-bold text-white truncate">AI巡检助手</span>}
           </div>
 
           {/* Nav groups */}
