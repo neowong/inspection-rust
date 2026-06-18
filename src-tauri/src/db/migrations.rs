@@ -46,7 +46,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
 
         // Update default template config (safe to run regardless)
         conn.execute_batch(
-            "UPDATE report_templates SET config_json = '{\"sections\":[{\"type\":\"title\",\"enabled\":true,\"label\":\"报告标题\",\"config\":{}},{\"type\":\"basic_info\",\"enabled\":true,\"label\":\"基本信息\",\"config\":{\"fields\":[\"device_name\",\"device_ip\",\"vendor\",\"model\",\"sn\",\"manufacturing_date\"]}},{{\"type\":\"inspection_results\",\"enabled\":true,\"label\":\"巡检结果\",\"config\":{\"show_output\":true,\"max_output_lines\":60}},{\"type\":\"ai_analysis\",\"enabled\":true,\"label\":\"AI 分析总结\",\"config\":{}},{\"type\":\"overall_assessment\",\"enabled\":true,\"label\":\"总体评估\",\"config\":{}}]}', mode = 'visual' WHERE is_default = 1 AND (config_json IS NULL OR config_json = '');"
+            "UPDATE report_templates SET config_json = '{\"sections\":[{\"type\":\"title\",\"enabled\":true,\"label\":\"报告标题\",\"config\":{}},{\"type\":\"basic_info\",\"enabled\":true,\"label\":\"基本信息\",\"config\":{\"fields\":[\"device_name\",\"device_ip\",\"vendor\",\"model\",\"sn\",\"manufacturing_date\"]}},{\"type\":\"inspection_results\",\"enabled\":true,\"label\":\"巡检结果\",\"config\":{\"show_output\":true,\"max_output_lines\":60}},{\"type\":\"ai_analysis\",\"enabled\":true,\"label\":\"AI 分析总结\",\"config\":{}},{\"type\":\"overall_assessment\",\"enabled\":true,\"label\":\"总体评估\",\"config\":{}}]}', mode = 'visual' WHERE is_default = 1 AND (config_json IS NULL OR config_json = '');"
         )?;
 
         conn.execute_batch("PRAGMA user_version = 5")?;
@@ -55,7 +55,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
     if version < 6 {
         // 添加设备 SN 和出厂日期字段
         let has_sn: bool = conn
-            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'serial_number'")
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'serial_number'",
+            )
             .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
             .map(|c| c > 0)
             .unwrap_or(false);
@@ -182,22 +184,35 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
     if version < 13 {
         // 巡检模板配置升级：command_ids → commands[{command_id,purpose,show_in_report,extract_fields}]
         let mut stmt = conn.prepare("SELECT id, config FROM inspection_templates")?;
-        let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
         let mut updates: Vec<(i64, String)> = Vec::new();
         for row in rows {
             let (id, config_opt) = row?;
-            let Some(config_str) = config_opt else { continue; };
-            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&config_str) else { continue; };
-            if value.get("commands").is_some() { continue; }
-            let Some(ids) = value.get("command_ids").and_then(|v| v.as_array()) else { continue; };
-            let commands: Vec<serde_json::Value> = ids.iter()
+            let Some(config_str) = config_opt else {
+                continue;
+            };
+            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&config_str) else {
+                continue;
+            };
+            if value.get("commands").is_some() {
+                continue;
+            }
+            let Some(ids) = value.get("command_ids").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            let commands: Vec<serde_json::Value> = ids
+                .iter()
                 .filter_map(|v| v.as_i64())
-                .map(|id| serde_json::json!({
-                    "command_id": id,
-                    "purpose": "inspection",
-                    "show_in_report": true,
-                    "extract_fields": [],
-                }))
+                .map(|id| {
+                    serde_json::json!({
+                        "command_id": id,
+                        "purpose": "inspection",
+                        "show_in_report": true,
+                        "extract_fields": [],
+                    })
+                })
                 .collect();
             value = serde_json::json!({ "commands": commands });
             updates.push((id, serde_json::to_string(&value)?));
@@ -295,6 +310,20 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
         }
 
         conn.execute_batch("PRAGMA user_version = 16")?;
+    }
+
+    // 飞塔 (FortiGate) 命令由 seed_data.rs 统一提供，不再在迁移中插入。
+    // 历史迁移 17 曾在此插入飞塔命令，但与 seed_data 重复，且会导致全新安装时
+    // seed_command_pool 误判“表非空”而跳过其他厂商种子数据。已移除。
+
+    if version < 17 {
+        // report_templates 补建索引：按 is_default / vendor 查询排序频繁（reports.rs 多处）。
+        // 全新安装已由 001_init.sql 建立，此处为升级库补建（IF NOT EXISTS 幂等）。
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_report_templates_is_default ON report_templates(is_default);
+             CREATE INDEX IF NOT EXISTS idx_report_templates_vendor ON report_templates(vendor);",
+        )?;
+        conn.execute_batch("PRAGMA user_version = 17")?;
     }
 
     Ok(())

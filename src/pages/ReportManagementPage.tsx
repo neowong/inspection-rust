@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InspectionRecord, Device } from "../types";
 import { parseCommandOutputs, parseAiResult } from "../lib/utils";
@@ -20,6 +20,8 @@ export default function ReportManagementPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
   const [devices, setDevices] = useState<Device[]>([]);
+  // 跟踪当前期望选中的批次 id，用于丢弃过期的 get_batch 响应（快速切换批次 / 轮询竞态）
+  const selectedIdRef = useRef<number | null>(null);
 
   // Selected record detail
   const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
@@ -57,22 +59,29 @@ export default function ReportManagementPage() {
   }, []);
 
   const selectBatch = async (batch: any) => {
+    selectedIdRef.current = batch.id;
     setSelectedBatch(batch);
     setExpandedRecordId(null);
     setFullRecord(null);
     setLogResult(null);
     try {
       const full: any = await invoke("get_batch", { batchId: batch.id });
+      // 用户可能在 await 期间切换了批次，丢弃过期响应避免指向错误批次
+      if (selectedIdRef.current !== batch.id) return;
       setSelectedBatch(full);
     } catch (e) { console.error(e); }
   };
 
   // Auto-refresh
   useEffect(() => {
+    const id = selectedBatch?.id;
     const timer = setInterval(() => {
       loadBatches();
-      if (selectedBatch?.id) {
-        invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
+      if (id) {
+        invoke<any>("get_batch", { batchId: id }).then((full) => {
+          // 仅当仍选中该批次时才更新，避免覆盖用户已切换到的新批次
+          if (selectedIdRef.current === id) setSelectedBatch(full);
+        }).catch(() => {});
       }
     }, 3000);
     return () => clearInterval(timer);
@@ -106,11 +115,38 @@ export default function ReportManagementPage() {
       .catch((e) => { setAnalyzing(null); console.error(String(e)); });
   };
 
-  const handleAnalyzeBatch = (batchId: number, force: boolean = false) => {
+  const handleAnalyzeBatch = async (batchId: number, force: boolean = false) => {
     setBatchAnalyzing(batchId);
-    invoke("analyze_batch", { batchId, force })
-      .then(() => { setBatchAnalyzing(null); refreshAfterMutation(expandedRecordId ?? undefined); })
-      .catch((e) => { setBatchAnalyzing(null); console.error(String(e)); });
+    try {
+      await invoke("analyze_batch", { batchId, force });
+      refreshAfterMutation(expandedRecordId ?? undefined);
+    } catch (e) {
+      console.error(String(e));
+    } finally {
+      setBatchAnalyzing(null);
+    }
+  };
+
+  const handleAnalyzeAndGenerateCombined = async () => {
+    if (!selectedBatch) return;
+    setBatchAnalyzing(selectedBatch.id);
+    setBatchGenerating("combined");
+    try {
+      await invoke("analyze_batch", { batchId: selectedBatch.id, force: true });
+      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
+      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
+      await invoke("save_generated_file", {
+        sourcePath: path,
+        suggestedName: `${safeName}-重新分析合并报告.docx`,
+        extension: "docx",
+      });
+      refreshAfterMutation(expandedRecordId ?? undefined);
+    } catch (e) {
+      console.error(String(e));
+    } finally {
+      setBatchAnalyzing(null);
+      setBatchGenerating("");
+    }
   };
 
   // ----- DOCX Generation -----
@@ -196,8 +232,14 @@ export default function ReportManagementPage() {
   const parsedOutputs = useMemo(() => parseCommandOutputs(fullRecord?.command_outputs), [fullRecord?.command_outputs]);
   const aiResult = useMemo(() => parseAiResult(fullRecord?.ai_result), [fullRecord?.ai_result]);
 
-  const hasCompletedRecords = (selectedBatch?.records || []).some((r: any) => r.status === "completed");
-  const hasAnalyzedRecords = (selectedBatch?.records || []).some((r: any) => r.ai_status === "completed");
+  const hasCompletedRecords = useMemo(
+    () => (selectedBatch?.records || []).some((r: any) => r.status === "completed"),
+    [selectedBatch?.records]
+  );
+  const hasAnalyzedRecords = useMemo(
+    () => (selectedBatch?.records || []).some((r: any) => r.ai_status === "completed"),
+    [selectedBatch?.records]
+  );
 
   const recordColumns = [
     { key: "device", header: "设备", render: (r: any) => {
@@ -289,10 +331,16 @@ export default function ReportManagementPage() {
                 <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `批次 #${selectedBatch.id}`}</h2>
                 {hasCompletedRecords && (
                   <>
-                    <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id}
+                    <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id && batchGenerating !== "combined"}
                       onClick={() => handleAnalyzeBatch(selectedBatch.id, hasAnalyzedRecords)}>
                       {hasAnalyzedRecords ? "重新分析全部" : "AI 分析全部"}
                     </Button>
+                    {hasAnalyzedRecords && (
+                      <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id || batchGenerating === "combined"}
+                        onClick={handleAnalyzeAndGenerateCombined}>
+                        重新分析并生成合并报告
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" loading={batchGenerating === "zip"}
                       onClick={handleBatchZip}>下载 ZIP</Button>
                     <Button size="sm" variant="ghost" loading={batchGenerating === "combined"}

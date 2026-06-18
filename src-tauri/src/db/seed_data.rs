@@ -1,20 +1,11 @@
 use rusqlite::{params, Connection};
 
-/// 种子命令数据（89条，H3C 24 + 华为 25 + 思科 22 + 锐捷 18）
-/// 插入种子命令数据
+/// 种子命令数据（含 H3C/华为/思科/锐捷/飞塔常用巡检命令）
 ///
-/// 仅当 `command_pool` 表为空时执行插入。
-/// 返回插入的行数，若表非空则返回 `Ok(0)`。
+/// 使用 `INSERT OR IGNORE` 幂等插入：依赖 `command_pool` 的 `UNIQUE(vendor, command)` 约束，
+/// 已存在的命令会被忽略，新增的种子命令会自动补充。每次启动都会执行，确保种子数据完整。
+/// 返回实际新插入的行数。
 pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
-    // 检查命令池是否为空
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM command_pool", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-
-    if count > 0 {
-        return Ok(0);
-    }
-
     let commands: Vec<(&str, &str, &str, &str)> = vec![
         // ==================== H3C (Comware V5/V7，已真机验证) ====================
         ("H3C", "display clock", "查看系统时钟", "clock"),
@@ -112,19 +103,41 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("锐捷", "show version", "查看系统版本", "version"),
         ("锐捷", "show mac-address-table", "查看 MAC 地址表", "vlan"),
         ("锐捷", "show vlan", "查看 VLAN 信息", "vlan"),
+        // ==================== 飞塔 (Fortinet FortiGate) ====================
+        ("飞塔", "get system status", "系统状态/主机名/型号/序列号", "version"),
+        ("飞塔", "get system performance status", "查看性能状态", "cpu"),
+        ("飞塔", "diagnose sys top-summary", "查看进程与资源摘要", "cpu"),
+        ("飞塔", "get hardware status", "查看硬件状态", "hardware"),
+        ("飞塔", "diagnose hardware sysinfo memory", "查看内存信息", "memory"),
+        ("飞塔", "diagnose hardware sysinfo shm", "查看共享内存信息", "memory"),
+        ("飞塔", "get system interface physical", "查看物理接口", "interface"),
+        ("飞塔", "diagnose hardware deviceinfo nic", "查看网卡硬件信息", "interface"),
+        ("飞塔", "get router info routing-table all", "查看路由表", "protocol"),
+        ("飞塔", "diagnose ip arp list", "查看 ARP 表", "protocol"),
+        ("飞塔", "diagnose sys session stat", "查看会话统计", "protocol"),
+        ("飞塔", "get firewall policy", "查看防火墙策略", "security"),
+        ("飞塔", "diagnose firewall iprope show", "查看策略匹配结构", "security"),
+        ("飞塔", "get vpn ipsec tunnel summary", "查看 IPsec VPN 摘要", "vpn"),
+        ("飞塔", "diagnose vpn tunnel list", "查看 VPN 隧道详情", "vpn"),
+        ("飞塔", "get system ha status", "查看 HA 状态", "ha"),
+        ("飞塔", "execute log display", "查看系统日志", "log"),
+        ("飞塔", "diagnose debug crashlog read", "查看崩溃日志", "log"),
     ];
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
+    let inserted = {
         let mut stmt = tx
-            .prepare("INSERT INTO command_pool (vendor, command, description, category) VALUES (?1, ?2, ?3, ?4)")
+            .prepare("INSERT OR IGNORE INTO command_pool (vendor, command, description, category) VALUES (?1, ?2, ?3, ?4)")
             .map_err(|e| e.to_string())?;
+        let mut inserted = 0usize;
         for (vendor, command, description, category) in &commands {
-            stmt.execute(params![vendor, command, description, category])
+            let rows = stmt
+                .execute(params![vendor, command, description, category])
                 .map_err(|e| format!("插入种子命令失败 ({}): {}", command, e))?;
+            inserted += rows;
         }
-    }
+        inserted
+    };
     tx.commit().map_err(|e| e.to_string())?;
-
-    Ok(commands.len())
+    Ok(inserted)
 }

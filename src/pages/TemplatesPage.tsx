@@ -939,7 +939,9 @@ function ReportTemplateEditor({
           实时预览（示例数据，按 A4 比例缩放展示）
         </div>
         <div className="flex-1 overflow-auto bg-[hsl(var(--bg-app))] border border-t-0 border-[hsl(var(--border))] rounded-b-md p-4">
-          <DocxPreview config={form.config} />
+          <div className="min-w-full flex justify-center">
+            <DocxPreview config={form.config} />
+          </div>
         </div>
       </div>
     </div>
@@ -1083,22 +1085,22 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
   const problems = SAMPLE_ROWS.filter((r) => r.status === "warning" || r.status === "critical");
 
   return (
-    <div
-      style={{
-        width: "210mm",
-        minHeight: "297mm",
-        margin: "0 auto",
-        background: "white",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-        padding: "20mm 18mm",
-        boxSizing: "border-box",
-        color: "#222",
-        fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
-        fontSize: 11,
-        transformOrigin: "top center",
-        transform: "scale(0.78)",
-      }}
-    >
+    <div style={{ width: "min(100%, 210mm)", display: "flex", justifyContent: "center" }}>
+      <div
+        style={{
+          width: "210mm",
+          minHeight: "297mm",
+          background: "white",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+          padding: "20mm 18mm",
+          boxSizing: "border-box",
+          color: "#222",
+          fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
+          fontSize: 11,
+          transformOrigin: "top center",
+          transform: "scale(min(0.78, calc((100vw - 520px) / 794)))",
+        }}
+      >
       {/* 页眉 */}
       {headerText.trim() && (
         <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderBottom: "1px solid #ddd", paddingBottom: 4, marginBottom: 12 }}>
@@ -1252,20 +1254,21 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
         </div>
       )}
 
-      {/* 页脚 */}
-      {footerText.trim() && (
-        <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderTop: "1px solid #ddd", paddingTop: 4, marginTop: 24 }}>
-          {footerText}
-        </div>
-      )}
+        {/* 页脚 */}
+        {footerText.trim() && (
+          <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderTop: "1px solid #ddd", paddingTop: 4, marginTop: 24 }}>
+            {footerText}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function SectionHeading({ text, color: _color }: { text: string; color: string }) {
+function SectionHeading({ text, color }: { text: string; color: string }) {
   return (
     <div style={{
-      fontSize: 14, fontWeight: 700, color: "#222",
+      fontSize: 14, fontWeight: 700, color,
       marginTop: 14, marginBottom: 8,
       lineHeight: 1.5,
       fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
@@ -1279,8 +1282,8 @@ function SectionHeading({ text, color: _color }: { text: string; color: string }
 
 const CATEGORY_LABELS: Record<string, string> = {
   version: "版本信息", clock: "系统时钟", cpu: "CPU", memory: "内存",
-  hardware: "硬件信息", interface: "接口", vlan: "VLAN", log: "日志",
-  protocol: "协议", wireless: "无线", general: "通用",
+  hardware: "硬件信息", storage: "存储", interface: "接口", vlan: "VLAN", log: "日志",
+  protocol: "协议", vpn: "VPN", ha: "高可用", security: "安全策略", wireless: "无线", general: "通用",
 };
 
 function CommandList({

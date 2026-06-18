@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,22 +16,18 @@ pub struct SSHSessionSource {
 /// 网络设备常用的旧版 SSH 算法配置
 /// 确保能连接运行老旧固件的 H3C/华为/思科/锐捷设备
 mod legacy_algorithms {
-    /// 密钥交换算法（按优先级排列）
-    /// 使用 + 前缀追加到默认列表，确保兼容老旧设备
-    pub const KEX: &str = "+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1";
+    /// 密钥交换算法（按优先级排列）。libssh2 的 method_pref 不支持 OpenSSH 的 `+` 追加语法，
+    /// 这里只在默认现代算法握手失败后作为旧设备回退列表使用。
+    pub const KEX: &str = "diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1";
 
     /// 加密算法
-    /// 使用 + 前缀追加旧加密算法
-    pub const CIPHERS: &str = "+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc";
+    pub const CIPHERS: &str = "aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc";
 
     /// 消息认证码（MAC）算法
-    /// 使用 + 前缀追加旧 MAC 算法
-    pub const MACS: &str = "+hmac-sha1,hmac-sha1-96,hmac-md5";
+    pub const MACS: &str = "hmac-sha1,hmac-sha1-96,hmac-md5";
 
     /// 主机密钥算法
-    /// 使用 + 前缀追加旧主机密钥算法（ssh-dss 在 OpenSSH 10.x 已移除）
-    pub const HOST_KEY: &str = "+ssh-rsa";
-
+    pub const HOST_KEY: &str = "ssh-rsa";
 }
 
 /// Execute commands on a network device via SSH using libssh2.
@@ -41,12 +38,27 @@ pub fn run_commands(
     commands: &[String],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
+    run_commands_with_cancel(source, vendor, commands, on_progress, None)
+}
+
+/// Execute commands with an optional cancellation flag.
+pub fn run_commands_with_cancel(
+    source: &SSHSessionSource,
+    vendor: &str,
+    commands: &[String],
+    on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<indexmap::IndexMap<String, String>, String> {
     tracing::info!(
         "SSH 开始: {}@{}:{}, 厂商={}, 命令数={}",
-        source.username, source.host, source.port, vendor, commands.len()
+        source.username,
+        source.host,
+        source.port,
+        vendor,
+        commands.len()
     );
 
-    run_commands_libssh2(source, vendor, commands, on_progress)
+    run_commands_libssh2(source, vendor, commands, on_progress, cancel)
 }
 
 /// netmiko-style: connect to device, open ONE persistent shell channel,
@@ -58,25 +70,57 @@ fn run_commands_libssh2(
     vendor: &str,
     commands: &[String],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    cancel: Option<Arc<AtomicBool>>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
+    if is_cancelled(&cancel) {
+        return Err("巡检已停止".to_string());
+    }
+
     // 1. TCP connect + SSH handshake + authenticate
     let session = connect_session(source)?;
 
+    if is_cancelled(&cancel) {
+        return Err("巡检已停止".to_string());
+    }
+
     // 2. Open interactive shell, find prompt, disable paging
-    let (prompt, mut channel) = open_shell_session(&session, vendor, source.password.as_str(), &source.host)?;
+    let (prompt, mut channel) = open_shell_session(
+        &session,
+        vendor,
+        source.password.as_str(),
+        &source.host,
+        cancel.clone(),
+    )?;
 
     // 3. Execute each command through the persistent shell
     let host = &source.host;
     let mut results = indexmap::IndexMap::new();
     let mut consecutive_timeouts = 0u32;
     for (i, cmd) in commands.iter().enumerate() {
+        if is_cancelled(&cancel) {
+            tracing::info!(
+                "[{}] 收到停止信号，跳过剩余 {} 条命令",
+                host,
+                commands.len() - i
+            );
+            break;
+        }
+
         if let Some(ref progress) = on_progress {
             if let Ok(mut guard) = progress.lock() {
                 *guard = format!("[{}/{}] {}", i + 1, commands.len(), cmd);
             }
         }
 
-        match send_command(&mut channel, cmd, &prompt, source.password.as_str(), host, vendor) {
+        match send_command(
+            &mut channel,
+            cmd,
+            &prompt,
+            source.password.as_str(),
+            host,
+            vendor,
+            cancel.as_deref(),
+        ) {
             Ok(output) => {
                 consecutive_timeouts = 0;
                 if let Some(error_msg) = check_unrecognized_command(&output) {
@@ -93,15 +137,27 @@ fn run_commands_libssh2(
                 if is_timeout {
                     consecutive_timeouts += 1;
                     if consecutive_timeouts >= 2 {
-                        tracing::error!("[{}] 连续 {} 次超时，放弃剩余 {} 条命令", host, consecutive_timeouts, commands.len() - i - 1);
+                        tracing::error!(
+                            "[{}] 连续 {} 次超时，放弃剩余 {} 条命令",
+                            host,
+                            consecutive_timeouts,
+                            commands.len() - i - 1
+                        );
                         for skipped in &commands[i + 1..] {
-                            results.insert(format!("{} [跳过]", skipped), "设备无响应，已跳过".to_string());
+                            results.insert(
+                                format!("{} [跳过]", skipped),
+                                "设备无响应，已跳过".to_string(),
+                            );
                         }
                         break;
                     }
                 }
             }
         }
+    }
+
+    if is_cancelled(&cancel) {
+        return Err("巡检已停止".to_string());
     }
 
     // 4. Cleanup — send exit and close
@@ -112,12 +168,32 @@ fn run_commands_libssh2(
     Ok(results)
 }
 
+fn is_cancelled(cancel: &Option<Arc<AtomicBool>>) -> bool {
+    cancel
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+}
+
 // ---------------------------------------------------------------------------
 // Session management
 // ---------------------------------------------------------------------------
 
 /// Establish TCP connection, SSH handshake, and password authentication.
 pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
+    match connect_session_with_mode(source, false) {
+        Ok(session) => Ok(session),
+        Err(default_err) => {
+            tracing::warn!(
+                "SSH 默认算法握手失败: {}，尝试旧算法兼容模式",
+                default_err
+            );
+            connect_session_with_mode(source, true)
+                .map_err(|legacy_err| format!("SSH握手失败: 默认算法失败: {}; 旧算法回退失败: {}", default_err, legacy_err))
+        }
+    }
+}
+
+fn connect_session_with_mode(source: &SSHSessionSource, legacy: bool) -> Result<Session, String> {
     let addr = format!("{}:{}", source.host, source.port)
         .to_socket_addrs()
         .map_err(|e| format!("地址解析失败: {}", e))?
@@ -127,23 +203,24 @@ pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
     let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(10))
         .map_err(|e| format!("TCP连接失败(10s超时): {}", e))?;
 
-    let mut session = Session::new()
-        .map_err(|e| format!("创建SSH会话失败: {}", e))?;
+    let mut session = Session::new().map_err(|e| format!("创建SSH会话失败: {}", e))?;
 
     session.set_banner("SSH-2.0-OpenSSH_8.0").ok();
 
-    let _ = session.method_pref(ssh2::MethodType::Kex, legacy_algorithms::KEX);
-    let _ = session.method_pref(ssh2::MethodType::CryptCs, legacy_algorithms::CIPHERS);
-    let _ = session.method_pref(ssh2::MethodType::CryptSc, legacy_algorithms::CIPHERS);
-    let _ = session.method_pref(ssh2::MethodType::MacCs, legacy_algorithms::MACS);
-    let _ = session.method_pref(ssh2::MethodType::MacSc, legacy_algorithms::MACS);
-    let _ = session.method_pref(ssh2::MethodType::HostKey, legacy_algorithms::HOST_KEY);
+    if legacy {
+        let _ = session.method_pref(ssh2::MethodType::Kex, legacy_algorithms::KEX);
+        let _ = session.method_pref(ssh2::MethodType::CryptCs, legacy_algorithms::CIPHERS);
+        let _ = session.method_pref(ssh2::MethodType::CryptSc, legacy_algorithms::CIPHERS);
+        let _ = session.method_pref(ssh2::MethodType::MacCs, legacy_algorithms::MACS);
+        let _ = session.method_pref(ssh2::MethodType::MacSc, legacy_algorithms::MACS);
+        let _ = session.method_pref(ssh2::MethodType::HostKey, legacy_algorithms::HOST_KEY);
+    }
 
     session.set_tcp_stream(tcp);
 
     session
         .handshake()
-        .map_err(|e| format!("SSH握手失败(可能需要启用旧算法): {}", e))?;
+        .map_err(|e| format!("SSH握手失败({}算法): {}", if legacy { "旧" } else { "默认" }, e))?;
 
     session
         .userauth_password(&source.username, &source.password)
@@ -153,7 +230,12 @@ pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
         return Err("SSH认证未通过".to_string());
     }
 
-    tracing::info!("SSH 认证成功: {}@{}", source.username, source.host);
+    tracing::info!(
+        "SSH 认证成功: {}@{} ({})",
+        source.username,
+        source.host,
+        if legacy { "旧算法兼容" } else { "默认算法" }
+    );
     Ok(session)
 }
 
@@ -165,6 +247,7 @@ pub fn open_shell_session<'s>(
     vendor: &str,
     password: &str,
     host: &str,
+    cancel: Option<Arc<AtomicBool>>,
 ) -> Result<(String, ssh2::Channel), String> {
     let mut channel = session
         .channel_session()
@@ -181,14 +264,26 @@ pub fn open_shell_session<'s>(
     // Switch to non-blocking for prompt detection
     session.set_blocking(false);
 
-    let (prompt, full_prompt) = find_prompt(&mut channel)?;
+    let (prompt, full_prompt) = find_prompt(&mut channel, cancel.as_deref())?;
     tracing::info!("检测到设备提示符: {:?}", full_prompt.trim());
 
+    if is_cancelled(&cancel) {
+        return Err("巡检已停止".to_string());
+    }
+
     // Disable paging — must succeed; without it, subsequent commands
-    // will hang at "---- More ----" pagination prompts.
-    if let Some(disable_cmd) = get_disable_paging_cmd(vendor) {
-        send_command(&mut channel, disable_cmd, &prompt, password, host, vendor)
-            .map_err(|e| format!("分页禁用命令 '{}' 失败: {}", disable_cmd, e))?;
+    // will hang at pagination prompts.
+    for disable_cmd in get_disable_paging_cmds(vendor) {
+        send_command(
+            &mut channel,
+            disable_cmd,
+            &prompt,
+            password,
+            host,
+            vendor,
+            cancel.as_deref(),
+        )
+        .map_err(|e| format!("分页禁用命令 '{}' 失败: {}", disable_cmd, e))?;
         tracing::info!("[{}] 已发送分页禁用命令: {}", host, disable_cmd);
     }
 
@@ -203,7 +298,10 @@ pub fn open_shell_session<'s>(
 /// then continue draining until the channel is silent to ensure
 /// all login banners and MOTD are fully consumed.
 /// Timeout: 15 seconds.
-fn find_prompt(channel: &mut ssh2::Channel) -> Result<(String, String), String> {
+fn find_prompt(
+    channel: &mut ssh2::Channel,
+    cancel: Option<&AtomicBool>,
+) -> Result<(String, String), String> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(15);
     let mut buffer = String::new();
@@ -214,6 +312,10 @@ fn find_prompt(channel: &mut ssh2::Channel) -> Result<(String, String), String> 
     const SILENT_THRESHOLD: u32 = 5; // 5 consecutive WouldBlocks (~500ms of silence)
 
     loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err("巡检已停止".to_string());
+        }
+
         if start.elapsed() > timeout {
             return Err("等待设备提示符超时（15秒）".to_string());
         }
@@ -279,10 +381,7 @@ fn last_non_empty_line(buffer: &str) -> Option<String> {
 /// Extract the base prompt from buffer.
 /// Strips leading control characters and trailing terminator characters.
 fn extract_prompt(buffer: &str) -> Option<String> {
-    let last = buffer
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .last()?;
+    let last = buffer.lines().filter(|l| !l.trim().is_empty()).last()?;
 
     let trimmed = strip_ansi(last).trim().to_string();
     let cleaned: String = trimmed.chars().skip_while(|c| c.is_control()).collect();
@@ -301,19 +400,23 @@ fn extract_prompt(buffer: &str) -> Option<String> {
 /// prompt for this vendor. Uses vendor-specific patterns.
 fn line_looks_like_prompt(line: &str, vendor: &str) -> bool {
     let line = line.trim();
-    if line.is_empty() { return false; }
+    if line.is_empty() {
+        return false;
+    }
     match vendor.to_lowercase().as_str() {
         // H3C/Huawei: <hostname> or [hostname]
         "h3c" | "华三" | "huawei" | "华为" => {
             (line.starts_with('<') && line.ends_with('>'))
                 || (line.starts_with('[') && line.ends_with(']'))
         }
-        // Cisco/Ruijie: hostname# or hostname>
-        "cisco" | "思科" | "ruijie" | "锐捷" => {
+        // Cisco/Ruijie/FortiGate: hostname# or hostname>
+        "cisco" | "思科" | "ruijie" | "锐捷" | "fortinet" | "fortigate" | "飞塔" => {
             line.ends_with('#') || line.ends_with('>')
         }
         // Fallback: any common terminator
-        _ => line.ends_with('>') || line.ends_with('#') || line.ends_with(']') || line.ends_with('$'),
+        _ => {
+            line.ends_with('>') || line.ends_with('#') || line.ends_with(']') || line.ends_with('$')
+        }
     }
 }
 
@@ -349,6 +452,7 @@ fn read_until_prompt(
     host: &str,
     cmd: &str,
     vendor: &str,
+    cancel: Option<&AtomicBool>,
 ) -> Result<String, String> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(15);
@@ -357,10 +461,25 @@ fn read_until_prompt(
     let mut password_sent = false;
 
     loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err("巡检已停止".to_string());
+        }
+
         if start.elapsed() > timeout {
             let cleaned = strip_ansi(&output);
-            let last_line = cleaned.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("(none)");
-            let tail: String = output.chars().rev().take(120).collect::<String>().chars().rev().collect();
+            let last_line = cleaned
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .last()
+                .unwrap_or("(none)");
+            let tail: String = output
+                .chars()
+                .rev()
+                .take(120)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
             let msg = format!(
                 "[{}] 命令 '{}' 超时（15秒），已收到 {} 字节, base_prompt='{}', 最后一行='{}', 尾部: {}",
                 host, cmd, output.len(), prompt, last_line.trim(), tail.trim()
@@ -381,13 +500,15 @@ fn read_until_prompt(
                 output.push_str(&text);
 
                 // Handle enable/super user password prompts
-                if !password_sent
-                    && text.contains("assword:")
-                    && !password.is_empty()
-                {
+                if !password_sent && text.contains("assword:") && !password.is_empty() {
                     let _ = channel.write_all(password.as_bytes());
                     let _ = channel.write_all(b"\n");
                     password_sent = true;
+                }
+
+                // FortiGate 等设备即使已设置禁分页，也可能在长输出中出现 --More--，发送空格继续。
+                if contains_more_prompt(&text) {
+                    let _ = channel.write_all(b" ");
                 }
 
                 if output_contains_prompt(&output, prompt, vendor) {
@@ -412,12 +533,29 @@ fn read_until_prompt(
 // Command execution (netmiko-style send_command)
 // ---------------------------------------------------------------------------
 
-/// Vendor-specific paging disable command.
-fn get_disable_paging_cmd(vendor: &str) -> Option<&str> {
+fn contains_more_prompt(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if lower.contains("--more--") || lower.contains("-- more --") || lower.contains("more:") {
+        return true;
+    }
+    // 仅匹配独立成行的分页提示，避免误判正文末尾含 "more" 的普通单词（如 "...and more"）
+    text.lines().any(|l| {
+        let t = l.trim();
+        t == "more" || t.starts_with("--more") || t.starts_with("-- more")
+    })
+}
+
+/// Vendor-specific paging disable commands.
+fn get_disable_paging_cmds(vendor: &str) -> Vec<&'static str> {
     match vendor.to_lowercase().as_str() {
-        "h3c" | "华三" | "huawei" | "华为" => Some("screen-length disable"),
-        "cisco" | "思科" | "ruijie" | "锐捷" => Some("terminal length 0"),
-        _ => None,
+        "h3c" | "华三" | "huawei" | "华为" => vec!["screen-length disable"],
+        "cisco" | "思科" | "ruijie" | "锐捷" => vec!["terminal length 0"],
+        "fortinet" | "fortigate" | "飞塔" => vec![
+            "config system console",
+            "set output standard",
+            "end",
+        ],
+        _ => Vec::new(),
     }
 }
 
@@ -436,7 +574,9 @@ fn clear_channel_buffer(channel: &mut ssh2::Channel) {
         match channel.read(&mut buf) {
             Ok(0) => {
                 silent_rounds += 1;
-                if silent_rounds >= QUIET_THRESHOLD { break; }
+                if silent_rounds >= QUIET_THRESHOLD {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(50));
             }
             Ok(_) => {
@@ -444,7 +584,9 @@ fn clear_channel_buffer(channel: &mut ssh2::Channel) {
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 silent_rounds += 1;
-                if silent_rounds >= QUIET_THRESHOLD { break; }
+                if silent_rounds >= QUIET_THRESHOLD {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(50));
             }
             Err(_) => break,
@@ -462,6 +604,7 @@ pub fn send_command(
     password: &str,
     host: &str,
     vendor: &str,
+    cancel: Option<&AtomicBool>,
 ) -> Result<String, String> {
     clear_channel_buffer(channel);
 
@@ -470,7 +613,7 @@ pub fn send_command(
     writeln!(channel, "{}", cmd)
         .map_err(|e| format!("[{}] 发送命令失败 '{}': {}", host, cmd, e))?;
 
-    read_until_prompt(channel, prompt, password, host, cmd, vendor)
+    read_until_prompt(channel, prompt, password, host, cmd, vendor, cancel)
 }
 
 // ---------------------------------------------------------------------------
@@ -557,7 +700,8 @@ fn check_unrecognized_command(output: &str) -> Option<String> {
     for pattern in patterns {
         if output_lower.contains(pattern) {
             // Extract the error line for better reporting
-            let error_line = output.lines()
+            let error_line = output
+                .lines()
                 .find(|line| line.to_lowercase().contains(pattern))
                 .unwrap_or(output);
             return Some(format!("设备不支持此命令: {}", error_line.trim()));
@@ -566,7 +710,6 @@ fn check_unrecognized_command(output: &str) -> Option<String> {
 
     None
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -598,7 +741,10 @@ mod tests {
         // extract_prompt now returns the base_prompt without terminator
         assert_eq!(extract_prompt("<H3C>"), Some("<H3C".to_string()));
         assert_eq!(extract_prompt("Router#"), Some("Router".to_string()));
-        assert_eq!(extract_prompt("[Core-Switch]"), Some("[Core-Switch".to_string()));
+        assert_eq!(
+            extract_prompt("[Core-Switch]"),
+            Some("[Core-Switch".to_string())
+        );
         assert_eq!(extract_prompt("user$"), Some("user".to_string()));
         assert_eq!(extract_prompt("no prompt here"), None);
         assert_eq!(extract_prompt(""), None);
@@ -607,14 +753,26 @@ mod tests {
     #[test]
     fn test_output_contains_prompt() {
         // base_prompt contains match
-        assert!(output_contains_prompt("screen-length disable\n<aHope_WLAN_AC>", "<aHope_WLAN_AC", "H3C"));
-        assert!(output_contains_prompt("Router#show version\nstuff\nRouter#", "Router", "Cisco"));
+        assert!(output_contains_prompt(
+            "screen-length disable\n<aHope_WLAN_AC>",
+            "<aHope_WLAN_AC",
+            "H3C"
+        ));
+        assert!(output_contains_prompt(
+            "Router#show version\nstuff\nRouter#",
+            "Router",
+            "Cisco"
+        ));
         // Vendor pattern fallback
         assert!(output_contains_prompt("some output\n<aHope>", "", "H3C"));
         assert!(output_contains_prompt("some output\nRouter#", "", "Cisco"));
         assert!(output_contains_prompt("some output\n[Core]", "", "H3C"));
         // Not matching
-        assert!(!output_contains_prompt("some output without prompt", "Router", "Cisco"));
+        assert!(!output_contains_prompt(
+            "some output without prompt",
+            "Router",
+            "Cisco"
+        ));
         assert!(!output_contains_prompt("stuff", "", ""));
     }
 

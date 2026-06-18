@@ -1,15 +1,15 @@
+use rusqlite::types::ToSql;
 use std::sync::Arc;
 use tauri::State;
-use rusqlite::types::ToSql;
 
-use crate::AppState;
 use crate::db::models::{
-    Device, DeviceCreate, DeviceUpdate, DeviceStatusLog,
-    DEVICE_COLUMNS, device_from_row, status_log_from_row,
+    device_from_row, now_str, Device, DeviceCreate, DeviceUpdate,
+    DEVICE_COLUMNS,
 };
 use crate::services::crypto::CryptoService;
+use crate::AppState;
 
-use std::net::{TcpStream, IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -24,6 +24,19 @@ fn validate_ip(ip: &str) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// 校验 SSH 端口范围（1..=65535），返回 u16。
+/// `ssh_port` 在 DB 中以 i64 存储，`as u16` 会静默截断越界值（如 65537→1、负数→大值），
+/// 导致连接到错误端口且难以排查，故入库前必须校验。
+fn validate_port(port: i64) -> Result<u16, String> {
+    u16::try_from(port)
+        .map_err(|_| format!("SSH 端口必须在 1..=65535 范围内，当前为 {}", port))
+}
+
+/// 将 DB 中的 i64 端口安全转换为 u16，越界则返回 None（调用方按离线处理）。
+fn port_u16(port: i64) -> Option<u16> {
+    u16::try_from(port).ok().filter(|&p| p > 0)
 }
 
 /// 检查设备名称或 IP 是否唯一
@@ -137,7 +150,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
         _ => None,
     };
 
-    let ssh_port = data.ssh_port.unwrap_or(22);
+    let ssh_port = validate_port(data.ssh_port.unwrap_or(22))?;
     let status = data.status.as_deref().unwrap_or("unknown");
 
     // 4. 插入数据库
@@ -151,7 +164,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.model,
             data.ssh_username,
             encrypted_password,
-            ssh_port,
+            i64::from(ssh_port),
             data.template_id,
             status,
             data.last_checked_at,
@@ -181,17 +194,18 @@ pub fn update_device(
 
     // 验证设备存在
     let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    let existing = crate::db::query::query_one(
-        &conn,
-        &sql,
-        rusqlite::params![device_id],
-        device_from_row,
-    )?
-    .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
+    let existing =
+        crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
+            .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
 
     // 验证 IP（如果提供）
     if let Some(ref ip) = data.ip {
         validate_ip(ip)?;
+    }
+
+    // 验证 SSH 端口（如果提供）
+    if let Some(port) = data.ssh_port {
+        validate_port(port)?;
     }
 
     // 检查唯一性（如果名称或 IP 变更）
@@ -229,10 +243,11 @@ pub fn update_device(
         return Ok(existing);
     }
 
-    let (mut set_parts, mut params) = updater.finish();
-    let idx = params.len() as i32 + 1;
+    // 统一用 now_str()（Local 时间），与 create/check 等路径一致，避免 updated_at 时区不一致
+    updater.push_raw("updated_at", now_str());
 
-    set_parts.push("updated_at = datetime('now')".to_string());
+    let (set_parts, mut params) = updater.finish();
+    let idx = params.len() as i32 + 1;
 
     let update_sql = format!(
         "UPDATE devices SET {} WHERE id = ?{}",
@@ -329,28 +344,24 @@ fn check_device_status_inner(
     let device = {
         let conn = app_state.db.lock();
         let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-        crate::db::query::query_one(
-            &conn,
-            &sql,
-            rusqlite::params![device_id],
-            device_from_row,
-        )?
-        .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?
+        crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
+            .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?
     }; // 锁释放
 
     // 2. TCP 连接检测（锁外，5 秒超时）
-    let ip_addr = IpAddr::from_str(&device.ip)
-        .map_err(|_| format!("无法解析设备 IP 地址: {}", device.ip))?;
-    let socket_addr = SocketAddr::new(ip_addr, device.ssh_port as u16);
+    let ip_addr =
+        IpAddr::from_str(&device.ip).map_err(|_| format!("无法解析设备 IP 地址: {}", device.ip))?;
+    let port = port_u16(device.ssh_port).ok_or_else(|| {
+        format!("设备 SSH 端口非法: {}", device.ssh_port)
+    })?;
+    let socket_addr = SocketAddr::new(ip_addr, port);
 
     let new_status = match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5)) {
         Ok(_stream) => "online",
         Err(_) => "offline",
     };
 
-    let now = chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     // 3. 写入结果（短暂获锁）
     {
@@ -388,7 +399,9 @@ pub fn check_device_status(
 
 /// 检查所有设备连通状态（并发）
 #[tauri::command]
-pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn check_all_devices_status(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let devices = {
         let conn = state.db.lock();
         let sql = format!("SELECT {} FROM devices", DEVICE_COLUMNS);
@@ -402,7 +415,7 @@ pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serd
         let db = Arc::clone(&db);
         tokio::task::spawn_blocking(move || {
             let ip_addr = std::net::IpAddr::from_str(&device.ip).ok();
-            let socket_addr = ip_addr.map(|ip| std::net::SocketAddr::new(ip, device.ssh_port as u16));
+            let socket_addr = ip_addr.and_then(|ip| port_u16(device.ssh_port).map(|p| std::net::SocketAddr::new(ip, p)));
             let new_status = match socket_addr {
                 Some(addr) => match std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(5)) {
                     Ok(_) => "online",
@@ -413,10 +426,13 @@ pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serd
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
             {
                 let conn = db.lock();
-                let _ = conn.execute(
-                    "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
-                    rusqlite::params![device.id, device.status, new_status, now],
-                );
+                // 仅在状态变更时记录日志，避免状态日志表无限增长
+                if device.status.as_str() != new_status {
+                    let _ = conn.execute(
+                        "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
+                        rusqlite::params![device.id, device.status, new_status, now],
+                    );
+                }
                 let _ = conn.execute(
                     "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
                     rusqlite::params![new_status, now, now, device.id],
@@ -432,8 +448,11 @@ pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serd
     for handle in handles {
         match handle.await {
             Ok((_id, _name, status)) => {
-                if status == "online" { online_count += 1; }
-                else { offline_count += 1; }
+                if status == "online" {
+                    online_count += 1;
+                } else {
+                    offline_count += 1;
+                }
             }
             Err(e) => {
                 tracing::warn!("设备状态检测任务失败: {}", e);
@@ -450,24 +469,8 @@ pub async fn check_all_devices_status(state: State<'_, AppState>) -> Result<serd
 }
 
 // ============================================================
-// Status Log Commands
+// Device Model Detection
 // ============================================================
-
-/// 获取设备状态变更日志
-#[tauri::command]
-pub fn get_device_status_log(
-    device_id: i64,
-    state: State<AppState>,
-) -> Result<Vec<DeviceStatusLog>, String> {
-    let conn = state.db.lock();
-
-    crate::db::query::query_all(
-        &conn,
-        "SELECT id, device_id, old_status, new_status, checked_at FROM device_status_logs WHERE device_id = ?1 ORDER BY checked_at DESC",
-        rusqlite::params![device_id],
-        status_log_from_row,
-    )
-}
 
 /// 自动检测设备型号（通过 SSH 登录执行厂商命令）
 #[tauri::command]
@@ -501,28 +504,40 @@ pub async fn detect_device_model(
             &vendor,
             &source.password,
             &source.host,
+            None,
         )?;
 
-        let output = inspection_runner::send_command(
-            &mut channel,
-            manu_cmd,
-            &base_prompt,
-            &source.password,
-            &source.host,
-            &vendor,
-        )?;
+        // 用闭包执行命令，确保即便 send_command 失败也能关闭 channel / 断开会话，避免 SSH 资源泄漏
+        let cmd_result: Result<(String, String), String> = (|| {
+            let output = inspection_runner::send_command(
+                &mut channel,
+                manu_cmd,
+                &base_prompt,
+                &source.password,
+                &source.host,
+                &vendor,
+                None,
+            )?;
 
-        let sysname_output = inspection_runner::send_command(
-            &mut channel,
-            sysname_cmd,
-            &base_prompt,
-            &source.password,
-            &source.host,
-            &vendor,
-        ).unwrap_or_default();
+            let sysname_output = inspection_runner::send_command(
+                &mut channel,
+                sysname_cmd,
+                &base_prompt,
+                &source.password,
+                &source.host,
+                &vendor,
+                None,
+            )
+            .unwrap_or_default();
 
+            Ok((output, sysname_output))
+        })();
+
+        // 无论命令是否成功都清理 SSH 资源
         let _ = channel.close();
         let _ = session.disconnect(None, "done", None);
+
+        let (output, sysname_output) = cmd_result?;
 
         // 从输出中提取信息
         let cleaned = inspection_runner::clean_output(&output, &base_prompt);
@@ -558,7 +573,8 @@ fn parse_h3c_device_info(output: &str) -> H3cDeviceInfo {
             }
         }
         if serial_number.is_none() {
-            if let Some(v) = extract_h3c_field(trimmed, &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER"]) {
+            if let Some(v) = extract_h3c_field(trimmed, &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER"])
+            {
                 serial_number = Some(v);
             }
         }
@@ -569,7 +585,12 @@ fn parse_h3c_device_info(output: &str) -> H3cDeviceInfo {
         }
     }
 
-    H3cDeviceInfo { model, serial_number, manufacturing_date, sysname: None }
+    H3cDeviceInfo {
+        model,
+        serial_number,
+        manufacturing_date,
+        sysname: None,
+    }
 }
 
 fn parse_sysname(output: &str) -> Option<String> {
@@ -592,7 +613,8 @@ fn extract_h3c_field(line: &str, keys: &[&str]) -> Option<String> {
             // rest = "          : VALUE" 或 ": VALUE"
             let after_colon = rest.trim_start().strip_prefix(':')?;
             let value = after_colon.trim();
-            if !value.is_empty() && !value.contains("----") && !value.contains("----") {
+            // 过滤空值和表头分隔线（如 "----"）
+            if !value.is_empty() && !value.contains("----") {
                 return Some(value.to_string());
             }
         }

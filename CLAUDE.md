@@ -99,7 +99,7 @@ inspection-rust/
 - **SSH (netmiko-style)**: libssh2 only (no system sshpass). Persistent shell channel per device. `extract_prompt` → base_prompt (strips terminator). `output_contains_prompt` uses `contains()` not `ends_with()`. Per-command timeout 15s, 2 consecutive timeouts → skip remaining. `screen-length disable` must succeed.
 - **Device concurrency**: `run_batch` / `create_batch`(auto_start) spawn `tokio::spawn` per device, shared `Arc<Mutex<Connection>>`. `inspect_one_device()` per-device flow. Progress tracked via `Arc<std::sync::Mutex<String>>` → DB poller every 2s.
 - **Background tasks**: `lib.rs` spawns std thread for 5-minute device status polling (`poll_device_statuses`), uses `try_lock` to avoid blocking.
-- **Export**: `export_batch_csv` writes CSV with BOM to `data/reports/`. Fields escaped for commas/newlines/quotes.
+- **Report generation**: DOCX reports built directly from `ReportTemplateConfig` (`report_templates.config_json`). Batch zip/combined resolve the report template **per-record** (per device vendor), not from the first record — multi-vendor batches use each device's matched template. Static-info commands (`show_in_report=false`) are filtered out by `inspect_one_device::visible_outputs` and do **not** need a second filter in `docx_engine` (the old `is_static_info_command` string-match was removed as redundant/buggy).
 - **tsconfig `noEmit: true` is REQUIRED**: Without it, `tsc` generates stale `.js` files in `src/` that Vite loads instead of `.tsx` — causing "changes not reflected" bugs
 - **Branding**: `public/open-inspection-logo.svg` used as open-source sidebar logo. App icons (`icon.ico`, `*.png`) in `src-tauri/icons/` generated from server rack SVG.
 - **Windows ping reliability**: `live_scanner.rs` parses ping output for `TTL=`/`time=` instead of exit code, since Windows exits 0 even on timeout. Uses `CREATE_NO_WINDOW` to suppress cmd popups. Falls back to TCP connect on ports 135/445 when ICMP is blocked.
@@ -173,6 +173,7 @@ panic = "abort"        # 移除展开表
 
 - SQLite DB auto-created at `~/.local/share/inspection-rust/inspection.db`
 - Data dirs: `reports/`, `report_templates/`, `uploads/`, `logs/`
-- 65 seed commands loaded on first launch
+- Seed commands: `seed_command_pool` uses `INSERT OR IGNORE` (relies on `UNIQUE(vendor, command)`), runs **every launch** and is idempotent — new vendors are added incrementally. Never gate seeding on `COUNT > 0` (that caused a fresh-install bug where migration 17's fortigate rows made seed skip all other vendors).
+- **Pause/stop/retry cancellation**: `pause_batch`/`stop_batch` set the `batch_cancels` AtomicBool flag so running SSH tasks stop at the next command boundary; `finalize_batch_status` preserves a `paused` batch (won't auto-overwrite to completed/stopped). `retry_device` registers a cancel flag under the batch_id and finalizes the batch when it owns the batch; `restart_batch` cancels in-flight tasks and clears stale flags before resetting.
 - Fernet key (`MASTER_PASSWORD`) hardcoded in `crypto.rs` — encrypted data compatible with Python predecessor
 - Release binary is standalone (frontend embedded, no devUrl)

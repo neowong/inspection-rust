@@ -117,7 +117,8 @@ export interface ReportTemplate {
   id: number;
   name: string;
   vendor: string | null;
-  is_default: boolean;
+  // 后端 Rust 字段为 i64，序列化为 0/1；前端用 === 1 判断（0 falsy / 1 truthy 碰巧可用但类型应一致）
+  is_default: number;
   description: string;
   config_json: string;
   created_at: string;

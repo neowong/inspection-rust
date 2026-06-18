@@ -4,9 +4,8 @@ use rusqlite::types::ToSql;
 use crate::AppState;
 use crate::db::models::{
     CommandCreate, CommandPool, CommandUpdate, InspectionTemplate, TemplateCreate, TemplateUpdate,
-    TEMPLATE_COLUMNS, COMMAND_COLUMNS, template_from_row, command_from_row,
+    TEMPLATE_COLUMNS, COMMAND_COLUMNS, template_from_row, command_from_row, now_str,
 };
-use crate::services::template_generator;
 
 // ============================================================
 // Template Query Commands
@@ -76,19 +75,6 @@ pub fn list_templates(
     Ok(results)
 }
 
-/// 获取单个巡检模板详情
-#[tauri::command]
-pub fn get_template(
-    template_id: i64,
-    state: State<AppState>,
-) -> Result<InspectionTemplate, String> {
-    let conn = state.db.lock();
-
-    let sql = format!("SELECT {} FROM inspection_templates WHERE id = ?1", TEMPLATE_COLUMNS);
-    crate::db::query::query_one(&conn, &sql, rusqlite::params![template_id], template_from_row)?
-        .ok_or_else(|| format!("巡检模板 ID {} 不存在", template_id))
-}
-
 /// 创建巡检模板
 #[tauri::command]
 pub fn create_template(
@@ -156,10 +142,10 @@ pub fn update_template(
         return Ok(existing);
     }
 
-    let (mut set_parts, mut params) = updater.finish();
-    let idx = params.len() as i32 + 1;
+    updater.push_raw("updated_at", now_str());
 
-    set_parts.push("updated_at = datetime('now')".to_string());
+    let (set_parts, mut params) = updater.finish();
+    let idx = params.len() as i32 + 1;
 
     let update_sql = format!(
         "UPDATE inspection_templates SET {} WHERE id = ?{}",
@@ -202,118 +188,9 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
     Ok(())
 }
 
-/// 批量删除巡检模板
-#[tauri::command]
-pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-
-    let mut conn = state.db.lock();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    for id in &ids {
-        tx.execute(
-            "DELETE FROM inspection_templates WHERE id = ?1",
-            rusqlite::params![id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-
-    tx.commit().map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-/// 自动生成巡检模板（根据厂商/型号，从命令池选取命令）
-#[tauri::command]
-pub fn auto_generate_template(
-    vendor: String,
-    model: Option<String>,
-    state: State<AppState>,
-) -> Result<serde_json::Value, String> {
-    let conn = state.db.lock();
-
-    let generated = template_generator::generate_template(
-        &conn,
-        &vendor,
-        model.as_deref(),
-    )?;
-
-    let template_name = generated["name"]
-        .as_str()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("{}-巡检模板", vendor));
-
-    // Store command specs as the template config
-    let commands: Vec<serde_json::Value> = generated["command_ids"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|v| v.as_i64())
-        .map(|id| serde_json::json!({
-            "command_id": id,
-            "purpose": "inspection",
-            "show_in_report": true,
-            "extract_fields": [],
-        }))
-        .collect();
-    let config_value = serde_json::json!({
-        "commands": commands,
-    });
-    let config_str = config_value.to_string();
-
-    conn.execute(
-        "INSERT INTO inspection_templates (name, vendor, model, device_type, config, description) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            template_name,
-            vendor,
-            model,
-            None::<String>,
-            Some(config_str),
-            None::<String>,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let last_id = conn.last_insert_rowid();
-
-    let sql = format!("SELECT {} FROM inspection_templates WHERE id = ?1", TEMPLATE_COLUMNS);
-    let template = crate::db::query::query_one(
-        &conn,
-        &sql,
-        rusqlite::params![last_id],
-        template_from_row,
-    )?
-    .ok_or_else(|| "创建自动生成模板后查询失败".to_string())?;
-
-    Ok(serde_json::json!(template))
-}
-
 // ============================================================
 // Command Pool Query Commands
 // ============================================================
-
-/// 获取所有厂商列表（来自命令池）
-#[tauri::command]
-pub fn list_vendors(state: State<AppState>) -> Result<Vec<String>, String> {
-    let conn = state.db.lock();
-
-    let mut stmt = conn
-        .prepare("SELECT DISTINCT vendor FROM command_pool ORDER BY vendor")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-
-    let mut vendors = Vec::new();
-    for row in rows {
-        vendors.push(row.map_err(|e| e.to_string())?);
-    }
-    Ok(vendors)
-}
 
 /// 获取命令池列表，支持按厂商和分类筛选
 #[tauri::command]
@@ -340,16 +217,6 @@ pub fn list_commands(
 
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
     crate::db::query::query_all(&conn, &sql, &param_refs, command_from_row)
-}
-
-/// 获取单个命令详情
-#[tauri::command]
-pub fn get_command(command_id: i64, state: State<AppState>) -> Result<CommandPool, String> {
-    let conn = state.db.lock();
-
-    let sql = format!("SELECT {} FROM command_pool WHERE id = ?1", COMMAND_COLUMNS);
-    crate::db::query::query_one(&conn, &sql, rusqlite::params![command_id], command_from_row)?
-        .ok_or_else(|| format!("命令 ID {} 不存在", command_id))
 }
 
 /// 创建命令
@@ -421,7 +288,9 @@ pub fn update_command(
         return Ok(existing);
     }
 
-    set_parts.push("updated_at = datetime('now')".to_string());
+    set_parts.push(format!("updated_at = ?{}", idx));
+    params.push(Box::new(now_str()));
+    idx += 1;
 
     let update_sql = format!(
         "UPDATE command_pool SET {} WHERE id = ?{}",
@@ -460,29 +329,6 @@ pub fn delete_command(command_id: i64, state: State<AppState>) -> Result<(), Str
     if affected == 0 {
         return Err(format!("命令 ID {} 不存在", command_id));
     }
-
-    Ok(())
-}
-
-/// 批量删除命令
-#[tauri::command]
-pub fn batch_delete_commands(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-
-    let mut conn = state.db.lock();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    for id in &ids {
-        tx.execute(
-            "DELETE FROM command_pool WHERE id = ?1",
-            rusqlite::params![id],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-
-    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(())
 }

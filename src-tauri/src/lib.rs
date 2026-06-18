@@ -1,13 +1,19 @@
-pub mod db;
 pub mod commands;
+pub mod db;
 pub mod services;
 
-use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use std::sync::Arc;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
+    /// 批次取消标志注册表：batch_id → AtomicBool。
+    /// 与 DB 锁分开，避免 cancel 查询和 DB 操作互相阻塞。
+    /// 使用 parking_lot::Mutex（与 db 一致），避免 std::sync::Mutex 的中毒风险：
+    /// 持锁 panic 会中毒 std Mutex，导致后续所有 stop/run/pause 链式失败。
+    pub batch_cancels:
+        Arc<Mutex<std::collections::HashMap<i64, Arc<std::sync::atomic::AtomicBool>>>>,
 }
 
 impl AppState {
@@ -17,7 +23,10 @@ impl AppState {
             .expect("Failed to set PRAGMAs");
         db::migrations::run_migrations(&conn).expect("Failed to run migrations");
         db::seed_data::seed_command_pool(&mut conn).ok();
-        Self { db: Arc::new(Mutex::new(conn)) }
+        Self {
+            db: Arc::new(Mutex::new(conn)),
+            batch_cancels: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        }
     }
 }
 
@@ -37,7 +46,10 @@ fn ensure_webview2_runtime() {
 
     // Extract the bootstrapper from the binary
     let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
-    if let Err(e) = std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")) {
+    if let Err(e) = std::fs::write(
+        &setup_path,
+        include_bytes!("../MicrosoftEdgeWebview2Setup.exe"),
+    ) {
         tracing::warn!("无法写入 WebView2 安装程序: {}", e);
         return;
     }
@@ -49,19 +61,17 @@ fn ensure_webview2_runtime() {
         .stderr(std::process::Stdio::null())
         .spawn()
     {
-        Ok(mut child) => {
-            match child.wait() {
-                Ok(status) if status.success() => {
-                    tracing::info!("WebView2 Runtime 安装成功");
-                }
-                Ok(_) => {
-                    tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
-                }
-                Err(e) => {
-                    tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
-                }
+        Ok(mut child) => match child.wait() {
+            Ok(status) if status.success() => {
+                tracing::info!("WebView2 Runtime 安装成功");
             }
-        }
+            Ok(_) => {
+                tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
+            }
+            Err(e) => {
+                tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
+            }
+        },
         Err(e) => {
             tracing::warn!("无法启动 WebView2 安装程序: {}，请手动从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下载安装", e);
         }
@@ -89,7 +99,8 @@ fn is_webview2_installed() -> bool {
             // WebView2 Runtime installs edgeupdate and related files
             // The simplest check: look for the WebView2 loader in common locations
             sys32.join("Microsoft-Edge-WebView").exists()
-                || std::path::Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application").exists()
+                || std::path::Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application")
+                    .exists()
         }
     }
 }
@@ -134,8 +145,7 @@ pub fn run() {
 
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with_writer(non_blocking)
         .init();
@@ -157,11 +167,9 @@ pub fn run() {
 
     // Background task: auto-detect device status every 5 minutes (blocking TCP, parallel via std::thread::scope)
     let bg_db = state.db.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(5 * 60));
-            poll_device_statuses(&bg_db);
-        }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(5 * 60));
+        poll_device_statuses(&bg_db);
     });
 
     tauri::Builder::default()
@@ -236,7 +244,6 @@ pub fn run() {
             commands::tools::snmp_v3_get,
             commands::tools::check_zabbix_agent,
             // Stats
-
             get_stats,
         ])
         .run(tauri::generate_context!())
@@ -246,14 +253,34 @@ pub fn run() {
 #[tauri::command]
 fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
     let db = state.db.lock();
-    let device_count: i64 = db.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get(0)).unwrap_or(0);
-    let online_count: i64 = db.query_row("SELECT COUNT(*) FROM devices WHERE status='online'", [], |r| r.get(0)).unwrap_or(0);
-    let offline_count: i64 = db.query_row("SELECT COUNT(*) FROM devices WHERE status='offline'", [], |r| r.get(0)).unwrap_or(0);
-    let template_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_templates", [], |r| r.get(0)).unwrap_or(0);
-    let command_count: i64 = db.query_row("SELECT COUNT(*) FROM command_pool", [], |r| r.get(0)).unwrap_or(0);
-    let batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches", [], |r| r.get(0)).unwrap_or(0);
-    let pending_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='pending'", [], |r| r.get(0)).unwrap_or(0);
-    let completed_batch_count: i64 = db.query_row("SELECT COUNT(*) FROM inspection_batches WHERE status='completed'", [], |r| r.get(0)).unwrap_or(0);
+    // 合并为单次查询，减少锁内 prepare/往返开销
+    let (device_count, online_count, offline_count, template_count, command_count,
+         batch_count, pending_batch_count, completed_batch_count) = db
+        .query_row(
+            "SELECT \
+                (SELECT COUNT(*) FROM devices), \
+                (SELECT COUNT(*) FROM devices WHERE status='online'), \
+                (SELECT COUNT(*) FROM devices WHERE status='offline'), \
+                (SELECT COUNT(*) FROM inspection_templates), \
+                (SELECT COUNT(*) FROM command_pool), \
+                (SELECT COUNT(*) FROM inspection_batches), \
+                (SELECT COUNT(*) FROM inspection_batches WHERE status='pending'), \
+                (SELECT COUNT(*) FROM inspection_batches WHERE status='completed')",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, i64>(5)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, i64>(7)?,
+                ))
+            },
+        )
+        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0));
 
     Ok(serde_json::json!({
         "device_count": device_count,
@@ -277,7 +304,11 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
             };
             let rows: Vec<_> = stmt
                 .query_map([], |row| {
-                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
                 })
                 .ok()
                 .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
@@ -288,7 +319,9 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         }
     };
 
-    if devices.is_empty() { return; }
+    if devices.is_empty() {
+        return;
+    }
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let online_count = std::sync::atomic::AtomicU32::new(0);
@@ -303,15 +336,24 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
             s.spawn(move || {
                 let new_status = match ip.parse::<std::net::IpAddr>() {
                     Ok(ip_addr) => {
-                        match std::net::TcpStream::connect_timeout(
-                            &std::net::SocketAddr::new(ip_addr, *port as u16),
-                            std::time::Duration::from_secs(5),
-                        ) {
-                            Ok(_) => {
-                                online_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                "online"
+                        // 端口越界（非法 i64）按离线处理，避免 as u16 截断连错端口
+                        match u16::try_from(*port).ok().filter(|&p| p > 0) {
+                            Some(port) => {
+                                match std::net::TcpStream::connect_timeout(
+                                    &std::net::SocketAddr::new(ip_addr, port),
+                                    std::time::Duration::from_secs(5),
+                                ) {
+                                    Ok(_) => {
+                                        online_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                        "online"
+                                    }
+                                    Err(_) => {
+                                        offline_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                        "offline"
+                                    }
+                                }
                             }
-                            Err(_) => {
+                            None => {
                                 offline_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 "offline"
                             }
@@ -399,11 +441,9 @@ fn toml_value_to_json(value: toml::Value) -> serde_json::Value {
     match value {
         toml::Value::String(s) => serde_json::Value::String(s),
         toml::Value::Integer(i) => serde_json::Value::Number((i).into()),
-        toml::Value::Float(f) => {
-            serde_json::Number::from_f64(f)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::String(f.to_string()))
-        }
+        toml::Value::Float(f) => serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::String(f.to_string())),
         toml::Value::Boolean(b) => serde_json::Value::Bool(b),
         toml::Value::Table(t) => toml_to_json(t),
         toml::Value::Array(arr) => {

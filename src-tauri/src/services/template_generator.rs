@@ -10,7 +10,7 @@ fn category_priority(category: &str) -> i32 {
         "memory" => 5,
         "hardware" | "power" | "fan" | "env" | "temperature" | "module" | "stack" => 6,
         "interface" => 7,
-        "protocol" | "ntp" | "log" | "vlan" | "arp" | "mac" | "stp" => 8,
+        "protocol" | "ntp" | "log" | "vlan" | "arp" | "mac" | "stp" | "vpn" | "ha" | "security" => 8,
         _ => 9,
     }
 }

@@ -321,7 +321,7 @@ export default function InspectionPage() {
                 {/* AI analysis result summary */}
                 {fullRecord.ai_status === "completed" && fullRecord.summary_judgment && (
                   <div className="mt-3 p-2 rounded bg-[hsl(var(--bg-hover))] text-xs">
-                    <span className="font-medium text-[hsl(var(--text-secondary))]">AI 评判: </span>
+                    <span className="font-medium text-[hsl(var(--text-secondary))]">评判结论: </span>
                     <span className="text-[hsl(var(--text-primary))]">{fullRecord.summary_judgment}</span>
                   </div>
                 )}

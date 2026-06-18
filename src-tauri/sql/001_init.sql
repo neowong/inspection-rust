@@ -134,3 +134,5 @@ CREATE INDEX IF NOT EXISTS idx_inspection_batches_status ON inspection_batches(s
 CREATE INDEX IF NOT EXISTS idx_inspection_records_batch_id  ON inspection_records(batch_id);
 CREATE INDEX IF NOT EXISTS idx_inspection_records_device_id ON inspection_records(device_id);
 CREATE INDEX IF NOT EXISTS idx_inspection_records_ai_status ON inspection_records(ai_status);
+CREATE INDEX IF NOT EXISTS idx_report_templates_is_default ON report_templates(is_default);
+CREATE INDEX IF NOT EXISTS idx_report_templates_vendor     ON report_templates(vendor);
