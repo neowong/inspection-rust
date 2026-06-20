@@ -60,7 +60,7 @@ export default function DevicesPage() {
   const [detectError, setDetectError] = useState<string | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
 
-  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && (passwordSet || form.ssh_password.trim()) && (form.vendor === "H3C" || form.vendor === "华三"));
+  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && form.ssh_password.trim());
 
   const isValidIp = (ip: string) => {
     const p = ip.trim();
@@ -142,6 +142,8 @@ export default function DevicesPage() {
             serial_number: info.serial_number || form.serial_number,
             manufacturing_date: info.manufacturing_date || form.manufacturing_date,
             sysname: info.sysname || form.sysname,
+            cpu_cores: info.cpu_cores || form.cpu_cores,
+            memory_gb: info.memory_gb || form.memory_gb,
           });
         } catch {
           // 兼容旧格式（纯字符串）
@@ -193,14 +195,15 @@ export default function DevicesPage() {
         // 静默检测在线状态
         invoke("check_device_status", { deviceId: devId }).then(() => loadDevices()).catch(() => {});
 
-        // 静默补全型号/SN/出厂日期/sysname（H3C 且有 SSH 凭据时）
+        // 静默补全静态信息（有 SSH 凭据时自动检测）
         const needModel = !form.model.trim();
         const needSn = !form.serial_number.trim();
         const needDate = !form.manufacturing_date.trim();
         const needSysname = !form.sysname.trim();
-        const canDetect = form.ssh_username.trim() && form.ssh_password.trim()
-          && (form.vendor === "H3C" || form.vendor === "华三");
-        if ((needModel || needSn || needDate || needSysname) && canDetect) {
+        const needCpu = form.device_type === "server" && !form.cpu_cores.trim();
+        const needMem = form.device_type === "server" && !form.memory_gb.trim();
+        const canDetect = form.ssh_username.trim() && form.ssh_password.trim();
+        if ((needModel || needSn || needDate || needSysname || needCpu || needMem) && canDetect) {
           invoke<string>("detect_device_model", {
             ip: form.ip.trim(), sshPort: form.ssh_port,
             sshUsername: form.ssh_username.trim(), sshPassword: form.ssh_password,
@@ -213,6 +216,8 @@ export default function DevicesPage() {
               if (needSn && info.serial_number) patch.serial_number = info.serial_number;
               if (needDate && info.manufacturing_date) patch.manufacturing_date = info.manufacturing_date;
               if (needSysname && info.sysname) patch.sysname = info.sysname;
+              if (needCpu && info.cpu_cores) patch.cpu_cores = Number(info.cpu_cores);
+              if (needMem && info.memory_gb) patch.memory_gb = info.memory_gb;
               if (Object.keys(patch).length > 0) {
                 invoke("update_device", { deviceId: devId, data: patch }).then(() => loadDevices());
               }

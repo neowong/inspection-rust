@@ -486,8 +486,110 @@ pub async fn detect_device_model(
     vendor: String,
 ) -> Result<String, String> {
     use crate::services::inspection_runner::{self, SSHSessionSource};
+    use crate::services::vendor_profile::{self, ExecMode};
 
-    // 仅支持 H3C
+    let profile = vendor_profile::get_profile(&vendor);
+
+    match profile.exec_mode {
+        ExecMode::Exec => {
+            // Linux / 发行版：exec channel 检测
+            detect_linux_info(ip, ssh_port, ssh_username, ssh_password).await
+        }
+        ExecMode::Shell => {
+            // 网络设备：shell 会话检测
+            detect_network_device_info(ip, ssh_port, ssh_username, ssh_password, vendor).await
+        }
+    }
+}
+
+/// Linux 服务器静态信息检测（exec channel）
+async fn detect_linux_info(
+    ip: String,
+    ssh_port: u16,
+    ssh_username: String,
+    ssh_password: String,
+) -> Result<String, String> {
+    use crate::services::inspection_runner::SSHSessionSource;
+    use crate::services::linux_runner;
+    use std::collections::HashMap;
+
+    let commands: Vec<String> = vec![
+        "hostnamectl".to_string(),
+        "cat /etc/os-release".to_string(),
+        "lscpu".to_string(),
+        "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
+    ];
+    let mut needs_root_map = HashMap::new();
+    needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
+
+    tokio::task::spawn_blocking(move || {
+        let source = SSHSessionSource {
+            host: ip,
+            port: ssh_port,
+            username: ssh_username,
+            password: ssh_password,
+        };
+
+        let outputs = linux_runner::run_commands_exec(
+            &source,
+            &commands,
+            &needs_root_map,
+            None,
+            None,
+        )?;
+
+        // 解析结果
+        let mut info = serde_json::Map::new();
+
+        // hostnamectl → sysname
+        if let Some(output) = outputs.get("hostnamectl") {
+            if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
+                info.insert("sysname".to_string(), serde_json::Value::String(hostname));
+            }
+            if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
+                info.insert("model".to_string(), serde_json::Value::String(os));
+            }
+        }
+
+        // /etc/os-release → model (fallback)
+        if !info.contains_key("model") {
+            if let Some(output) = outputs.get("cat /etc/os-release") {
+                if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
+                    info.insert("model".to_string(), serde_json::Value::String(name));
+                }
+            }
+        }
+
+        // lscpu → cpu_cores
+        if let Some(output) = outputs.get("lscpu") {
+            if let Some(cores) = extract_lscpu_cores(output) {
+                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
+            }
+        }
+
+        // dmidecode memory → memory_gb
+        if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
+            if let Some(mem) = extract_dmidecode_memory(output) {
+                info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
+            }
+        }
+
+        Ok(serde_json::Value::Object(info).to_string())
+    })
+    .await
+    .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
+/// 网络设备静态信息检测（shell 会话）
+async fn detect_network_device_info(
+    ip: String,
+    ssh_port: u16,
+    ssh_username: String,
+    ssh_password: String,
+    vendor: String,
+) -> Result<String, String> {
+    use crate::services::inspection_runner::{self, SSHSessionSource};
+
     let manu_cmd = match vendor.as_str() {
         "H3C" | "华三" => "display device manuinfo",
         _ => return Err("当前仅支持 H3C 设备自动检测型号".to_string()),
@@ -511,7 +613,6 @@ pub async fn detect_device_model(
             None,
         )?;
 
-        // 用闭包执行命令，确保即便 send_command 失败也能关闭 channel / 断开会话，避免 SSH 资源泄漏
         let cmd_result: Result<(String, String), String> = (|| {
             let output = inspection_runner::send_command(
                 &mut channel,
@@ -522,7 +623,6 @@ pub async fn detect_device_model(
                 &vendor,
                 None,
             )?;
-
             let sysname_output = inspection_runner::send_command(
                 &mut channel,
                 sysname_cmd,
@@ -533,17 +633,13 @@ pub async fn detect_device_model(
                 None,
             )
             .unwrap_or_default();
-
             Ok((output, sysname_output))
         })();
 
-        // 无论命令是否成功都清理 SSH 资源
         let _ = channel.close();
         let _ = session.disconnect(None, "done", None);
 
         let (output, sysname_output) = cmd_result?;
-
-        // 从输出中提取信息
         let cleaned = inspection_runner::clean_output(&output, &base_prompt);
         let sysname_cleaned = inspection_runner::clean_output(&sysname_output, &base_prompt);
         let mut info = parse_h3c_device_info(&cleaned);
@@ -624,4 +720,84 @@ fn extract_h3c_field(line: &str, keys: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+// ============================================================
+// Linux 检测辅助函数
+// ============================================================
+
+/// 从 hostnamectl 输出提取字段值（格式: "   Field: value"）
+fn extract_hostnamectl_value(output: &str, field: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(field) {
+            let value = rest.trim_start().strip_prefix(':').unwrap_or(rest).trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// 从 /etc/os-release 提取值（格式: KEY=VALUE 或 KEY="VALUE"）
+fn extract_os_release_value(output: &str, key: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(key) {
+            let value = rest.trim_start().strip_prefix('=').unwrap_or(rest).trim().trim_matches('"');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// 从 lscpu 输出提取 CPU 核心数
+fn extract_lscpu_cores(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("CPU(s):") {
+            let val = rest.trim().split_whitespace().next()?;
+            if val.parse::<i64>().is_ok() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// 从 dmidecode -t memory | grep Size 输出提取总物理内存
+fn extract_dmidecode_memory(output: &str) -> Option<String> {
+    let mut total_mb: u64 = 0;
+    let mut found = false;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Size:") {
+            let val = rest.trim();
+            if val.contains("No Module") || val.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = val.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(size) = parts[0].parse::<u64>() {
+                    let unit = parts[1].to_uppercase();
+                    if unit.starts_with("MB") {
+                        total_mb += size;
+                        found = true;
+                    } else if unit.starts_with("GB") {
+                        total_mb += size * 1024;
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    if found && total_mb > 0 {
+        let gb = total_mb as f64 / 1024.0;
+        Some(format!("{:.1}Gi", gb))
+    } else {
+        None
+    }
 }
