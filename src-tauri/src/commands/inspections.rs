@@ -21,6 +21,7 @@ struct TemplateCommandSpec {
     command: String,
     show_in_report: bool,
     extract_fields: Vec<String>,
+    needs_root: bool,
 }
 
 /// 从数据库读取设备巡检所需的全部信息（在锁内调用）
@@ -83,25 +84,25 @@ fn read_device_inspection_data(
         spec_entries.push((cmd_id, spec));
     }
 
-    let cmd_texts: std::collections::HashMap<i64, String> = if spec_entries.is_empty() {
+    let cmd_texts: std::collections::HashMap<i64, (String, bool)> = if spec_entries.is_empty() {
         std::collections::HashMap::new()
     } else {
         let ids: Vec<String> = spec_entries.iter().map(|(id, _)| id.to_string()).collect();
         let sql = format!(
-            "SELECT id, command FROM command_pool WHERE id IN ({})",
+            "SELECT id, command, COALESCE(needs_root, 0) FROM command_pool WHERE id IN ({})",
             ids.join(",")
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
                 &[] as &[&dyn rusqlite::types::ToSql],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, bool>(2)?)),
             )
             .map_err(|e| e.to_string())?;
         let mut m = std::collections::HashMap::new();
         for r in rows {
-            if let Ok((id, command)) = r {
-                m.insert(id, command);
+            if let Ok((id, command, needs_root)) = r {
+                m.insert(id, (command, needs_root));
             }
         }
         m
@@ -109,7 +110,7 @@ fn read_device_inspection_data(
 
     let mut commands: Vec<TemplateCommandSpec> = Vec::new();
     for (cmd_id, spec) in &spec_entries {
-        let command = cmd_texts
+        let (command, needs_root) = cmd_texts
             .get(cmd_id)
             .cloned()
             .ok_or_else(|| format!("命令 ID {} 不存在", cmd_id))?;
@@ -136,6 +137,7 @@ fn read_device_inspection_data(
             command,
             show_in_report,
             extract_fields,
+            needs_root,
         });
     }
 
@@ -332,7 +334,8 @@ fn build_static_info(
                 continue;
             }
             let val = match field.as_str() {
-                "sysname" => extract_sysname(output),
+                "sysname" => extract_sysname(output)
+                    .or_else(|| extract_hostnamectl_field(output, "Static hostname")),
                 "serial_number" | "sn" => extract_by_patterns(
                     output,
                     &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER", "Serial Number", "Serial-Number"],
@@ -380,6 +383,20 @@ fn extract_sysname(output: &str) -> Option<String> {
     None
 }
 
+/// 从 hostnamectl 输出中提取字段值
+fn extract_hostnamectl_field(output: &str, field_name: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(field_name) {
+            let value = rest.trim_start().strip_prefix(':').unwrap_or(rest).trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn extract_model(output: &str) -> Option<String> {
     extract_by_patterns(
         output,
@@ -390,6 +407,8 @@ fn extract_model(output: &str) -> Option<String> {
             "Version",
             "Platform Type",
             "Model",
+            "Operating System",
+            "Manufacturer",
         ],
     )
     .map(|value| {
@@ -467,11 +486,15 @@ fn sync_device_static_info(
 }
 
 /// 执行单台设备的 SSH 巡检（锁外调用，包含耗时的 SSH 操作）
+///
+/// 根据厂商 Profile 决定执行模式：
+/// - Shell 模式（网络设备）：使用交互式 PTY 会话
+/// - Exec 模式（Linux 服务器）：每条命令独立 exec channel
 fn execute_device_ssh(
     device: &Device,
     username: &str,
     password: &str,
-    commands: &[String],
+    commands: &[TemplateCommandSpec],
     on_progress: Option<Arc<std::sync::Mutex<String>>>,
     cancel: Arc<AtomicBool>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
@@ -485,13 +508,35 @@ fn execute_device_ssh(
         username: username.to_string(),
         password: password.to_string(),
     };
-    inspection_runner::run_commands_with_cancel(
-        &source,
-        &device.vendor,
-        commands,
-        on_progress,
-        Some(cancel),
-    )
+
+    let profile = crate::services::vendor_profile::get_profile(&device.vendor);
+
+    match profile.exec_mode {
+        crate::services::vendor_profile::ExecMode::Exec => {
+            let cmd_strings: Vec<String> = commands.iter().map(|s| s.command.clone()).collect();
+            let needs_root_map: std::collections::HashMap<String, bool> = commands
+                .iter()
+                .map(|s| (s.command.clone(), s.needs_root))
+                .collect();
+            crate::services::linux_runner::run_commands_exec(
+                &source,
+                &cmd_strings,
+                &needs_root_map,
+                Some(cancel),
+                on_progress,
+            )
+        }
+        crate::services::vendor_profile::ExecMode::Shell => {
+            let cmd_strings: Vec<String> = commands.iter().map(|s| s.command.clone()).collect();
+            inspection_runner::run_commands_with_cancel(
+                &source,
+                &device.vendor,
+                &cmd_strings,
+                on_progress,
+                Some(cancel),
+            )
+        }
+    }
 }
 
 // ============================================================
@@ -972,14 +1017,14 @@ async fn inspect_one_device(
         let device_clone = device.clone();
         let username_clone = username.clone();
         let password_clone = password.clone();
-        let command_texts: Vec<String> = commands.iter().map(|c| c.command.clone()).collect();
+        let commands_clone = commands.clone();
         let cancel_ssh = Arc::clone(&cancel);
         tokio::task::spawn_blocking(move || {
             execute_device_ssh(
                 &device_clone,
                 &username_clone,
                 &password_clone,
-                &command_texts,
+                &commands_clone,
                 Some(progress_ssh),
                 cancel_ssh,
             )
@@ -1247,14 +1292,14 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         let device_clone = device.clone();
         let username_clone = username.clone();
         let password_clone = password.clone();
-        let command_texts: Vec<String> = commands.iter().map(|c| c.command.clone()).collect();
+        let commands_clone = commands.clone();
         let cancel = Arc::clone(&cancel);
         tokio::task::spawn_blocking(move || {
             execute_device_ssh(
                 &device_clone,
                 &username_clone,
                 &password_clone,
-                &command_texts,
+                &commands_clone,
                 None,
                 cancel,
             )
