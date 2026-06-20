@@ -376,6 +376,60 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             conn.execute_batch("ALTER TABLE inspection_batches ADD COLUMN combined_report_path TEXT;")
                 .map_err(|e| format!("migration 21: {}", e))?;
         }
+
+        // 回填历史批次：扫描 reports 目录下的 batch_{id}_*.docx，匹配到最新文件
+        let reports_dir = crate::APP_DATA_DIR
+            .get()
+            .map(|d| d.join("data").join("reports"))
+            .filter(|d| d.exists());
+        if let Some(dir) = reports_dir {
+            // 读取所有批次 ID 及其现有 combined_report_path
+            let mut batch_paths: std::collections::HashMap<i64, (String, u64)> =
+                std::collections::HashMap::new();
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    // 匹配 batch_{id}_*.docx 或 batch_{id}_*.zip
+                    if let Some(rest) = name.strip_prefix("batch_") {
+                        if let Some(idx) = rest.find('_') {
+                            if let Ok(batch_id) = rest[..idx].parse::<i64>() {
+                                if name.ends_with(".docx") || name.ends_with(".zip") {
+                                    let modified = entry.metadata().ok()
+                                        .and_then(|m| m.modified().ok())
+                                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0);
+                                    // 保留每个批次最新的文件
+                                    batch_paths
+                                        .entry(batch_id)
+                                        .and_modify(|(old_path, old_ts)| {
+                                            if modified > *old_ts {
+                                                *old_path = name.clone();
+                                                *old_ts = modified;
+                                            }
+                                        })
+                                        .or_insert_with(|| (name.clone(), modified));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 回填到 DB
+            for (batch_id, (filename, _)) in &batch_paths {
+                let full_path = dir.join(filename).to_string_lossy().to_string();
+                let _ = conn.execute(
+                    "UPDATE inspection_batches SET combined_report_path = ?1 WHERE id = ?2 AND combined_report_path IS NULL",
+                    rusqlite::params![full_path, batch_id],
+                );
+                tracing::info!(
+                    "migration 21: 回填批次 #{} 的综合报告路径: {}",
+                    batch_id,
+                    full_path
+                );
+            }
+        }
+
         conn.execute_batch("PRAGMA user_version = 21;")
             .map_err(|e| format!("migration 21: {}", e))?;
     }
