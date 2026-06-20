@@ -289,10 +289,19 @@ export default function DevicesPage() {
       )
       .then((onlineDevices) => {
         if (!onlineDevices || onlineDevices.length === 0) return;
-        showStatusHint(`正在检测 ${onlineDevices.length} 台在线设备的静态信息...`, "info", 120000);
+        // 已有静态信息的设备跳过 SSH 检测（保存设备时已自动采集过）
+        const needsDetect = onlineDevices.filter(
+          (d) => !d.model && !d.sysname,
+        );
+        const skipped = onlineDevices.length - needsDetect.length;
+        if (skipped > 0) {
+          showStatusHint(`在线 ${onlineDevices.length} 台，其中 ${skipped} 台已有静态信息，跳过二次检测`, "info");
+        }
+        if (needsDetect.length === 0) return;
+        showStatusHint(`正在检测 ${needsDetect.length} 台设备的静态信息...`, "info", 120000);
         // 并发执行（最多 3 台同时），避免大量 SSH 同时冲击 sshd
         const CONCURRENCY = 3;
-        const targets = onlineDevices;
+        const targets = needsDetect;
         const runOne = (dev: Device): Promise<void> =>
           invoke<string>("detect_device_model_by_id", { deviceId: dev.id })
             .then(() => { okCount++; })
