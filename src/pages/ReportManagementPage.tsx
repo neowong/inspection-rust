@@ -109,17 +109,10 @@ export default function ReportManagementPage() {
   const handleAnalyzeAndGenerateRecord = async (recordId: number, _alreadyAnalyzed: boolean) => {
     setGenerating({ id: recordId, action: "analyze" });
     try {
-      // 1. AI 分析
       await invoke("analyze_record", { recordId });
       await refreshAfterMutation(recordId);
-      // 2. 生成 docx
-      const path = await invoke<string>("generate_docx_report", { recordId });
-      // 3. 弹保存对话框
-      await invoke("save_generated_file", {
-        sourcePath: path,
-        suggestedName: `report_${recordId}.docx`,
-        extension: "docx",
-      });
+      // 生成 docx 后路径写入 DB，不弹保存框，用户自行点"下载"按钮
+      await invoke<string>("generate_docx_report", { recordId });
       await refreshAfterMutation(recordId);
     } catch (e) {
       console.error(String(e));
@@ -128,16 +121,11 @@ export default function ReportManagementPage() {
     }
   };
 
-  // 单设备：直接生成报告（跳过 AI 分析）
+  // 单设备：直接生成报告（跳过 AI 分析），路径写入 DB 后出现"下载"按钮
   const handleGenerateRecord = async (recordId: number) => {
     setGenerating({ id: recordId, action: "direct" });
     try {
-      const path = await invoke<string>("generate_docx_report", { recordId });
-      await invoke("save_generated_file", {
-        sourcePath: path,
-        suggestedName: `report_${recordId}.docx`,
-        extension: "docx",
-      });
+      await invoke<string>("generate_docx_report", { recordId });
       await refreshAfterMutation(recordId);
     } catch (e) {
       console.error(String(e));
