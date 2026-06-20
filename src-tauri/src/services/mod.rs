@@ -10,4 +10,6 @@ pub mod port_scanner;
 pub mod snmp_checker;
 pub mod template_generator;
 pub mod web_checker;
+pub mod vendor_profile;
 pub mod zabbix_checker;
+// TODO: pub mod linux_runner;  // Task 3 will create this file
