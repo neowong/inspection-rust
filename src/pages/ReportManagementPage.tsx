@@ -256,13 +256,16 @@ export default function ReportManagementPage() {
           </Button>
           <Button variant="ghost" size="sm" loading={!!generating && generating.id === r.id && generating.action === "direct"} disabled={!!generating && generating.id === r.id && generating.action === "analyze"}
             onClick={(e: any) => { e.stopPropagation(); handleGenerateRecord(r.id); }}>直接生成报告</Button>
-          {r.report_path && (
+          {r.report_path ? (
             <>
               <Button variant="ghost" size="sm" loading={downloading === r.id}
                 onClick={(e: any) => { e.stopPropagation(); handleDownload(r.id); }}>下载</Button>
               <Button variant="ghost" size="sm" loading={deleting === r.id}
                 onClick={(e: any) => { e.stopPropagation(); handleDelete(r.id); }}>删除</Button>
             </>
+          ) : (
+            <Button variant="ghost" size="sm" disabled
+              onClick={(e: any) => e.stopPropagation()}>下载</Button>
           )}
         </div>
       ),
@@ -364,13 +367,15 @@ export default function ReportManagementPage() {
                       </Button>
                       <Button variant="ghost" size="sm" loading={!!generating && generating.id === fullRecord.id && generating.action === "direct"} disabled={!!generating && generating.id === fullRecord.id && generating.action === "analyze"}
                         onClick={() => handleGenerateRecord(fullRecord.id)}>直接生成报告</Button>
-                      {fullRecord.report_path && (
+                      {fullRecord.report_path ? (
                         <>
                           <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}
                             onClick={() => handleDownload(fullRecord.id)}>下载</Button>
                           <Button variant="ghost" size="sm" loading={deleting === fullRecord.id}
                             onClick={() => handleDelete(fullRecord.id)}>删除</Button>
                         </>
+                      ) : (
+                        <Button variant="ghost" size="sm" disabled>下载</Button>
                       )}
                     </div>
                   </div>
