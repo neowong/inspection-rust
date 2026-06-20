@@ -30,8 +30,9 @@ pub enum PrivProtocol {
     AES128,
 }
 
-impl AuthProtocol {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for AuthProtocol {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {
             "MD5" => Ok(AuthProtocol::MD5),
             "SHA1" | "SHA" => Ok(AuthProtocol::SHA1),
@@ -40,14 +41,17 @@ impl AuthProtocol {
             _ => Err(format!("不支持的认证协议: {}", s)),
         }
     }
+}
+impl AuthProtocol {
     fn key_len(&self) -> usize {
         match self { AuthProtocol::MD5 => 16, AuthProtocol::SHA1 => 20, AuthProtocol::SHA256 => 32 }
     }
     fn mac_len(&self) -> usize { 12 }
 }
 
-impl PrivProtocol {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for PrivProtocol {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
         match s.to_uppercase().as_str() {
             "NONE" => Ok(PrivProtocol::None),
             "DES" => Ok(PrivProtocol::DES),
@@ -55,6 +59,8 @@ impl PrivProtocol {
             _ => Err(format!("不支持的加密协议: {}", s)),
         }
     }
+}
+impl PrivProtocol {
     fn salt_len(&self) -> usize {
         match self { PrivProtocol::DES => 8, PrivProtocol::AES128 => 16, PrivProtocol::None => 0 }
     }
@@ -128,7 +134,7 @@ fn encode_oid(oid_str: &str) -> Result<Vec<u8>, String> {
         return Err("OID至少需要2个组件".into());
     }
 
-    let first = (components[0] * 40 + components[1]) as u64;
+    let first = components[0] * 40 + components[1];
     let mut sub_ids = vec![first];
     sub_ids.extend_from_slice(&components[2..]);
 
@@ -548,6 +554,7 @@ struct V3ParsedResponse {
     is_encrypted: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_v3_message(
     engine_id: &[u8],
     engine_boots: u32,
@@ -882,6 +889,7 @@ fn parse_pdu_varbind(data: &[u8], elapsed: u64, raw_hex: Option<String>) -> Resu
 // Public V3 API
 // ============================================================================
 
+#[allow(clippy::too_many_arguments)]
 pub async fn snmp_v3_get(
     ip: &str,
     username: &str,
@@ -941,7 +949,7 @@ pub async fn snmp_v3_get(
 
                 // If time window error, re-sync boots/time from response and retry
                 if attempt == 0
-                    && result.error.as_ref().map_or(false, |e| is_time_window_error(e))
+                    && result.error.as_ref().is_some_and(|e| is_time_window_error(e))
                 {
                     engine_boots = parsed.engine_boots;
                     engine_time = parsed.engine_time;

@@ -8,7 +8,6 @@ pub mod live_scanner;
 pub mod log_analyzer;
 pub mod port_scanner;
 pub mod snmp_checker;
-pub mod template_generator;
 pub mod web_checker;
 pub mod vendor_profile;
 pub mod zabbix_checker;

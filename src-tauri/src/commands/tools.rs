@@ -1,4 +1,5 @@
 use crate::services;
+use std::str::FromStr;
 
 #[tauri::command]
 pub async fn scan_live_hosts(
@@ -44,6 +45,7 @@ pub async fn snmp_get(
     services::snmp_checker::snmp_v2c_get(&ip, &community, &oid, timeout_secs).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_v3_get(
     ip: String,

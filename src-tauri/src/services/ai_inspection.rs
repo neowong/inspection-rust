@@ -90,7 +90,8 @@ pub async fn analyze_with_openai(
             {"role": "user", "content": formatted_input}
         ],
         "temperature": 0.3,
-        "max_tokens": 4096
+        // 47 条命令的 JSON 输出约 8-12k tokens；4096 不够会被截断成无效 JSON
+        "max_tokens": 16384
     });
 
     info!(
@@ -130,9 +131,21 @@ pub async fn analyze_with_openai(
             "OpenAI 响应格式异常: 未找到分析结果".to_string()
         })?;
 
+    let finish_reason = parsed["choices"][0]["finish_reason"].as_str().unwrap_or("");
+
     // The content itself should be JSON
-    let analysis: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| format!("解析 AI 分析结果 JSON 失败: {} — 原始内容: {}", e, content))?;
+    let analysis: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+        if finish_reason == "length" {
+            warn!(
+                "AI 输出被 max_tokens 截断 (finish_reason=length)，内容长度 {} 字符",
+                content.len()
+            );
+            "AI 输出被截断（命令数过多导致 max_tokens 不足）。请减少巡检命令数或在系统设置中切换到上下文更长的模型。".to_string()
+        } else {
+            format!("解析 AI 分析结果 JSON 失败: {} — 原始内容前 500 字: {}",
+                e, content.chars().take(500).collect::<String>())
+        }
+    })?;
 
     info!("Successfully analyzed {} commands with OpenAI", command_outputs.len());
     Ok(analysis)
@@ -165,7 +178,7 @@ pub async fn analyze_with_anthropic(
         "messages": [
             {"role": "user", "content": formatted_input}
         ],
-        "max_tokens": 4096
+        "max_tokens": 16384
     });
 
     info!(
@@ -207,9 +220,21 @@ pub async fn analyze_with_anthropic(
             "Anthropic 响应格式异常: 未找到分析结果".to_string()
         })?;
 
+    let stop_reason = parsed["stop_reason"].as_str().unwrap_or("");
+
     // The content itself should be JSON
-    let analysis: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| format!("解析 AI 分析结果 JSON 失败: {} — 原始内容: {}", e, content))?;
+    let analysis: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+        if stop_reason == "max_tokens" {
+            warn!(
+                "AI 输出被 max_tokens 截断 (stop_reason=max_tokens)，内容长度 {} 字符",
+                content.len()
+            );
+            "AI 输出被截断（命令数过多导致 max_tokens 不足）。请减少巡检命令数或在系统设置中切换到上下文更长的模型。".to_string()
+        } else {
+            format!("解析 AI 分析结果 JSON 失败: {} — 原始内容前 500 字: {}",
+                e, content.chars().take(500).collect::<String>())
+        }
+    })?;
 
     info!("Successfully analyzed {} commands with Anthropic", command_outputs.len());
     Ok(analysis)

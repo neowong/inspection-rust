@@ -9,6 +9,12 @@ pub struct DynamicUpdate {
     idx: i32,
 }
 
+impl Default for DynamicUpdate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DynamicUpdate {
     pub fn new() -> Self {
         Self {

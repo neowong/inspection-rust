@@ -100,10 +100,8 @@ fn read_device_inspection_data(
             )
             .map_err(|e| e.to_string())?;
         let mut m = std::collections::HashMap::new();
-        for r in rows {
-            if let Ok((id, command, needs_root)) = r {
-                m.insert(id, (command, needs_root));
-            }
+        for (id, command, needs_root) in rows.flatten() {
+            m.insert(id, (command, needs_root));
         }
         m
     };
@@ -431,7 +429,7 @@ fn extract_cpu_cores(output: &str) -> Option<String> {
         let trimmed = line.trim();
         // lscpu format: "CPU(s):                4"
         if let Some(rest) = trimmed.strip_prefix("CPU(s):") {
-            let val = rest.trim().split_whitespace().next()?;
+            let val = rest.split_whitespace().next()?;
             if let Ok(n) = val.parse::<i64>() {
                 return Some(n.to_string());
             }
@@ -558,7 +556,7 @@ fn sync_device_static_info(
     let serial_number = get("serial_number");
     let manufacturing_date = get("manufacturing_date");
     let cpu_cores = get("cpu_cores").and_then(|s| s.parse::<i64>().ok());
-    let memory_gb = get("memory_gb").and_then(|s| parse_memory_to_gb(s));
+    let memory_gb = get("memory_gb").and_then(parse_memory_to_gb);
     if sysname.is_none()
         && model.is_none()
         && serial_number.is_none()
@@ -731,7 +729,7 @@ pub fn get_batch(batch_id: i64, state: State<AppState>) -> Result<serde_json::Va
     );
     let batch =
         crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
-            .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+            .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
 
     let records_sql = format!(
         "SELECT {} FROM inspection_records WHERE batch_id = ?1 ORDER BY id",
@@ -908,7 +906,7 @@ pub async fn create_batch(
         rusqlite::params![batch_id],
         batch_from_row,
     )?
-    .ok_or_else(|| "创建巡检批次后查询失败".to_string())?;
+    .ok_or_else(|| "创建巡检任务后查询失败".to_string())?;
 
     Ok(serde_json::json!(batch))
 }
@@ -928,11 +926,11 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         );
         let batch =
             crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
-                .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+                .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
 
         // 防止重复执行：已在运行中的批次不可再次启动
         if batch.status == "running" {
-            return Err(format!("巡检批次 #{} 正在运行中，请勿重复执行", batch_id));
+            return Err(format!("巡检任务 #{} 正在运行中，请勿重复执行", batch_id));
         }
 
         let device_ids_str = batch.device_ids.unwrap_or_else(|| "[]".to_string());
@@ -1209,7 +1207,7 @@ pub fn pause_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> 
         .map_err(|e| e.to_string())?;
 
     if affected == 0 {
-        return Err(format!("巡检批次 ID {} 不存在或状态不是 running", batch_id));
+        return Err(format!("巡检任务 ID {} 不存在或状态不是 running", batch_id));
     }
 
     // 将仍在 running 的记录标记为 stopped（pending 记录保持，待恢复时执行）
@@ -1238,7 +1236,7 @@ pub fn stop_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
         BATCH_COLUMNS
     );
     crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
-        .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+        .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
 
     let now = now_str();
 
@@ -1282,7 +1280,7 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
         BATCH_COLUMNS
     );
     crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
-        .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
+        .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
 
     let now = now_str();
 
@@ -1458,7 +1456,7 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
     );
     if let Some(batch) = crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)? {
         if batch.status == "running" {
-            return Err("巡检批次正在运行中，请先停止后再删除".to_string());
+            return Err("巡检任务正在运行中，请先停止后再删除".to_string());
         }
     }
 
@@ -1485,7 +1483,7 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
         .map_err(|e| e.to_string())?;
 
     if affected == 0 {
-        return Err(format!("巡检批次 ID {} 不存在", batch_id));
+        return Err(format!("巡检任务 ID {} 不存在", batch_id));
     }
 
     tx.commit().map_err(|e| e.to_string())?;

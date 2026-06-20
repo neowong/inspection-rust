@@ -365,5 +365,22 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 19: {}", e))?;
     }
 
+    // ── v20: devices 增加 auth_status / auth_message（SSH 账号验证状态） ──
+    if version < 20 {
+        for (col, ty) in &[("auth_status", "TEXT DEFAULT 'unknown'"), ("auth_message", "TEXT")] {
+            let has: bool = conn
+                .prepare(&format!("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{}'", col))
+                .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !has {
+                conn.execute_batch(&format!("ALTER TABLE devices ADD COLUMN {} {};", col, ty))
+                    .map_err(|e| format!("migration 20: {}", e))?;
+            }
+        }
+        conn.execute_batch("PRAGMA user_version = 20;")
+            .map_err(|e| format!("migration 20: {}", e))?;
+    }
+
     Ok(())
 }

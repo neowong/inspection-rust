@@ -1,4 +1,4 @@
-use inspection_rust_lib::{AppState, db};
+use inspection_rust_lib::AppState;
 
 #[test]
 fn test_full_inspection_pipeline() {
@@ -182,10 +182,11 @@ fn test_full_inspection_pipeline() {
             password,
         };
 
-        let outputs = inspection_rust_lib::services::inspection_runner::run_commands(
+        let outputs = inspection_rust_lib::services::inspection_runner::run_commands_with_cancel(
             &source,
             &device.2,
             &commands,
+            None,
             None,
         ).unwrap();
 

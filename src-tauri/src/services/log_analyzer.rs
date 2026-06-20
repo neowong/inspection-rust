@@ -162,7 +162,7 @@ fn parse_cisco_line(line: &str) -> Option<LogEntry> {
         return None;
     }
 
-    let content = if line.starts_with('*') { &line[1..] } else { &line[1..] };
+    let content = &line[1..];
 
     // Split at ": %" to separate timestamp from facility info
     let split_pos = content.find(": %")?;

@@ -100,7 +100,7 @@ pub fn list_devices(
     status: Option<String>,
     state: State<AppState>,
 ) -> Result<Vec<Device>, String> {
-    eprintln!("[list_devices] vendor={:?}, device_type={:?}, status={:?}", vendor, device_type, status);
+    tracing::debug!("[list_devices] vendor={:?}, device_type={:?}, status={:?}", vendor, device_type, status);
     let conn = state.db.lock();
 
     let mut sql = format!("SELECT {} FROM devices WHERE 1=1", DEVICE_COLUMNS);
@@ -253,7 +253,15 @@ pub fn update_device(
         if !pass.is_empty() {
             let encrypted = CryptoService::encrypt(pass)?;
             updater.push_raw("ssh_password_encrypted", encrypted);
+            // 密码变更后旧的 auth_status 失效，重置为 unknown 等待重新验证
+            updater.push_raw("auth_status", "unknown".to_string());
+            updater.push_raw("auth_message", Option::<String>::None);
         }
+    }
+    // 用户名变更也重置 auth_status
+    if data.ssh_username.is_some() {
+        updater.push_raw("auth_status", "unknown".to_string());
+        updater.push_raw("auth_message", Option::<String>::None);
     }
 
     if updater.is_empty() {
@@ -411,7 +419,7 @@ pub fn check_device_status(
     device_id: i64,
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
-    check_device_status_inner(&*state, device_id)
+    check_device_status_inner(&state, device_id)
 }
 
 /// 检查所有设备连通状态（并发）
@@ -501,17 +509,186 @@ pub async fn detect_device_model(
     use crate::services::vendor_profile::{self, ExecMode};
 
     let profile = vendor_profile::get_profile(&vendor);
-    eprintln!("[detect] vendor={}, exec_mode={:?}", vendor, profile.exec_mode);
+    tracing::info!(
+        "[detect] 开始静态信息检测 [{}@{}:{}] vendor={}, exec_mode={:?}",
+        ssh_username, ip, ssh_port, vendor, profile.exec_mode
+    );
 
-    match profile.exec_mode {
+    let result = match profile.exec_mode {
         ExecMode::Exec => {
             // Linux / 发行版：exec channel 检测
-            detect_linux_info(ip, ssh_port, ssh_username, ssh_password).await
+            detect_linux_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password).await
         }
         ExecMode::Shell => {
             // 网络设备：shell 会话检测
-            detect_network_device_info(ip, ssh_port, ssh_username, ssh_password, vendor).await
+            detect_network_device_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone()).await
         }
+    };
+    match &result {
+        Ok(json) => tracing::info!("[detect] 完成 [{}@{}]: {}", ssh_username, ip, json),
+        Err(e) => tracing::error!("[detect] 失败 [{}@{}]: {}", ssh_username, ip, e),
+    }
+    result
+}
+
+/// 使用 DB 中存储的设备凭据触发检测（编辑模式下用户不必重新输入密码）
+#[tauri::command]
+pub async fn detect_device_model_by_id(
+    device_id: i64,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // 1. 读取设备 + 解密密码
+    let read_result: Result<(String, u16, String, String, String), String> = {
+        let conn = state.db.lock();
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        let device =
+            crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
+                .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
+
+        let port = match port_u16(device.ssh_port) {
+            Some(p) => p,
+            None => return Err(format!("设备 SSH 端口非法: {}", device.ssh_port)),
+        };
+        let pwd = match device.ssh_password_encrypted.as_deref() {
+            Some(p) if !p.is_empty() => match CryptoService::decrypt(p) {
+                Ok(s) => s,
+                Err(e) => return Err(e),
+            },
+            _ => {
+                // 凭据缺失：写入 auth_status 然后返回错误
+                let now = now_str();
+                let _ = conn.execute(
+                    "UPDATE devices SET auth_status='no_credential', auth_message=?1, updated_at=?2 WHERE id=?3",
+                    rusqlite::params!["未保存 SSH 密码", now, device_id],
+                );
+                return Err("设备未保存 SSH 密码，请编辑后重新输入".to_string());
+            }
+        };
+        Ok((
+            device.ip,
+            port,
+            device.ssh_username.unwrap_or_default(),
+            pwd,
+            device.vendor,
+        ))
+    };
+    let (ip, ssh_port, ssh_username, ssh_password, vendor) = read_result?;
+
+    // 2. 调用底层检测
+    let detect_result =
+        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor).await;
+
+    // 失败：分类并写入 auth_status
+    let json = match detect_result {
+        Ok(j) => j,
+        Err(e) => {
+            let (auth_status, brief) = classify_detect_error(&e);
+            let now = now_str();
+            let conn = state.db.lock();
+            let _ = conn.execute(
+                "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
+                rusqlite::params![auth_status, brief, now, device_id],
+            );
+            return Err(e);
+        }
+    };
+
+    // 3. 把检测到的字段写回数据库（同时把 auth_status 标记为 ok）
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("解析检测结果失败: {}", e))?;
+    {
+        let conn = state.db.lock();
+        let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+        if let Some(obj) = parsed.as_object() {
+            if let Some(s) = obj.get("model").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                updater.push_raw("model", s.to_string());
+            }
+            if let Some(s) = obj
+                .get("serial_number")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                updater.push_raw("serial_number", s.to_string());
+            }
+            if let Some(s) = obj
+                .get("manufacturing_date")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                updater.push_raw("manufacturing_date", s.to_string());
+            }
+            if let Some(s) = obj.get("sysname").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                updater.push_raw("sysname", s.to_string());
+            }
+            if let Some(s) = obj
+                .get("cpu_cores")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                if let Ok(n) = s.parse::<i64>() {
+                    updater.push_raw("cpu_cores", n);
+                }
+            }
+            if let Some(s) = obj
+                .get("memory_gb")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                // dmidecode 返回如 "7.7Gi"，DB 列是 REAL，需提取数字部分
+                let num_str: String = s
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                if let Ok(n) = num_str.parse::<f64>() {
+                    updater.push_raw("memory_gb", n);
+                }
+            }
+        }
+        // 检测成功 → 标记 auth_status=ok
+        updater.push_raw("auth_status", "ok".to_string());
+        updater.push_raw("auth_message", Option::<String>::None);
+        updater.push_raw("updated_at", now_str());
+        let (set_parts, mut params) = updater.finish();
+        let idx = params.len() as i32 + 1;
+        let sql = format!(
+            "UPDATE devices SET {} WHERE id = ?{}",
+            set_parts.join(", "),
+            idx
+        );
+        params.push(Box::new(device_id));
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        conn.execute(&sql, param_refs.as_slice())
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(json)
+}
+
+/// 把 SSH 检测错误分类为 auth_status 标记和简短中文消息。
+/// 返回 (status_code, brief_message)。
+fn classify_detect_error(err: &str) -> (&'static str, String) {
+    let lower = err.to_lowercase();
+    if err.contains("SSH密码认证失败")
+        || err.contains("SSH认证未通过")
+        || lower.contains("authentication")
+    {
+        ("auth_failed", "SSH 账号或密码错误".to_string())
+    } else if err.contains("TCP连接失败") || lower.contains("connection refused") {
+        ("unreachable", "无法连接（端口/网络）".to_string())
+    } else if lower.contains("timeout") || err.contains("超时") {
+        ("timeout", "连接超时".to_string())
+    } else if err.contains("地址解析失败") || err.contains("无法解析主机地址") {
+        ("dns_fail", "地址解析失败".to_string())
+    } else if err.contains("未保存 SSH 密码") {
+        ("no_credential", "未保存 SSH 密码".to_string())
+    } else {
+        // 截断到 80 字符
+        let trimmed = if err.chars().count() > 80 {
+            err.chars().take(80).collect::<String>() + "…"
+        } else {
+            err.to_string()
+        };
+        ("error", trimmed)
     }
 }
 
@@ -526,11 +703,12 @@ async fn detect_linux_info(
     use crate::services::linux_runner;
     use std::collections::HashMap;
 
-    eprintln!("[detect_linux] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
+    tracing::info!("[detect_linux] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
 
     let commands: Vec<String> = vec![
         "hostnamectl".to_string(),
         "cat /etc/os-release".to_string(),
+        "nproc".to_string(),
         "lscpu".to_string(),
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
@@ -553,9 +731,14 @@ async fn detect_linux_info(
             None,
         )?;
 
-        eprintln!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
+        tracing::info!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
         for (cmd, output) in &outputs {
-            eprintln!("[detect_linux] 命令: {} → 输出前200字符: {}", cmd, &output[..output.len().min(200)]);
+            // 取首 200 字节并按 char 边界截断，避免落在 UTF-8 多字节中间导致 panic
+            let mut end = output.len().min(200);
+            while end > 0 && !output.is_char_boundary(end) {
+                end -= 1;
+            }
+            tracing::debug!("[detect_linux] 命令 '{}' → {}", cmd, &output[..end]);
         }
 
         // 解析结果
@@ -580,10 +763,19 @@ async fn detect_linux_info(
             }
         }
 
-        // lscpu → cpu_cores
-        if let Some(output) = outputs.get("lscpu") {
-            if let Some(cores) = extract_lscpu_cores(output) {
-                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
+        // nproc → cpu_cores（首选，最稳定）
+        if let Some(output) = outputs.get("nproc") {
+            let trimmed = output.trim();
+            if trimmed.parse::<i64>().is_ok() {
+                info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
+            }
+        }
+        // lscpu → cpu_cores (fallback，nproc 失败时使用)
+        if !info.contains_key("cpu_cores") {
+            if let Some(output) = outputs.get("lscpu") {
+                if let Some(cores) = extract_lscpu_cores(output) {
+                    info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
+                }
             }
         }
 
@@ -595,7 +787,7 @@ async fn detect_linux_info(
         }
 
         let result = serde_json::Value::Object(info).to_string();
-        eprintln!("[detect_linux] 返回结果: {}", result);
+        tracing::info!("[detect_linux] 返回结果: {}", result);
         Ok(result)
     })
     .await
@@ -612,11 +804,23 @@ async fn detect_network_device_info(
 ) -> Result<String, String> {
     use crate::services::inspection_runner::{self, SSHSessionSource};
 
-    let manu_cmd = match vendor.as_str() {
-        "H3C" | "华三" => "display device manuinfo",
-        _ => return Err("当前仅支持 H3C 设备自动检测型号".to_string()),
+    let vendor_lower = vendor.to_lowercase();
+    let is_fortinet = vendor == "飞塔"
+        || vendor_lower == "fortinet"
+        || vendor_lower == "fortigate";
+    let is_h3c = vendor == "H3C" || vendor == "华三" || vendor_lower == "h3c";
+
+    // 厂商对应的 (主命令, sysname 命令 [可选])
+    let (manu_cmd, sysname_cmd_opt): (&str, Option<&str>) = if is_h3c {
+        (
+            "display device manuinfo",
+            Some("display current-configuration | include sysname"),
+        )
+    } else if is_fortinet {
+        ("get system status", None)
+    } else {
+        return Err(format!("暂不支持 {} 设备自动检测型号", vendor));
     };
-    let sysname_cmd = "display current-configuration | include sysname";
 
     tokio::task::spawn_blocking(move || {
         let source = SSHSessionSource {
@@ -645,16 +849,20 @@ async fn detect_network_device_info(
                 &vendor,
                 None,
             )?;
-            let sysname_output = inspection_runner::send_command(
-                &mut channel,
-                sysname_cmd,
-                &base_prompt,
-                &source.password,
-                &source.host,
-                &vendor,
-                None,
-            )
-            .unwrap_or_default();
+            let sysname_output = if let Some(scmd) = sysname_cmd_opt {
+                inspection_runner::send_command(
+                    &mut channel,
+                    scmd,
+                    &base_prompt,
+                    &source.password,
+                    &source.host,
+                    &vendor,
+                    None,
+                )
+                .unwrap_or_default()
+            } else {
+                String::new()
+            };
             Ok((output, sysname_output))
         })();
 
@@ -663,10 +871,19 @@ async fn detect_network_device_info(
 
         let (output, sysname_output) = cmd_result?;
         let cleaned = inspection_runner::clean_output(&output, &base_prompt);
-        let sysname_cleaned = inspection_runner::clean_output(&sysname_output, &base_prompt);
-        let mut info = parse_h3c_device_info(&cleaned);
-        info.sysname = parse_sysname(&sysname_cleaned);
-        Ok(serde_json::json!(info).to_string())
+
+        let info_json = if is_h3c {
+            let sysname_cleaned =
+                inspection_runner::clean_output(&sysname_output, &base_prompt);
+            let mut info = parse_h3c_device_info(&cleaned);
+            info.sysname = parse_sysname(&sysname_cleaned);
+            serde_json::json!(info)
+        } else if is_fortinet {
+            serde_json::json!(parse_fortinet_device_info(&cleaned))
+        } else {
+            serde_json::json!({})
+        };
+        Ok(info_json.to_string())
     })
     .await
     .map_err(|e| format!("检测任务失败: {}", e))?
@@ -728,6 +945,71 @@ fn parse_sysname(output: &str) -> Option<String> {
     None
 }
 
+/// 飞塔 (FortiGate) 设备信息
+#[derive(serde::Serialize)]
+struct FortinetDeviceInfo {
+    model: Option<String>,
+    serial_number: Option<String>,
+    manufacturing_date: Option<String>,
+    sysname: Option<String>,
+}
+
+/// 从飞塔 `get system status` 输出中解析设备信息
+///
+/// 关键字段示例：
+/// ```text
+/// Version: FortiGate-80F v7.0.17,build0682,250113 (GA.M)
+/// Serial-Number: FGT80FTK24011463
+/// Hostname: aHope-FW
+/// BIOS version: 05000100
+/// ```
+///
+/// 注意：飞塔 CLI 不暴露真正的出厂日期（`get system status` 中的 250113 是固件 build 日期），
+/// 因此 `manufacturing_date` 留空。
+fn parse_fortinet_device_info(output: &str) -> FortinetDeviceInfo {
+    let mut model = None;
+    let mut serial_number = None;
+    let mut sysname = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let (key, value) = match trimmed.find(':') {
+            Some(idx) => (
+                trimmed[..idx].trim().to_lowercase(),
+                trimmed[idx + 1..].trim(),
+            ),
+            None => continue,
+        };
+        if value.is_empty() {
+            continue;
+        }
+        match key.as_str() {
+            "version" if model.is_none() => {
+                // "FortiGate-80F v7.0.17,build0682,250113 (GA.M)"
+                // 取首个逗号前作为型号+版本
+                let m = value.split(',').next().unwrap_or(value).trim();
+                if !m.is_empty() {
+                    model = Some(m.to_string());
+                }
+            }
+            "serial-number" | "serial number" if serial_number.is_none() => {
+                serial_number = Some(value.to_string());
+            }
+            "hostname" if sysname.is_none() => {
+                sysname = Some(value.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    FortinetDeviceInfo {
+        model,
+        serial_number,
+        manufacturing_date: None,
+        sysname,
+    }
+}
+
 /// 从 H3C 键值行中提取值，格式: "KEY          : VALUE"
 fn extract_h3c_field(line: &str, keys: &[&str]) -> Option<String> {
     for key in keys {
@@ -777,11 +1059,25 @@ fn extract_os_release_value(output: &str, key: &str) -> Option<String> {
 }
 
 /// 从 lscpu 输出提取 CPU 核心数
+/// 兼容英文 "CPU(s):" 和中文 locale "CPU:" 等多种格式
 fn extract_lscpu_cores(output: &str) -> Option<String> {
     for line in output.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("CPU(s):") {
-            let val = rest.trim().split_whitespace().next()?;
+        // 匹配 "CPU(s):" 或行首是 "CPU" 后跟冒号的字段
+        let rest = trimmed
+            .strip_prefix("CPU(s):")
+            .or_else(|| {
+                // 兼容 "CPU :" / "CPU:"，但要排除 "CPU MHz:" / "CPU family:" 等
+                if let Some(idx) = trimmed.find(':') {
+                    let key = trimmed[..idx].trim();
+                    if key.eq_ignore_ascii_case("cpu") {
+                        return Some(&trimmed[idx + 1..]);
+                    }
+                }
+                None
+            });
+        if let Some(rest) = rest {
+            let val = rest.split_whitespace().next()?;
             if val.parse::<i64>().is_ok() {
                 return Some(val.to_string());
             }

@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /**
+   * 表格单元格内容截断 + 柔和渐变淡出。
+   * 内容溢出时（data-overflow="true"，由 JS 在鼠标进入时设置）启用 mask-image
+   * 让末端 24px 渐变到透明，比硬切的省略号更柔和；未溢出时显示普通省略号。
+   */
+  .table-cell-truncate {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    /* 让 mask 渐变能在子节点（包括徽章/链接）上正常工作 */
+    -webkit-background-clip: padding-box;
+  }
+  @supports (mask-image: linear-gradient(black, black)) or (-webkit-mask-image: linear-gradient(black, black)) {
+    .table-cell-truncate[data-overflow="true"] {
+      text-overflow: clip;
+      mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    }
+  }
+}
+
 @layer base {
   :root {
     /* Sidebar & chrome (dark navy) */

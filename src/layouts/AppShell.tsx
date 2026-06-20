@@ -45,6 +45,7 @@ export default function AppShell() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [statusMsg, setStatusMsg] = useState("就绪");
+  const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
 
   const activeKey = useMemo(
     () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? null,
@@ -55,6 +56,26 @@ export default function AppShell() {
     const handler = (e: Event) => setStatusMsg((e as CustomEvent).detail);
     window.addEventListener("statusbar-message", handler);
     return () => window.removeEventListener("statusbar-message", handler);
+  }, []);
+
+  // 临时提示标签：8 秒后自动消失，level 决定颜色
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | string
+        | { text: string; level?: "info" | "warn" | "error" | "success"; durationMs?: number };
+      const data = typeof detail === "string" ? { text: detail } : detail;
+      setHint({ text: data.text, level: data.level ?? "info" });
+      if (timer) clearTimeout(timer);
+      const dur = (typeof detail === "object" && detail.durationMs) || 8000;
+      timer = setTimeout(() => setHint(null), dur);
+    };
+    window.addEventListener("statusbar-hint", handler);
+    return () => {
+      window.removeEventListener("statusbar-hint", handler);
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const sidebarBg = "hsl(var(--sidebar-bg))";
@@ -150,6 +171,27 @@ export default function AppShell() {
           <span className="w-1.5 h-1.5 rounded-full shadow-sm" style={{ backgroundColor: "hsl(var(--success))" }} />
           {statusMsg}
         </span>
+        {hint && (
+          <span
+            className="px-2 py-[1px] rounded text-[10px] font-medium animate-in cursor-pointer"
+            style={{
+              backgroundColor:
+                hint.level === "error"   ? "hsl(var(--danger) / 0.18)" :
+                hint.level === "warn"    ? "hsl(45 93% 50% / 0.18)"   :
+                hint.level === "success" ? "hsl(var(--success) / 0.18)" :
+                                           "hsl(var(--accent) / 0.18)",
+              color:
+                hint.level === "error"   ? "hsl(var(--danger))" :
+                hint.level === "warn"    ? "hsl(45 93% 65%)"    :
+                hint.level === "success" ? "hsl(var(--success))" :
+                                           "hsl(var(--accent))",
+            }}
+            title="点击关闭"
+            onClick={() => setHint(null)}
+          >
+            {hint.text}
+          </span>
+        )}
         <span className="flex-1" />
         <span>v3.1</span>
       </footer>

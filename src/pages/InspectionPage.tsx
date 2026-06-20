@@ -67,21 +67,15 @@ export default function InspectionPage() {
     loadDevices();
   }, [loadBatches, loadDevices]);
 
-  // Auto-refresh while any batch is running（用 ref 跟踪，避免 batches 变化重建 interval）
-  const batchesRef = useRef(batches);
-  batchesRef.current = batches;
+  // Auto-refresh while any batch is running（用 hasRunning 作为依赖，确保每次状态切换都能正确启停 interval）
+  const hasRunning = batches.some((b: any) => b.status === "running");
   useEffect(() => {
-    const checkAndPoll = () => {
-      const hasRunning = batchesRef.current.some((b: any) => b.status === "running");
-      return hasRunning;
-    };
-    if (!checkAndPoll()) return;
+    if (!hasRunning) return;
     const id = setInterval(() => {
-      if (!checkAndPoll()) { clearInterval(id); return; }
       loadBatches();
     }, 3000);
     return () => clearInterval(id);
-  }, [loadBatches]);
+  }, [hasRunning, loadBatches]);
 
   // ----- Batch actions -----
   const handleAction = (batchId: number, action: string) => {
@@ -166,14 +160,14 @@ export default function InspectionPage() {
       <div className="w-[300px] shrink-0 flex flex-col border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-card))] overflow-hidden">
         <div className="p-3 border-b border-[hsl(var(--border))] space-y-2">
           <div className="flex items-center justify-between">
-            <h1 className="text-base font-bold text-[hsl(var(--text-primary))]">巡检批次</h1>
+            <h1 className="text-base font-bold text-[hsl(var(--text-primary))]">巡检任务</h1>
             <Button onClick={() => { setBatchForm(getDefaultBatchForm()); setModalOpen(true); }} size="sm">+</Button>
           </div>
-          <p className="text-[11px] text-[hsl(var(--text-tertiary))]">{batches.length} 个批次</p>
+          <p className="text-[11px] text-[hsl(var(--text-tertiary))]">{batches.length} 个任务</p>
         </div>
         <div className="flex-1 overflow-y-auto">
           {batches.length === 0 && (
-            <p className="text-xs text-[hsl(var(--text-tertiary))] text-center py-8">暂无巡检批次</p>
+            <p className="text-xs text-[hsl(var(--text-tertiary))] text-center py-8">暂无巡检任务</p>
           )}
           {batches.map((b) => {
             const selected = selectedBatch?.id === b.id;
@@ -230,13 +224,13 @@ export default function InspectionPage() {
 
         {!selectedBatch ? (
           <div className="flex items-center justify-center h-full text-[hsl(var(--text-tertiary))]">
-            <p className="text-sm">← 选择左侧批次查看详情</p>
+            <p className="text-sm">← 选择左侧任务查看详情</p>
           </div>
         ) : (
           <>
             <div className="sticky top-0 z-10 bg-[hsl(var(--bg-content))] pb-2">
               <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))]">
-                {selectedBatch.name || `批次 #${selectedBatch.id}`}
+                {selectedBatch.name || `任务 #${selectedBatch.id}`}
               </h2>
             </div>
 
@@ -267,10 +261,10 @@ export default function InspectionPage() {
                 <DataTable
                   columns={[
                     { key: "device", header:"设备", render: (r: any) => { const d = deviceMap.get(r.device_id); return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`; }},
-                    { key: "status", header:"巡检状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
-                    { key: "progress", header:"详情", render: (r: any) => (r.status === "failed" && r.error_message) ? <span className="text-xs text-[hsl(var(--danger))]">{r.error_message}</span> : r.status === "running" ? <span className="text-xs text-[hsl(var(--warning))]">执行中...</span> : r.status === "completed" ? <span className="text-xs text-[hsl(var(--text-secondary))]">{r.completed_at?.slice(0, 19) || "已完成"}</span> : <span className="text-xs text-[hsl(var(--text-secondary))]">{r.status}</span> },
+                    { key: "status", header:"巡检状态", width: "w-24", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+                    { key: "progress", header:"详情", wrap: true, render: (r: any) => (r.status === "failed" && r.error_message) ? <span className="text-xs text-[hsl(var(--danger))]">{r.error_message}</span> : r.status === "running" ? <span className="text-xs text-[hsl(var(--warning))]">执行中...</span> : r.status === "completed" ? <span className="text-xs text-[hsl(var(--text-secondary))]">{r.completed_at?.slice(0, 19) || "已完成"}</span> : <span className="text-xs text-[hsl(var(--text-secondary))]">{r.status}</span> },
                     {
-                      key: "actions", header:"操作", width: "w-24",
+                      key: "actions", header:"操作", width: "w-24", noTruncate: true,
                       render: (r: any) => (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); setExpandedRecordId(r.id); }}>详情</Button>
@@ -344,10 +338,10 @@ export default function InspectionPage() {
       </div>
 
       {/* Create batch modal */}
-      <Modal open={modalOpen} title="创建巡检批次" width="w-[560px]" onClose={() => setModalOpen(false)}>
+      <Modal open={modalOpen} title="创建巡检任务" width="w-[560px]" onClose={() => setModalOpen(false)}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">批次名称</label>
+            <label className="block text-sm font-medium mb-1">任务名称</label>
             <Input className={shakeFields.has("name") ? "shake border-[hsl(var(--danger))]" : ""} value={batchForm.name} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} placeholder="例如: 巡检_2026-06-03_1430" />
           </div>
           <div>
@@ -359,12 +353,65 @@ export default function InspectionPage() {
               {devices.map((d) => {
                 const checked = batchForm.device_ids.includes(d.id);
                 const noTemplate = !d.template_id;
+                const offline = d.status === "offline";
+                // 账号异常：在线但 auth_status 标记为认证失败/无凭据等（排除正常和未验证）
+                const authBad =
+                  d.status === "online" &&
+                  !!d.auth_status &&
+                  d.auth_status !== "ok" &&
+                  d.auth_status !== "unknown";
+                const disabled = offline || authBad; // 离线或账号异常不可选中
+                const dimClass = noTemplate || offline || authBad ? "opacity-60" : "";
+                const titleText = offline
+                  ? "设备离线，无法巡检"
+                  : authBad
+                    ? `账号异常（${d.auth_message || d.auth_status}），无法巡检`
+                    : noTemplate
+                      ? "未配置巡检模板"
+                      : "";
                 return (
-                  <label key={d.id} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[hsl(var(--bg-hover))] ${checked ? "bg-[hsl(var(--accent)_/_0.08)]" : ""} ${noTemplate ? "opacity-60" : ""}`}>
-                    <input type="checkbox" checked={checked} onChange={() => setBatchForm({ ...batchForm, device_ids: checked ? batchForm.device_ids.filter((id) => id !== d.id) : [...batchForm.device_ids, d.id] })} className="rounded" />
+                  <label
+                    key={d.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded ${
+                      disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-[hsl(var(--bg-hover))]"
+                    } ${checked ? "bg-[hsl(var(--accent)_/_0.08)]" : ""} ${dimClass}`}
+                    title={titleText}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => {
+                        if (disabled) return;
+                        setBatchForm({
+                          ...batchForm,
+                          device_ids: checked
+                            ? batchForm.device_ids.filter((id) => id !== d.id)
+                            : [...batchForm.device_ids, d.id],
+                        });
+                      }}
+                      className="rounded"
+                    />
                     <span className="text-sm flex-1">{d.name}</span>
                     <span className="text-xs text-[hsl(var(--text-tertiary))]">{d.ip} · {d.vendor}</span>
-                    {noTemplate && <span className="text-xs text-[hsl(var(--warning))]" title="未配置巡检模板">!</span>}
+                    {offline && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--danger)_/_0.12)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)_/_0.25)]">
+                        离线
+                      </span>
+                    )}
+                    {authBad && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--danger)_/_0.12)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)_/_0.25)]">
+                        账号异常
+                      </span>
+                    )}
+                    {!offline && !authBad && d.status === "unknown" && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--text-tertiary)_/_0.12)] text-[hsl(var(--text-secondary))] border border-[hsl(var(--text-tertiary)_/_0.25)]">
+                        未知
+                      </span>
+                    )}
+                    {noTemplate && (
+                      <span className="text-xs text-[hsl(var(--warning))]" title="未配置巡检模板">!</span>
+                    )}
                   </label>
                 );
               })}
@@ -382,7 +429,7 @@ export default function InspectionPage() {
       </Modal>
 
       {/* Delete confirmation modal */}
-      <Modal open={confirmDelete !== null} title="删除巡检批次" onClose={() => setConfirmDelete(null)}>
+      <Modal open={confirmDelete !== null} title="删除巡检任务" onClose={() => setConfirmDelete(null)}>
         <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，所有相关巡检记录也将被删除。</p>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => setConfirmDelete(null)}>取消</Button>

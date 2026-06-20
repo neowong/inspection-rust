@@ -25,6 +25,8 @@ pub struct Device {
     pub sysname: Option<String>,
     pub cpu_cores: Option<i64>,
     pub memory_gb: Option<f64>,
+    pub auth_status: Option<String>,
+    pub auth_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -306,7 +308,7 @@ pub fn now_str() -> String {
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
      ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, \
-     cpu_cores, memory_gb, created_at, updated_at";
+     cpu_cores, memory_gb, auth_status, auth_message, created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
     "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
@@ -354,8 +356,10 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         sysname: row.get(14)?,
         cpu_cores: row.get(15)?,
         memory_gb: row.get(16)?,
-        created_at: row.get(17)?,
-        updated_at: row.get(18)?,
+        auth_status: row.get(17)?,
+        auth_message: row.get(18)?,
+        created_at: row.get(19)?,
+        updated_at: row.get(20)?,
     })
 }
 

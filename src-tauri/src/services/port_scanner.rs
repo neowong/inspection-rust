@@ -66,7 +66,7 @@ fn service_name(port: u16) -> String {
     common_ports()
         .get(&port)
         .map(|s| s.to_string())
-        .unwrap_or_else(|| String::new())
+        .unwrap_or_default()
 }
 
 // ============================================================================
@@ -237,7 +237,7 @@ fn scan_udp_one(ip: &str, port: u16, timeout: std::time::Duration) -> UdpPortRes
 
     // connect() is essential: the kernel only delivers ICMP Port Unreachable
     // errors to connected UDP sockets, translating them to ECONNREFUSED on recv()
-    if let Err(_) = socket.connect(&addr) {
+    if socket.connect(&addr).is_err() {
         return UdpPortResult {
             port, open: false, filtered: true, service,
             detail: "连接失败".into(),

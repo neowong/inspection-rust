@@ -4,10 +4,10 @@ use std::io::Write;
 use std::path::Path;
 
 use docx_rs::{
-    AlignmentType, BorderType, BreakType, Docx, Footer, Header, HeightRule, LineSpacing,
-    NumPages, PageNum, Paragraph, ParagraphBorder, ParagraphBorderPosition, ParagraphBorders, Run,
-    RunFonts, Shading, Table, TableBorder, TableBorderPosition, TableBorders, TableCell, TableCellMargins,
-    TableLayoutType, TableRow, VAlignType, WidthType,
+    AlignmentType, BorderType, BreakType, Docx, Footer, Header, HeightRule, LineSpacing, NumPages,
+    PageMargin, PageNum, Paragraph, ParagraphBorder, ParagraphBorderPosition, ParagraphBorders,
+    Run, RunFonts, Shading, Table, TableBorder, TableBorderPosition, TableBorders, TableCell,
+    TableCellMargins, TableLayoutType, TableOfContents, TableRow, VAlignType, WidthType,
 };
 
 use super::json_util::{parse_json_map, parse_json_object};
@@ -159,6 +159,18 @@ fn init_docx(config: &ReportTemplateConfig, device: &Device) -> Docx {
 
 fn init_docx_with_vars(config: &ReportTemplateConfig, vendor: &str, device_name: &str) -> Docx {
     let mut docx = Docx::new();
+
+    // A4 默认 11906 twips 宽，左右 1701 边距 → 内容仅 8504 twips。
+    // 报告内表格统一用 9072 twips 宽，需要把页边距收窄到 1417 (≈1") 才能装下，
+    // 否则表格和目录右侧会溢出页面。
+    docx = docx.page_margin(
+        PageMargin::new()
+            .top(1440)
+            .bottom(1440)
+            .left(1417)
+            .right(1417),
+    );
+
     let mut vars: HashMap<&str, String> = HashMap::new();
     vars.insert("vendor", vendor.to_string());
     vars.insert("device_name", device_name.to_string());
@@ -363,25 +375,48 @@ fn build_device_catalog(
     );
     docx = docx.add_paragraph(Paragraph::new());
 
-    for (index, (device, _)) in items.iter().enumerate() {
-        docx = docx.add_paragraph(
-            Paragraph::new().add_run(
+    if items.is_empty() {
+        return docx;
+    }
+
+    // 目录：先放一个提示段落，再放一个空 TOC 字段占位。
+    //
+    // 背景：docx-rs 0.4.20 生成的 TOC 字段在 WPS 里无法自动展开（尝试过
+    // \u/\o 开关、注入 Heading1/2 与 TOC1/2 样式、<w:updateFields> 等均无效，
+    // WPS 打开后目录区域为空）。因此这里：
+    //   1) 写一段提示文字，告诉用户"在 WPS 中引用→更新目录"手工生成
+    //   2) 仍保留一个 dirty 的 TOC 字段，用户在 WPS 里"更新域"时能识别并填充
+    // 标题已用 Heading1/Heading2 样式标记（inject_toc_styles 注入定义），
+    // WPS 手工生成目录时可正确收集。
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(
                 Run::new()
-                    .add_text(format!("{}. {}", index + 1, device.name))
-                    .bold()
-                    .size(28)
+                    .add_text("（在 WPS 中点击“引用 → 更新目录”生成带页码的目录）")
+                    .size(18)
+                    .color("808080")
                     .fonts(zh_fonts()),
             ),
-        );
-    }
+    );
+    docx = docx.add_paragraph(Paragraph::new());
+
+    let toc = TableOfContents::with_instr_text(r#"TOC \o "1-2" \h"#)
+        .auto()
+        .dirty();
+    docx = docx.add_table_of_contents(toc);
 
     docx
 }
 
 fn device_heading(docx: Docx, device: &Device, index: usize, color: &str) -> Docx {
+    // 用 Heading1 标题样式（inject_toc_styles 注入定义，带 outlineLvl=0）：
+    // - WPS 目录按标题样式收集，pStyle="Heading1" 才会被 TOC \o "1-2" 收为第1级
+    // - 导航窗格也显示为顶层大纲项
+    // 视觉样式（颜色/字号）由 Run 属性覆盖样式默认值
     docx.add_paragraph(
         Paragraph::new()
-            .style("Heading2")
+            .style("Heading1")
             .line_spacing(LineSpacing::new().before(240).after(160))
             .add_run(
                 Run::new()
@@ -409,7 +444,7 @@ fn inspection_date(record: &InspectionRecord) -> String {
         .as_deref()
         .or(record.started_at.as_deref())
         .and_then(|s| s.get(..10))
-        .unwrap_or_else(|| "")
+        .unwrap_or("")
         .to_string()
 }
 
@@ -449,8 +484,10 @@ fn append_record_body(
 
 fn section_heading(docx: Docx, text: &str, _color: &str) -> Docx {
     // 章节标题：仿模板 — 黑字加粗 + 仿宋 + 段前段后留白
+    // 用 Heading2 标题样式（带 outlineLvl=1）：导航窗格第2层 + TOC \o "1-2" 收为目录第2级
     docx.add_paragraph(
         Paragraph::new()
+            .style("Heading2")
             .line_spacing(LineSpacing::new().before(200).after(120))
             .add_run(Run::new().add_text(text).bold().size(28).fonts(zh_fonts())),
     )
@@ -544,6 +581,24 @@ fn build_device_info(
             "sn" => device.serial_number.clone().unwrap_or_default(),
             "mfg_date" => device.manufacturing_date.clone().unwrap_or_default(),
             "inspect_time" => inspect_time.clone(),
+            "sysname" => device.sysname.clone().unwrap_or_default(),
+            // 发行版：服务器用 model 字段（detect 把 OS PRETTY_NAME 写入 model）；
+            // 网络设备无该字段，留空
+            "os_release" => device.model.clone().unwrap_or_default(),
+            "cpu_cores" => device
+                .cpu_cores
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            "memory_gb" => device
+                .memory_gb
+                .map(|n| {
+                    if (n - n.trunc()).abs() < f64::EPSILON {
+                        format!("{} GB", n as i64)
+                    } else {
+                        format!("{:.1} GB", n)
+                    }
+                })
+                .unwrap_or_default(),
             _ => String::new(),
         }
     };
@@ -652,8 +707,8 @@ fn build_device_info(
         };
 
         let mut rows: Vec<TableRow> = Vec::new();
-        let mut iter = visible.chunks(2);
-        while let Some(pair) = iter.next() {
+        let iter = visible.chunks(2);
+        for pair in iter {
             let f1 = pair[0];
             if pair.len() == 2 {
                 let f2 = pair[1];
@@ -1120,7 +1175,22 @@ fn device_prompt(device: &Device, record: &InspectionRecord) -> String {
                 device.ip.clone()
             }
         });
-    match device.vendor.to_lowercase().as_str() {
+    let vendor_lower = device.vendor.to_lowercase();
+    // Linux 服务器：按用户名决定 root(#) 或普通用户($)
+    let is_linux = matches!(
+        vendor_lower.as_str(),
+        "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux"
+    );
+    if is_linux {
+        let user = device
+            .ssh_username
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("user");
+        let symbol = if user == "root" { "#" } else { "$" };
+        return format!("[{}@{} ~]{}", user, hostname, symbol);
+    }
+    match vendor_lower.as_str() {
         "h3c" | "华三" | "huawei" | "华为" => format!("<{}>", hostname),
         "cisco" | "思科" | "ruijie" | "锐捷" | "fortinet" | "fortigate" | "飞塔" => {
             format!("{}#", hostname)
@@ -1137,6 +1207,60 @@ fn parse_static_info(json: &Option<String>) -> Option<serde_json::Map<String, se
         .cloned()
 }
 
+/// 在 docx-rs 生成的 settings.xml 中注入 <w:updateFields w:val="true"/>，
+/// 让 Word/WPS 打开文档时自动更新所有字段（PAGEREF 页码、目录等）。
+/// docx-rs 0.4.20 不暴露此设置，只能 pack 前手动改 settings 字节。
+fn inject_update_fields(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
+    let s = String::from_utf8_lossy(&xml.settings).into_owned();
+    // 插在 <w:settings ...> 开标签之后第一个子元素之前
+    let marker = "<w:defaultTabStop";
+    let updated = if s.contains("<w:updateFields") {
+        s
+    } else if let Some(pos) = s.find(marker) {
+        let mut out = String::with_capacity(s.len() + 40);
+        out.push_str(&s[..pos]);
+        out.push_str("<w:updateFields w:val=\"true\" />");
+        out.push_str(&s[pos..]);
+        out
+    } else {
+        s
+    };
+    xml.settings = updated.into_bytes();
+    xml
+}
+
+/// 往 styles.xml 注入标题样式(Heading1/Heading2)和目录样式(TOC1/TOC2)定义。
+///
+/// docx-rs 0.4.20 默认只生成 Normal 样式。WPS 的目录生成依赖"标题1/标题2"内置样式
+/// （styleId="1"/"2" 或 "Heading1"/"Heading2"），光设 outlineLvl 不够 —— WPS 的
+/// `TOC \o` 开关按标题样式收集，认不到样式就生成空目录。这里注入：
+///   - Heading1/Heading2：带 outlineLvl，pStyle 引用即成为大纲项
+///   - TOC1/TOC2：带右制表位(pos=8000)+点线引导，控制目录条目宽度不溢出
+fn inject_toc_styles(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
+    let s = String::from_utf8_lossy(&xml.styles).into_owned();
+    if s.contains("w:styleId=\"Heading1\"") {
+        return xml;
+    }
+    // 在 </w:styles> 前插入
+    let marker = "</w:styles>";
+    let Some(pos) = s.find(marker) else {
+        return xml;
+    };
+    let mut out = String::with_capacity(s.len() + 1200);
+    out.push_str(&s[..pos]);
+    // Heading1：标题1，大纲级别0（导航窗格顶层 + TOC 第1级）
+    out.push_str(r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1" /><w:basedOn w:val="Normal" /><w:next w:val="Normal" /><w:qFormat /><w:pPr><w:keepNext /><w:keepLines /><w:spacing w:before="240" w:after="120" /><w:outlineLvl w:val="0" /></w:pPr><w:rPr><w:b /><w:bCs /><w:sz w:val="32" /><w:szCs w:val="32" /></w:rPr></w:style>"#);
+    // Heading2：标题2，大纲级别1（导航窗格第2层 + TOC 第2级）
+    out.push_str(r#"<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2" /><w:basedOn w:val="Normal" /><w:next w:val="Normal" /><w:qFormat /><w:pPr><w:keepNext /><w:keepLines /><w:spacing w:before="200" w:after="100" /><w:outlineLvl w:val="1" /></w:pPr><w:rPr><w:b /><w:bCs /><w:sz w:val="28" /><w:szCs w:val="28" /></w:rPr></w:style>"#);
+    // TOC1：目录第1级条目，右 tab @ 8000 + 点线，outlineLvl=9（条目本身不进导航）
+    out.push_str(r#"<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1" /><w:basedOn w:val="Normal" /><w:next w:val="Normal" /><w:qFormat /><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="8000" /></w:tabs><w:spacing w:after="80" /><w:outlineLvl w:val="9" /></w:pPr><w:rPr><w:b /><w:bCs /></w:rPr></w:style>"#);
+    // TOC2：目录第2级条目，左缩进 + 右 tab @ 8000 + 点线
+    out.push_str(r#"<w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2" /><w:basedOn w:val="Normal" /><w:next w:val="Normal" /><w:qFormat /><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="8000" /></w:tabs><w:spacing w:after="60" /><w:ind w:left="420" /><w:outlineLvl w:val="9" /></w:pPr></w:style>"#);
+    out.push_str(&s[pos..]);
+    xml.styles = out.into_bytes();
+    xml
+}
+
 fn write_docx(docx: Docx, output_path: &Path) -> Result<(), String> {
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
@@ -1144,7 +1268,8 @@ fn write_docx(docx: Docx, output_path: &Path) -> Result<(), String> {
         }
     }
     let f = fs::File::create(output_path).map_err(|e| format!("创建 docx 文件失败: {}", e))?;
-    docx.build()
+    let xml = inject_toc_styles(docx.build());
+    inject_update_fields(xml)
         .pack(f)
         .map_err(|e| format!("写入 docx 失败: {:?}", e))?;
     Ok(())
@@ -1153,7 +1278,8 @@ fn write_docx(docx: Docx, output_path: &Path) -> Result<(), String> {
 fn pack_docx_to_bytes(docx: Docx) -> Result<Vec<u8>, String> {
     let mut buf: Vec<u8> = Vec::new();
     let cursor = std::io::Cursor::new(&mut buf);
-    docx.build()
+    let xml = inject_toc_styles(docx.build());
+    inject_update_fields(xml)
         .pack(cursor)
         .map_err(|e| format!("docx 打包失败: {:?}", e))?;
     Ok(buf)
@@ -1172,3 +1298,6 @@ fn sanitize_filename(name: &str) -> String {
         trimmed
     }
 }
+
+
+

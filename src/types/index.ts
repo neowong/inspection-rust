@@ -15,6 +15,10 @@ export interface Device {
   sysname: string | null;
   cpu_cores: number | null;
   memory_gb: number | null;
+  /** SSH 账号验证状态：unknown/ok/auth_failed/unreachable/timeout/dns_fail/no_credential/error */
+  auth_status: string | null;
+  /** 账号验证错误的简短中文消息 */
+  auth_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -153,7 +157,18 @@ export interface DeviceInfoConfig {
 }
 
 export interface DeviceField {
-  key: "name" | "ip" | "vendor" | "model" | "sn" | "mfg_date" | "inspect_time";
+  key:
+    | "name"
+    | "ip"
+    | "vendor"
+    | "model"
+    | "sn"
+    | "mfg_date"
+    | "inspect_time"
+    | "sysname"
+    | "os_release"
+    | "cpu_cores"
+    | "memory_gb";
   label: string;
   visible: boolean;
 }
@@ -191,6 +206,10 @@ export const DEFAULT_REPORT_CONFIG: ReportTemplateConfig = {
       { key: "ip",           label: "IP 地址",  visible: true },
       { key: "vendor",       label: "厂商",     visible: true },
       { key: "model",        label: "型号",     visible: true },
+      { key: "sysname",      label: "主机名",   visible: false },
+      { key: "os_release",   label: "发行版",   visible: false },
+      { key: "cpu_cores",    label: "CPU 核心数", visible: false },
+      { key: "memory_gb",    label: "内存容量", visible: false },
       { key: "sn",           label: "序列号",   visible: false },
       { key: "mfg_date",     label: "出厂日期", visible: false },
       { key: "inspect_time", label: "巡检时间", visible: true },

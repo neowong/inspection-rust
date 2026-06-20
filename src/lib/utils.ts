@@ -51,3 +51,14 @@ export function friendlyError(e: unknown): string {
   if (raw.includes("FOREIGN KEY constraint failed")) return "关联数据不存在，请检查";
   return raw;
 }
+
+/** 在状态栏后显示一个临时提示标签（8 秒后自动消失） */
+export function showStatusHint(
+  text: string,
+  level: "info" | "warn" | "error" | "success" = "info",
+  durationMs?: number,
+) {
+  window.dispatchEvent(
+    new CustomEvent("statusbar-hint", { detail: { text, level, durationMs } }),
+  );
+}

@@ -364,7 +364,7 @@ pub async fn analyze_record(
     record_id: i64,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    match analyze_record_inner(&*state, record_id).await {
+    match analyze_record_inner(&state, record_id).await {
         Ok(v) => Ok(v),
         Err(e) => {
             // analyze_record_inner 已将 ai_status 置为 'processing'，失败时必须回写 'failed'，
@@ -424,7 +424,7 @@ pub async fn analyze_batch(
     // AI HTTP 调用在 db 锁外执行，并发主要受益于此；DB 读写仅短暂持锁。
     const AI_CONCURRENCY: usize = 4;
     use futures::stream::StreamExt;
-    let state_ref: &AppState = &*state;
+    let state_ref: &AppState = &state;
     let results: Vec<(i64, Result<serde_json::Value, String>)> =
         futures::stream::iter(record_ids.iter().copied())
             .map(|rid| async move { (rid, analyze_record_inner(state_ref, rid).await) })

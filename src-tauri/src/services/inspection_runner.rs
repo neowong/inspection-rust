@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use ssh2::Session;
 
+#[derive(Clone)]
 pub struct SSHSessionSource {
     pub host: String,
     pub port: u16,
@@ -28,17 +29,6 @@ mod legacy_algorithms {
 
     /// 主机密钥算法
     pub const HOST_KEY: &str = "ssh-rsa";
-}
-
-/// Execute commands on a network device via SSH using libssh2.
-/// Returns a HashMap mapping each command to its output text.
-pub fn run_commands(
-    source: &SSHSessionSource,
-    vendor: &str,
-    commands: &[String],
-    on_progress: Option<Arc<std::sync::Mutex<String>>>,
-) -> Result<indexmap::IndexMap<String, String>, String> {
-    run_commands_with_cancel(source, vendor, commands, on_progress, None)
 }
 
 /// Execute commands with an optional cancellation flag.
@@ -183,12 +173,26 @@ pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
     match connect_session_with_mode(source, false) {
         Ok(session) => Ok(session),
         Err(default_err) => {
+            // 认证失败（用户名/密码错）不应触发旧算法回退——账号错回退也只会再失败一次
+            if default_err.contains("SSH密码认证失败") || default_err.contains("SSH认证未通过") {
+                tracing::error!(
+                    "SSH 认证失败 [{}@{}:{}]: {}",
+                    source.username, source.host, source.port, default_err
+                );
+                return Err(default_err);
+            }
             tracing::warn!(
-                "SSH 默认算法握手失败: {}，尝试旧算法兼容模式",
-                default_err
+                "SSH 默认算法握手失败 [{}:{}]: {}，尝试旧算法兼容模式",
+                source.host, source.port, default_err
             );
             connect_session_with_mode(source, true)
-                .map_err(|legacy_err| format!("SSH握手失败: 默认算法失败: {}; 旧算法回退失败: {}", default_err, legacy_err))
+                .map_err(|legacy_err| {
+                    tracing::error!(
+                        "SSH 旧算法回退也失败 [{}:{}]: {}",
+                        source.host, source.port, legacy_err
+                    );
+                    format!("SSH握手失败: 默认算法失败: {}; 旧算法回退失败: {}", default_err, legacy_err)
+                })
         }
     }
 }
@@ -242,8 +246,8 @@ fn connect_session_with_mode(source: &SSHSessionSource, legacy: bool) -> Result<
 /// Open an interactive shell channel, detect the device prompt,
 /// and run session preparation (disable paging).
 /// Returns the detected prompt string and the open channel.
-pub fn open_shell_session<'s>(
-    session: &'s Session,
+pub fn open_shell_session(
+    session: &Session,
     vendor: &str,
     password: &str,
     host: &str,
@@ -317,15 +321,15 @@ fn find_prompt(
         }
 
         if start.elapsed() > timeout {
-            return Err("等待设备提示符超时（15秒）".to_string());
+            return Err("等待设备提示符超时（30秒）".to_string());
         }
 
         match channel.read(&mut buf) {
             Ok(0) => {
-                if prompt.is_some() {
+                if let Some(ref p) = prompt {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok((prompt.unwrap(), full_prompt.clone()));
+                        return Ok((p.clone(), full_prompt.clone()));
                     }
                 } else if let Some(p) = extract_prompt(&buffer) {
                     prompt = Some(p);
@@ -343,19 +347,19 @@ fn find_prompt(
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if prompt.is_some() {
+                if let Some(ref p) = prompt {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok((prompt.unwrap(), full_prompt.clone()));
+                        return Ok((p.clone(), full_prompt.clone()));
                     }
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                if prompt.is_some() {
+                if let Some(ref p) = prompt {
                     silent_rounds += 1;
                     if silent_rounds >= SILENT_THRESHOLD {
-                        return Ok((prompt.unwrap(), full_prompt.clone()));
+                        return Ok((p.clone(), full_prompt.clone()));
                     }
                 } else if let Some(p) = extract_prompt(&buffer) {
                     prompt = Some(p);
@@ -373,15 +377,14 @@ fn find_prompt(
 fn last_non_empty_line(buffer: &str) -> Option<String> {
     buffer
         .lines()
-        .filter(|l| !l.trim().is_empty())
-        .last()
+        .rfind(|l| !l.trim().is_empty())
         .map(|l| strip_ansi(l).trim().to_string())
 }
 
 /// Extract the base prompt from buffer.
 /// Strips leading control characters and trailing terminator characters.
 fn extract_prompt(buffer: &str) -> Option<String> {
-    let last = buffer.lines().filter(|l| !l.trim().is_empty()).last()?;
+    let last = buffer.lines().rfind(|l| !l.trim().is_empty())?;
 
     let trimmed = strip_ansi(last).trim().to_string();
     let cleaned: String = trimmed.chars().skip_while(|c| c.is_control()).collect();
@@ -429,9 +432,8 @@ fn output_contains_prompt(output: &str, base_prompt: &str, vendor: &str) -> bool
     let cleaned = strip_ansi(output);
     cleaned
         .lines()
-        .filter(|l| !l.trim().is_empty())
-        .last()
-        .map_or(false, |last| {
+        .rfind(|l| !l.trim().is_empty())
+        .is_some_and(|last| {
             let lt = last.trim();
             // Exact match via contains (handles prompt changes gracefully)
             if !base_prompt.is_empty() && lt.contains(base_prompt) {
@@ -469,8 +471,7 @@ fn read_until_prompt(
             let cleaned = strip_ansi(&output);
             let last_line = cleaned
                 .lines()
-                .filter(|l| !l.trim().is_empty())
-                .last()
+                .rfind(|l| !l.trim().is_empty())
                 .unwrap_or("(none)");
             let tail: String = output
                 .chars()
@@ -481,7 +482,7 @@ fn read_until_prompt(
                 .rev()
                 .collect();
             let msg = format!(
-                "[{}] 命令 '{}' 超时（15秒），已收到 {} 字节, base_prompt='{}', 最后一行='{}', 尾部: {}",
+                "[{}] 命令 '{}' 超时（30秒），已收到 {} 字节, base_prompt='{}', 最后一行='{}', 尾部: {}",
                 host, cmd, output.len(), prompt, last_line.trim(), tail.trim()
             );
             tracing::warn!("{}", msg);
@@ -627,7 +628,7 @@ fn strip_ansi(raw: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\x1b' {
             if chars.next() == Some('[') {
-                while let Some(nc) = chars.next() {
+                for nc in chars.by_ref() {
                     if nc.is_ascii_alphabetic() {
                         break;
                     }

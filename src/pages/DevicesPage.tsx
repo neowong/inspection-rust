@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Search } from "lucide-react";
 import type { Device, InspectionTemplate } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
-import { friendlyError } from "../lib/utils";
+import { friendlyError, showStatusHint } from "../lib/utils";
 import Toolbar from "../components/Toolbar";
 import SearchInput from "../components/SearchInput";
 import DataTable from "../components/DataTable";
@@ -12,6 +11,7 @@ import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
+import AuthBadge from "../components/AuthBadge";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
@@ -55,11 +55,10 @@ export default function DevicesPage() {
   const [saving, setSaving] = useState(false);
   const [passwordSet, setPasswordSet] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [detecting, setDetecting] = useState(false);
-  const [detectError, setDetectError] = useState<string | null>(null);
+  /** 正在检测的设备 ID 集合，用于按钮 loading/disable 状态 */
+  const [checkingIds, setCheckingIds] = useState<Set<number>>(new Set());
+  const [checkingAll, setCheckingAll] = useState(false);
   const { shakeFields, triggerShake } = useShakeValidation();
-
-  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && form.ssh_password.trim());
 
   const isValidIp = (ip: string) => {
     const p = ip.trim();
@@ -72,9 +71,24 @@ export default function DevicesPage() {
     });
   };
 
+  /** 将检测错误浓缩为简短提示 */
+  const detectErrorHint = (deviceName: string, e: unknown): string => {
+    const raw = typeof e === "string" ? e : JSON.stringify(e);
+    if (/auth|password|认证|密码|登录失败/i.test(raw)) return `${deviceName}: SSH 认证失败，请检查用户名/密码`;
+    if (/timeout|超时|timed out/i.test(raw)) return `${deviceName}: SSH 连接超时`;
+    if (/refused|拒绝/i.test(raw)) return `${deviceName}: SSH 连接被拒绝`;
+    if (/未保存 SSH 密码/.test(raw)) return `${deviceName}: 未保存 SSH 密码，请先编辑设备`;
+    if (/SSH 端口非法/.test(raw)) return `${deviceName}: SSH 端口配置错误`;
+    if (/不存在/.test(raw)) return `${deviceName}: 设备不存在`;
+    // 其他错误：截断到 60 字符
+    const trimmed = raw.length > 60 ? raw.slice(0, 60) + "…" : raw;
+    return `${deviceName}: ${trimmed}`;
+  };
+
   const loadDevices = useCallback(() => {
+    // Tauri v2 默认参数命名为 camelCase，对应 Rust 的 snake_case
     invoke<Device[]>("list_devices", {
-      device_type: typeFilter || undefined,
+      deviceType: typeFilter || undefined,
       status: statusFilter || undefined,
     }).then(setDevices).catch(console.error);
   }, [typeFilter, statusFilter]);
@@ -95,13 +109,11 @@ export default function DevicesPage() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setSaveError(null);
-    setDetectError(null);
     setModalOpen(true);
   };
 
   const openEdit = (d: Device) => {
     setEditing(d);
-    setDetectError(null);
     setPasswordSet(true);
     setForm({
       name: d.name,
@@ -120,41 +132,6 @@ export default function DevicesPage() {
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
     });
     setModalOpen(true);
-  };
-
-  const handleDetect = () => {
-    setDetecting(true);
-    setDetectError(null);
-    invoke<string>("detect_device_model", {
-      ip: form.ip.trim(),
-      sshPort: form.ssh_port,
-      sshUsername: form.ssh_username.trim(),
-      sshPassword: form.ssh_password,
-      vendor: form.vendor,
-    })
-      .then((json) => {
-        try {
-          const info = JSON.parse(json);
-          setForm({
-            ...form,
-            model: info.model || form.model,
-            serial_number: info.serial_number || form.serial_number,
-            manufacturing_date: info.manufacturing_date || form.manufacturing_date,
-            sysname: info.sysname || form.sysname,
-            cpu_cores: info.cpu_cores || form.cpu_cores,
-            memory_gb: info.memory_gb || form.memory_gb,
-          });
-        } catch {
-          // 兼容旧格式（纯字符串）
-          setForm({ ...form, model: json });
-        }
-      })
-      .catch((e) => {
-        const msg = typeof e === "string" ? e : JSON.stringify(e);
-        setDetectError(msg);
-        alert("检测失败: " + msg);
-      })
-      .finally(() => setDetecting(false));
   };
 
   const handleSave = () => {
@@ -194,41 +171,38 @@ export default function DevicesPage() {
         loadDevices();
         if (!saved?.id) return;
         const devId = saved.id;
+        const devName = form.name;
 
-        // 静默检测在线状态
-        invoke("check_device_status", { deviceId: devId }).then(() => loadDevices()).catch(() => {});
-
-        // 静默补全静态信息（有 SSH 凭据时自动检测）
-        const needModel = !form.model.trim();
-        const needSn = !form.serial_number.trim();
-        const needDate = !form.manufacturing_date.trim();
-        const needSysname = !form.sysname.trim();
-        const needCpu = form.device_type === "server" && !form.cpu_cores.trim();
-        const needMem = form.device_type === "server" && !form.memory_gb.trim();
-        const canDetect = form.ssh_username.trim() && form.ssh_password.trim();
-        if ((needModel || needSn || needDate || needSysname || needCpu || needMem) && canDetect) {
-          console.log("[detect] 触发自动检测:", { ip: form.ip, vendor: form.vendor, device_type: form.device_type });
-          invoke<string>("detect_device_model", {
-            ip: form.ip.trim(), sshPort: form.ssh_port,
-            sshUsername: form.ssh_username.trim(), sshPassword: form.ssh_password,
-            vendor: form.vendor,
-          }).then((json) => {
-            console.log("[detect] 检测结果:", json);
-            try {
-              const info = JSON.parse(json);
-              const patch: Record<string, unknown> = {};
-              if (needModel && info.model) patch.model = info.model;
-              if (needSn && info.serial_number) patch.serial_number = info.serial_number;
-              if (needDate && info.manufacturing_date) patch.manufacturing_date = info.manufacturing_date;
-              if (needSysname && info.sysname) patch.sysname = info.sysname;
-              if (needCpu && info.cpu_cores) patch.cpu_cores = Number(info.cpu_cores);
-              if (needMem && info.memory_gb) patch.memory_gb = info.memory_gb;
-              if (Object.keys(patch).length > 0) {
-                invoke("update_device", { deviceId: devId, data: patch }).then(() => loadDevices());
-              }
-            } catch (e) { console.error("[detect] 解析失败:", e); }
-          }).catch((e) => { console.error("[detect] 检测失败:", e); });
-        }
+        // 1. 自动检测在线状态（TCP 连通性，不需要账号）
+        invoke<{ new_status: string }>("check_device_status", { deviceId: devId })
+          .then((res) => {
+            loadDevices();
+            // 离线时不再触发静态信息检测
+            if (res?.new_status !== "online") {
+              showStatusHint(`${devName}: 设备离线（端口不通）`, "warn");
+              return;
+            }
+            // 2. 设备在线 → 触发静态信息检测（需要账号）
+            if (!form.ssh_username.trim()) {
+              showStatusHint(`${devName}: 在线，但未填 SSH 用户名，跳过静态信息检测`, "warn");
+              return;
+            }
+            showStatusHint(`正在后台检测 ${devName} 的静态信息...`, "info", 30000);
+            return invoke<string>("detect_device_model_by_id", { deviceId: devId })
+              .then((json) => {
+                console.log("[detect] 检测结果:", json);
+                loadDevices();
+                showStatusHint(`${devName}: 静态信息检测完成`, "success");
+              })
+              .catch((e) => {
+                console.error("[detect] 检测失败:", e);
+                showStatusHint(detectErrorHint(devName, e), "error");
+              });
+          })
+          .catch((e) => {
+            console.error("[check_device_status] 失败:", e);
+            showStatusHint(`${devName}: 在线状态检测失败`, "error");
+          });
       })
       .catch((e) => {
         const msg = friendlyError(e);
@@ -266,17 +240,86 @@ export default function DevicesPage() {
   };
 
   const handleCheckDevice = (d: Device) => {
-    invoke<{ status: string }>("check_device_status", { deviceId: d.id })
-      .then(() => {
-        loadDevices();
+    if (checkingIds.has(d.id)) return; // 防重复点击
+    setCheckingIds((prev) => new Set(prev).add(d.id));
+    showStatusHint(`正在检测 ${d.name}...`, "info", 30000);
+    // 先做状态检测，在线后再做静态信息检测（离线时跳过避免 SSH 超时）
+    invoke<{ new_status: string }>("check_device_status", { deviceId: d.id })
+      .then((res) => {
+        if (res?.new_status !== "online") {
+          showStatusHint(`${d.name}: 设备离线，已跳过静态信息检测`, "warn");
+          return;
+        }
+        return invoke<string>("detect_device_model_by_id", { deviceId: d.id })
+          .then(() => {
+            showStatusHint(`${d.name}: 状态与静态信息检测完成`, "success");
+          })
+          .catch((e) => {
+            console.error("[check] 静态信息检测失败:", e);
+            showStatusHint(detectErrorHint(d.name, e), "error");
+          });
       })
-      .catch(console.error);
+      .catch((e) => {
+        console.error("[check] 状态检测失败:", e);
+        showStatusHint(`${d.name}: 状态检测失败`, "error");
+      })
+      .finally(() => {
+        setCheckingIds((prev) => {
+          const n = new Set(prev);
+          n.delete(d.id);
+          return n;
+        });
+        loadDevices();
+      });
   };
 
   const handleCheckAll = () => {
+    if (checkingAll) return; // 防重复点击
+    setCheckingAll(true);
+    showStatusHint("正在检测全部设备状态...", "info", 60000);
+    let failCount = 0;
+    let okCount = 0;
+    // 全部设备：并发跑状态检测；完成后对在线设备串行触发静态信息检测
     invoke<{ total: number; online: number; offline: number }>("check_all_devices_status")
+      .catch((e) => { console.error("[check_all] 状态检测失败:", e); })
       .then(() => loadDevices())
-      .catch(console.error);
+      .then(() =>
+        // 重新读最新状态后再筛选在线设备
+        invoke<Device[]>("list_devices", { deviceType: typeFilter || undefined, status: "online" })
+      )
+      .then((onlineDevices) => {
+        if (!onlineDevices || onlineDevices.length === 0) return;
+        showStatusHint(`正在检测 ${onlineDevices.length} 台在线设备的静态信息...`, "info", 120000);
+        // 串行触发，避免大量并发 SSH 连接
+        const targets = onlineDevices;
+        const runOne = (i: number): Promise<void> => {
+          const dev = targets[i];
+          if (!dev) return Promise.resolve();
+          return invoke<string>("detect_device_model_by_id", { deviceId: dev.id })
+            .then(() => { okCount++; })
+            .catch((e) => {
+              failCount++;
+              console.error(`[check_all] ${dev.name} 静态信息检测失败:`, e);
+            })
+            .then(() => runOne(i + 1));
+        };
+        return runOne(0);
+      })
+      .then(() => loadDevices())
+      .then(() => {
+        if (okCount === 0 && failCount === 0) {
+          showStatusHint("设备状态检测完成", "success");
+        } else if (failCount === 0) {
+          showStatusHint(`检测完成：${okCount} 台静态信息已更新`, "success");
+        } else {
+          showStatusHint(`检测完成：${okCount} 台成功，${failCount} 台失败（详见控制台）`, "warn");
+        }
+      })
+      .catch((e) => {
+        console.error(e);
+        showStatusHint("检测过程出错", "error");
+      })
+      .finally(() => setCheckingAll(false));
   };
 
   const toggleSelect = (id: number) => {
@@ -333,7 +376,9 @@ export default function DevicesPage() {
           <option value="unknown">未知</option>
         </Select>
         <SearchInput value={searchText} onChange={setSearchText} placeholder="搜索设备名称/IP..." />
-        <Button size="sm" variant="secondary" onClick={handleCheckAll}>检测全部</Button>
+        <Button size="sm" variant="secondary" loading={checkingAll} onClick={handleCheckAll}>
+          {checkingAll ? "检测中..." : "检测全部"}
+        </Button>
         {selectedIds.size > 0 && (
           <Button variant="danger" size="sm" onClick={handleBatchDelete}>
             批量删除 ({selectedIds.size})
@@ -344,7 +389,7 @@ export default function DevicesPage() {
       <DataTable<Device>
         columns={[
           {
-            key: "checkbox", header: "", width: "36px", render: (r) => (
+            key: "checkbox", header: "", width: "36px", noTruncate: true, render: (r) => (
               <input
                 type="checkbox"
                 checked={selectedIds.has(r.id)}
@@ -358,7 +403,26 @@ export default function DevicesPage() {
           { key: "ip", header: "IP", render: (r) => r.ip },
           { key: "vendor", header: "厂商", render: (r) => r.vendor },
           { key: "model", header: "型号", render: (r) => r.model || "-" },
-          { key: "status", header: "状态", render: (r) => <StatusBadge status={r.status} /> },
+          {
+            key: "status",
+            header: "状态",
+            noTruncate: true,
+            render: (r) => {
+              // 离线时只显示离线徽章——账号无法验证不算"账号错误"，避免误导
+              // 在线时：账号正常/未验证 → 仅在线徽章；账号异常 → 在线 + 异常徽章
+              const showAuth =
+                r.status === "online" &&
+                r.auth_status &&
+                r.auth_status !== "ok" &&
+                r.auth_status !== "unknown";
+              return (
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <StatusBadge status={r.status} />
+                  {showAuth && <AuthBadge status={r.auth_status} message={r.auth_message} />}
+                </div>
+              );
+            },
+          },
           {
             key: "template_id", header: "关联模板", render: (r) => {
               const t = templates.find((t) => t.id === r.template_id);
@@ -373,10 +437,16 @@ export default function DevicesPage() {
             key: "actions",
             header: "操作",
             width: "200px",
+            noTruncate: true,
             render: (r) => (
               <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                <Button size="sm" variant="ghost" onClick={() => handleCheckDevice(r)}>
-                  检测
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={checkingIds.has(r.id)}
+                  onClick={() => handleCheckDevice(r)}
+                >
+                  {checkingIds.has(r.id) ? "检测中" : "检测"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                   编辑
@@ -461,26 +531,12 @@ export default function DevicesPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" ? "发行版本号" : "型号"}</label>
-                <div className="flex gap-1">
-                  <Input
-                    value={form.model}
-                    onChange={(e) => { setForm({ ...form, model: e.target.value }); setDetectError(null); }}
-                    placeholder="自动检测"
-                    className={shakeFields.has("model") ? "animate-shake" : ""}
-                  />
-                  {canDetect && (
-                    <button
-                      type="button"
-                      onClick={handleDetect}
-                      disabled={detecting}
-                      title="自动检测型号"
-                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] disabled:opacity-50 transition-colors"
-                    >
-                      <Search className={`w-4 h-4 ${detecting ? "animate-spin" : ""}`} />
-                    </button>
-                  )}
-                </div>
-                {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
+                <Input
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  placeholder="自动检测"
+                  className={shakeFields.has("model") ? "animate-shake" : ""}
+                />
               </div>
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>

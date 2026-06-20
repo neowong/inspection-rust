@@ -21,7 +21,7 @@ const SUMMARY: StatCard[] = [
 const DETAILS: StatCard[] = [
   { label: "巡检模板", key: "template_count", color: "accent", Icon: FileText, path: "/templates" },
   { label: "命令库", key: "command_count", color: "accent", Icon: Zap, path: "/templates" },
-  { label: "巡检批次", key: "batch_count", color: "accent", Icon: Package, path: "/inspection" },
+  { label: "巡检任务", key: "batch_count", color: "accent", Icon: Package, path: "/inspection" },
   { label: "进行中", key: "pending_batch_count", color: "warning", Icon: Clock, path: "/inspection" },
   { label: "已完成", key: "completed_batch_count", color: "success", Icon: CheckCircle2, path: "/inspection" },
 ];

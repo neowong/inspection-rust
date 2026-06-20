@@ -353,9 +353,9 @@ export default function TemplatesPage() {
                 const rt = reportTemplates.find(t => t.id === r.report_template_id);
                 return rt ? rt.name : <span className="text-[hsl(var(--text-tertiary))]">跟随默认</span>;
               }},
-              { key: "description", header: "描述", render: (r) => r.description || "-" },
+              { key: "description", header: "描述", wrap: true, render: (r) => r.description || "-" },
               { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
-              { key: "actions", header: "操作", width: "140px", render: (r) => (
+              { key: "actions", header: "操作", width: "140px", noTruncate: true, render: (r) => (
                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
@@ -415,9 +415,9 @@ export default function TemplatesPage() {
                 </div>
               )},
               { key: "vendor", header: "厂商", render: (r) => r.vendor || "通用" },
-              { key: "description", header: "描述", render: (r) => r.description || "-" },
+              { key: "description", header: "描述", wrap: true, render: (r) => r.description || "-" },
               { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
-              { key: "actions", header: "操作", width: "200px", render: (r) => (
+              { key: "actions", header: "操作", width: "200px", noTruncate: true, render: (r) => (
                 <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" onClick={() => openEditReport(r)}>编辑</Button>
                   {!r.is_default && (
@@ -723,6 +723,10 @@ const SAMPLE_DEVICE = {
   sn: "210235A1A1234567",
   mfg_date: "2024-08-12",
   inspect_time: "2026-06-13 09:30:00",
+  sysname: "aHope-Core",
+  os_release: "Ubuntu 22.04.4 LTS",
+  cpu_cores: "8",
+  memory_gb: "16",
 };
 
 const SAMPLE_ROWS = [
@@ -1056,6 +1060,10 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
       case "sn": return dev.sn;
       case "mfg_date": return dev.mfg_date;
       case "inspect_time": return dev.inspect_time;
+      case "sysname": return dev.sysname;
+      case "os_release": return dev.os_release;
+      case "cpu_cores": return dev.cpu_cores;
+      case "memory_gb": return `${dev.memory_gb} GB`;
       default: return "";
     }
   };
@@ -1064,6 +1072,20 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
   const promptOf = (): string => {
     const v = dev.vendor.toLowerCase();
     const sysname = "aHope";
+    // Linux 服务器：[user@host ~]# 或 $
+    if (
+      v === "linux" ||
+      v === "ubuntu" ||
+      v === "centos" ||
+      v === "rocky" ||
+      v === "debian" ||
+      v === "rhel" ||
+      v === "suse" ||
+      v === "fedora" ||
+      v === "almalinux"
+    ) {
+      return `[root@${sysname} ~]# `;
+    }
     if (v.includes("cisco") || v.includes("思科") || v.includes("ruijie") || v.includes("锐捷")) {
       return `${sysname}>`;
     }
