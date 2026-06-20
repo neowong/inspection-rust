@@ -360,14 +360,14 @@ pub fn batch_delete_devices(ids: Vec<i64>, state: State<AppState>) -> Result<(),
 // ============================================================
 
 /// 检查单个设备连通状态（内部实现）
-/// 拆分为：读取设备信息 → TCP 检测（锁外）→ 写入结果
+/// 参数为 Arc<Mutex<Connection>> 以支持 spawn_blocking 跨线程
 fn check_device_status_inner(
-    app_state: &AppState,
+    db: &Arc<parking_lot::Mutex<rusqlite::Connection>>,
     device_id: i64,
 ) -> Result<serde_json::Value, String> {
     // 1. 读取设备信息（短暂获锁）
     let device = {
-        let conn = app_state.db.lock();
+        let conn = db.lock();
         let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
         crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
             .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?
@@ -390,7 +390,7 @@ fn check_device_status_inner(
 
     // 3. 写入结果（短暂获锁）
     {
-        let conn = app_state.db.lock();
+        let conn = db.lock();
 
         conn.execute(
             "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
@@ -413,13 +413,16 @@ fn check_device_status_inner(
     }))
 }
 
-/// 检查单个设备连通状态
+/// 检查单个设备连通状态（TCP 放在 spawn_blocking 中，不阻塞 Tauri 线程池）
 #[tauri::command]
-pub fn check_device_status(
+pub async fn check_device_status(
     device_id: i64,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    check_device_status_inner(&state, device_id)
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || check_device_status_inner(&db, device_id))
+        .await
+        .map_err(|e| format!("检测任务失败: {}", e))?
 }
 
 /// 检查所有设备连通状态（并发）
