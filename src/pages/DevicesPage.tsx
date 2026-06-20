@@ -54,12 +54,13 @@ export default function DevicesPage() {
   const [form, setForm] = useState<DeviceForm>(EMPTY_FORM);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [passwordSet, setPasswordSet] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectError, setDetectError] = useState<string | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
 
-  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && form.ssh_password.trim() && (form.vendor === "H3C" || form.vendor === "华三"));
+  const canDetect = !!(form.ip.trim() && form.ssh_username.trim() && (passwordSet || form.ssh_password.trim()) && (form.vendor === "H3C" || form.vendor === "华三"));
 
   const isValidIp = (ip: string) => {
     const p = ip.trim();
@@ -102,6 +103,7 @@ export default function DevicesPage() {
   const openEdit = (d: Device) => {
     setEditing(d);
     setDetectError(null);
+    setPasswordSet(true);
     setForm({
       name: d.name,
       ip: d.ip,
@@ -475,7 +477,14 @@ export default function DevicesPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
-                  <Input type="password" value={form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
+                  <Input
+                    type="password"
+                    value={passwordSet ? "••••••••" : form.ssh_password}
+                    className={shakeFields.has("ssh_password") ? "animate-shake" : ""}
+                    onFocus={() => { if (passwordSet) { setPasswordSet(false); setForm({ ...form, ssh_password: "" }); } }}
+                    onChange={(e) => setForm({ ...form, ssh_password: e.target.value })}
+                    placeholder={editing ? "点击修改密码" : "输入密码"}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
