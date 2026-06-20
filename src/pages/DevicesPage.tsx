@@ -167,23 +167,23 @@ export default function DevicesPage() {
 
     promise
       .then((saved) => {
+        setSaving(false);
         setModalOpen(false);
         loadDevices();
+        // 后台检测：不阻塞保存流程，saving 已立即置 false
         if (!saved?.id) return;
         const devId = saved.id;
         const devName = form.name;
+        const hasCred = !!form.ssh_username.trim();
 
-        // 1. 自动检测在线状态（TCP 连通性，不需要账号）
         invoke<{ new_status: string }>("check_device_status", { deviceId: devId })
           .then((res) => {
             loadDevices();
-            // 离线时不再触发静态信息检测
             if (res?.new_status !== "online") {
               showStatusHint(`${devName}: 设备离线（端口不通）`, "warn");
               return;
             }
-            // 2. 设备在线 → 触发静态信息检测（需要账号）
-            if (!form.ssh_username.trim()) {
+            if (!hasCred) {
               showStatusHint(`${devName}: 在线，但未填 SSH 用户名，跳过静态信息检测`, "warn");
               return;
             }
@@ -205,12 +205,12 @@ export default function DevicesPage() {
           });
       })
       .catch((e) => {
+        setSaving(false);
         const msg = friendlyError(e);
         setSaveError(msg);
         if (msg.includes("IP")) triggerShake("ip");
         else triggerShake("name");
-      })
-      .finally(() => setSaving(false));
+      });
   };
 
   const handleDelete = (id: number) => {
