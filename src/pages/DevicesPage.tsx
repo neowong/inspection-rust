@@ -399,84 +399,100 @@ export default function DevicesPage() {
           </div>
         }
       >
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-              <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
-              {saveError && shakeFields.has("name") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP <span className="text-[hsl(var(--danger))]">*</span></label>
-              <Input value={form.ip} className={shakeFields.has("ip") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
-              {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
-              <Select value={form.device_type} onChange={(e) => {
-                const dt = e.target.value;
-                const updated: Partial<DeviceForm> = { device_type: dt };
-                if (dt === "server" && !SERVER_VENDORS.includes(form.vendor)) {
-                  updated.vendor = "Linux";
-                } else if (dt !== "server" && !NETWORK_VENDORS.includes(form.vendor)) {
-                  updated.vendor = "H3C";
-                }
-                setForm({ ...form, ...updated });
-              }}>
-                <option value="switch">交换机</option>
-                <option value="router">路由器</option>
-                <option value="firewall">防火墙</option>
-                <option value="loadbalancer">负载均衡</option>
-                <option value="server">服务器</option>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
-                {(form.device_type === "server" ? SERVER_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号</label>
-              <div className="flex gap-1">
-                <Input
-                  value={form.model}
-                  onChange={(e) => { setForm({ ...form, model: e.target.value }); setDetectError(null); }}
-                  placeholder="自动检测"
-                  className={shakeFields.has("model") ? "animate-shake" : ""}
-                />
-                {canDetect && (
-                  <button
-                    type="button"
-                    onClick={handleDetect}
-                    disabled={detecting}
-                    title="自动检测型号"
-                    className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] disabled:opacity-50 transition-colors"
-                  >
-                    <Search className={`w-4 h-4 ${detecting ? "animate-spin" : ""}`} />
-                  </button>
-                )}
+        <div className="space-y-4">
+          {/* 身份信息 */}
+          <div>
+            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">身份信息</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
+                  <Select value={form.device_type} onChange={(e) => {
+                    const dt = e.target.value;
+                    const updated: Partial<DeviceForm> = { device_type: dt };
+                    if (dt === "server" && !SERVER_VENDORS.includes(form.vendor)) {
+                      updated.vendor = "Linux";
+                    } else if (dt !== "server" && !NETWORK_VENDORS.includes(form.vendor)) {
+                      updated.vendor = "H3C";
+                    }
+                    setForm({ ...form, ...updated });
+                  }}>
+                    <option value="switch">交换机</option>
+                    <option value="router">路由器</option>
+                    <option value="firewall">防火墙</option>
+                    <option value="loadbalancer">负载均衡</option>
+                    <option value="server">服务器</option>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+                  <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
+                    {(form.device_type === "server" ? SERVER_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
+                  </Select>
+                </div>
               </div>
-              {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
+                  <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="设备名称" />
+                  {saveError && shakeFields.has("name") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">IP <span className="text-[hsl(var(--danger))]">*</span></label>
+                  <Input value={form.ip} className={shakeFields.has("ip") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, ip: e.target.value }); setSaveError(null); }} placeholder="192.168.1.1" />
+                  {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" ? "发行版本号" : "型号"}</label>
+                <div className="flex gap-1">
+                  <Input
+                    value={form.model}
+                    onChange={(e) => { setForm({ ...form, model: e.target.value }); setDetectError(null); }}
+                    placeholder="自动检测"
+                    className={shakeFields.has("model") ? "animate-shake" : ""}
+                  />
+                  {canDetect && (
+                    <button
+                      type="button"
+                      onClick={handleDetect}
+                      disabled={detecting}
+                      title="自动检测型号"
+                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] disabled:opacity-50 transition-colors"
+                    >
+                      <Search className={`w-4 h-4 ${detecting ? "animate-spin" : ""}`} />
+                    </button>
+                  )}
+                </div>
+                {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
-              <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
-              <Input type="password" value={form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
+
+          {/* 连接信息 */}
+          <div>
+            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">连接信息</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
+                  <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
+                  <Input type="password" value={form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 端口</label>
+                <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 端口</label>
-              <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) })} />
-            </div>
+
+          {/* 巡检配置 */}
+          <div>
+            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">巡检配置</p>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
               <Select
@@ -489,6 +505,8 @@ export default function DevicesPage() {
               </Select>
             </div>
           </div>
+
+          {/* 自动检测（仅网络设备） */}
           {form.device_type !== "server" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
