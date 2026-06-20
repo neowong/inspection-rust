@@ -4,7 +4,7 @@ use rusqlite::Connection;
 ///
 /// 使用 PRAGMA user_version 跟踪已应用的迁移版本。
 /// 版本 1：初始化全部数据库表结构。
-pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::Error>> {
     // 启用 WAL 模式和外键约束
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
 
@@ -87,7 +87,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
     if version < 8 {
         // 移除 format 列的 CHECK 约束，支持 docx 格式
         // SQLite 无法直接修改 CHECK，需重建表
-        conn.execute_batch(
+        // 使用事务保护：INSERT 失败时回滚，避免数据丢失
+        let tx = conn.transaction()?;
+        tx.execute_batch(
             "ALTER TABLE report_templates RENAME TO report_templates_old;
              CREATE TABLE report_templates (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +114,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
                  FROM report_templates_old;
              DROP TABLE report_templates_old;"
         )?;
+        tx.commit()?;
         conn.execute_batch("PRAGMA user_version = 8")?;
     }
 
@@ -229,7 +232,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
 
     if version < 14 {
         // 报告模板瘦身：彻底移除 md/html 时代遗留列，仅保留 DOCX 在线模板所需字段
-        conn.execute_batch(
+        // 使用事务保护：INSERT 失败时回滚，避免数据丢失
+        let tx = conn.transaction()?;
+        tx.execute_batch(
             "ALTER TABLE report_templates RENAME TO report_templates_old;
              CREATE TABLE report_templates (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,6 +251,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error
                  FROM report_templates_old;
              DROP TABLE report_templates_old;"
         )?;
+        tx.commit()?;
         conn.execute_batch("PRAGMA user_version = 14")?;
     }
 

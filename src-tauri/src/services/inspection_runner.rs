@@ -303,7 +303,7 @@ fn find_prompt(
     cancel: Option<&AtomicBool>,
 ) -> Result<(String, String), String> {
     let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(15);
+    let timeout = Duration::from_secs(30);
     let mut buffer = String::new();
     let mut buf = [0u8; 4096];
     let mut prompt: Option<String> = None;
@@ -455,7 +455,7 @@ fn read_until_prompt(
     cancel: Option<&AtomicBool>,
 ) -> Result<String, String> {
     let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(15);
+    let timeout = Duration::from_secs(30);
     let mut output = String::new();
     let mut buf = [0u8; 4096];
     let mut password_sent = false;

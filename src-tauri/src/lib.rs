@@ -6,6 +6,9 @@ use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::sync::Arc;
 
+/// 全局数据目录，由 `run()` 初始化一次，供 reports.rs / crypto.rs 等模块使用。
+pub static APP_DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     /// 批次取消标志注册表：batch_id → AtomicBool。
@@ -21,8 +24,10 @@ impl AppState {
         let mut conn = Connection::open(db_path).expect("Failed to open database");
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .expect("Failed to set PRAGMAs");
-        db::migrations::run_migrations(&conn).expect("Failed to run migrations");
-        db::seed_data::seed_command_pool(&mut conn).ok();
+        db::migrations::run_migrations(&mut conn).expect("Failed to run migrations");
+        if let Err(e) = db::seed_data::seed_command_pool(&mut conn) {
+            tracing::warn!("命令池种子数据写入失败（可忽略）: {}", e);
+        }
         Self {
             db: Arc::new(Mutex::new(conn)),
             batch_cancels: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -132,6 +137,9 @@ pub fn run() {
         });
 
     std::fs::create_dir_all(&app_data_dir).ok();
+
+    // 初始化全局数据目录，供其他模块读取
+    let _ = APP_DATA_DIR.set(app_data_dir.clone());
 
     // Logging: stdout + rolling daily file
     let log_dir = config

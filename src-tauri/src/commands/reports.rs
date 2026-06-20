@@ -17,9 +17,14 @@ use crate::AppState;
 // ============================================================
 
 fn app_data_dir() -> std::path::PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("inspection-rust")
+    crate::APP_DATA_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("inspection-rust")
+        })
 }
 
 fn ensure_reports_dir() -> Result<std::path::PathBuf, String> {
@@ -442,8 +447,8 @@ pub async fn analyze_batch(
                 let conn = state.db.lock();
                 let now = now_str();
                 conn.execute(
-                    "UPDATE inspection_records SET ai_status = 'failed', updated_at = ?1 WHERE id = ?2",
-                    rusqlite::params![now, rid],
+                    "UPDATE inspection_records SET ai_status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
+                    rusqlite::params![e, now, rid],
                 ).map_err(|e| e.to_string())?;
             }
         }
@@ -777,9 +782,10 @@ pub async fn download_report(
         .set_file_name(&suggested)
         .save_file(move |file_path| {
             if let Some(save_path) = file_path {
-                let dest = save_path.as_path().unwrap().to_path_buf();
-                if let Err(e) = std::fs::copy(&report_path_clone, &dest) {
-                    eprintln!("复制报告文件失败: {}", e);
+                if let Some(dest) = save_path.as_path().map(|p| p.to_path_buf()) {
+                    if let Err(e) = std::fs::copy(&report_path_clone, &dest) {
+                        eprintln!("复制报告文件失败: {}", e);
+                    }
                 }
             }
         });
@@ -807,9 +813,10 @@ pub async fn save_generated_file(
         .set_file_name(&suggested_name)
         .save_file(move |file_path| {
             if let Some(save_path) = file_path {
-                let dest = save_path.as_path().unwrap().to_path_buf();
-                if let Err(e) = std::fs::copy(&source_path, &dest) {
-                    eprintln!("复制生成文件失败: {}", e);
+                if let Some(dest) = save_path.as_path().map(|p| p.to_path_buf()) {
+                    if let Err(e) = std::fs::copy(&source_path, &dest) {
+                        eprintln!("复制生成文件失败: {}", e);
+                    }
                 }
             }
         });

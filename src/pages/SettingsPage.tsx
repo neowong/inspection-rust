@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiModelConfig } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
@@ -36,11 +36,11 @@ export default function SettingsPage() {
   const { shakeFields, triggerShake } = useShakeValidation();
 
   // Load AI configs
-  const loadConfigs = () => {
+  const loadConfigs = useCallback(() => {
     invoke<AiModelConfig[]>("list_ai_configs").then(setConfigs).catch(console.error);
-  };
+  }, []);
 
-  useEffect(() => { loadConfigs(); }, []);
+  useEffect(() => { loadConfigs(); }, [loadConfigs]);
 
   // AI config handlers
   const openAdd = () => {
@@ -90,7 +90,6 @@ export default function SettingsPage() {
       })
       .catch((e) => {
         setSaveError(friendlyError(e));
-        triggerShake("name");
       })
       .finally(() => setSaving(false));
   };

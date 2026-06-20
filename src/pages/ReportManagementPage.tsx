@@ -72,17 +72,16 @@ export default function ReportManagementPage() {
     } catch (e) { console.error(e); }
   };
 
-  // Auto-refresh
+  // Auto-refresh（仅在选中批次且可能有运行中状态时轮询）
   useEffect(() => {
     const id = selectedBatch?.id;
+    if (!id) return;
     const timer = setInterval(() => {
       loadBatches();
-      if (id) {
-        invoke<any>("get_batch", { batchId: id }).then((full) => {
-          // 仅当仍选中该批次时才更新，避免覆盖用户已切换到的新批次
-          if (selectedIdRef.current === id) setSelectedBatch(full);
-        }).catch(() => {});
-      }
+      invoke<any>("get_batch", { batchId: id }).then((full) => {
+        // 仅当仍选中该批次时才更新，避免覆盖用户已切换到的新批次
+        if (selectedIdRef.current === id) setSelectedBatch(full);
+      }).catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
   }, [selectedBatch?.id, loadBatches]);
@@ -241,7 +240,7 @@ export default function ReportManagementPage() {
     [selectedBatch?.records]
   );
 
-  const recordColumns = [
+  const recordColumns = useMemo(() => [
     { key: "device", header: "设备", render: (r: any) => {
       const d = deviceMap.get(r.device_id);
       return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`;
@@ -277,7 +276,7 @@ export default function ReportManagementPage() {
         </div>
       ),
     },
-  ];
+  ], [deviceMap, analyzing, generating, downloading, deleting, handleAnalyzeRecord, handleGenerateDocx, handleDownload, handleDelete, loadRecordDetail]);
 
   return (
     <div>

@@ -1,13 +1,19 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-static FERNET_INSTANCE: OnceLock<fernet::Fernet> = OnceLock::new();
+/// 存储 Result<Fernet, String>，避免 expect/panic
+static FERNET_RESULT: OnceLock<Result<fernet::Fernet, String>> = OnceLock::new();
 
-/// 获取密钥文件路径: ~/.local/share/inspection-rust/.key
+/// 获取密钥文件路径：跟随全局配置的 data_dir
 fn key_file_path() -> Result<PathBuf, String> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| "无法获取数据目录".to_string())?
-        .join("inspection-rust");
+    let dir = crate::APP_DATA_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("inspection-rust")
+        });
     Ok(dir.join(".key"))
 }
 
@@ -48,13 +54,12 @@ fn load_or_create_key() -> Result<String, String> {
     }
 }
 
-/// 获取全局 Fernet 实例（懒加载单例）
+/// 获取全局 Fernet 实例（懒加载单例，不 panic）
 fn get_fernet() -> Result<&'static fernet::Fernet, String> {
-    let instance = FERNET_INSTANCE.get_or_init(|| {
-        let key = load_or_create_key().expect("加载 Fernet 密钥失败");
-        fernet::Fernet::new(&key).expect("无效的 Fernet 密钥")
-    });
-    Ok(instance)
+    FERNET_RESULT.get_or_init(|| {
+        let key = load_or_create_key()?;
+        fernet::Fernet::new(&key).ok_or_else(|| "无效的 Fernet 密钥".to_string())
+    }).as_ref().map_err(|e| e.clone())
 }
 
 pub struct CryptoService;

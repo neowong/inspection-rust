@@ -235,6 +235,7 @@ export default function DevicesPage() {
 
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedIds.size} 台设备？此操作不可撤销。`)) return;
     const ids = Array.from(selectedIds);
     invoke<void>("batch_delete_devices", { ids })
       .then(() => { setSelectedIds(new Set()); loadDevices(); })

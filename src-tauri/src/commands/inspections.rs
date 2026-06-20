@@ -243,7 +243,11 @@ fn finalize_batch_status(conn: &rusqlite::Connection, batch_id: i64) -> Result<(
             "failed" => failed += count,
             "stopped" => stopped += count,
             "running" => running += count,
-            _ => pending += count,
+            "pending" => pending += count,
+            other => {
+                tracing::warn!("finalize_batch_status: 未知记录状态 '{}', 视为 failed", other);
+                failed += count;
+            }
         }
     }
 
@@ -785,6 +789,11 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
             crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
                 .ok_or_else(|| format!("巡检批次 ID {} 不存在", batch_id))?;
 
+        // 防止重复执行：已在运行中的批次不可再次启动
+        if batch.status == "running" {
+            return Err(format!("巡检批次 #{} 正在运行中，请勿重复执行", batch_id));
+        }
+
         let device_ids_str = batch.device_ids.unwrap_or_else(|| "[]".to_string());
         let ids: Vec<i64> = serde_json::from_str(&device_ids_str)
             .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
@@ -979,7 +988,7 @@ async fn inspect_one_device(
         .map_err(|e| (device_id, format!("SSH 任务调度失败: {}", e)))?
     };
 
-    // 停止 poller
+    // 先停止 poller 并等待其完全退出，避免进度信息覆盖最终结果
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
     let _ = poller.await;
 
@@ -1300,6 +1309,22 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
 #[tauri::command]
 pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
     let mut conn = state.db.lock();
+
+    // 删除前检查批次状态，运行中的批次需先停止
+    let sql = format!(
+        "SELECT {} FROM inspection_batches WHERE id = ?1",
+        BATCH_COLUMNS
+    );
+    if let Some(batch) = crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)? {
+        if batch.status == "running" {
+            return Err("巡检批次正在运行中，请先停止后再删除".to_string());
+        }
+    }
+
+    // 设置取消标志，确保残留 SSH 任务停止
+    if let Some(cancel) = state.batch_cancels.lock().get(&batch_id) {
+        cancel.store(true, Ordering::Relaxed);
+    }
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 

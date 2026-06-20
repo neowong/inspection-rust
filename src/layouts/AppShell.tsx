@@ -47,7 +47,7 @@ export default function AppShell() {
   const [statusMsg, setStatusMsg] = useState("就绪");
 
   const activeKey = useMemo(
-    () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? "templates",
+    () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? null,
     [location.pathname]
   );
 

@@ -38,9 +38,9 @@ interface TemplateForm {
   report_template_id: number | null;
 }
 
-const EMPTY_TEMPLATE_FORM: TemplateForm = {
+const getEmptyTemplateForm = (): TemplateForm => ({
   name: "", vendor: "H3C", model: "", device_type: "", description: "", commands: [], report_template_id: null,
-};
+});
 
 interface CommandForm {
   vendor: string;
@@ -49,9 +49,9 @@ interface CommandForm {
   category: string;
 }
 
-const EMPTY_COMMAND_FORM: CommandForm = {
+const getEmptyCommandForm = (): CommandForm => ({
   vendor: "H3C", command: "", description: "", category: "general",
-};
+});
 
 interface ReportForm {
   name: string;
@@ -79,7 +79,7 @@ export default function TemplatesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<InspectionTemplate | null>(null);
   const [templateModal, setTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
-  const [templateForm, setTemplateForm] = useState<TemplateForm>(EMPTY_TEMPLATE_FORM);
+  const [templateForm, setTemplateForm] = useState<TemplateForm>(getEmptyTemplateForm());
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -91,7 +91,7 @@ export default function TemplatesPage() {
   const [cmdVendor, setCmdVendor] = useState("");
   const [cmdModal, setCmdModal] = useState(false);
   const [editingCmd, setEditingCmd] = useState<CommandPool | null>(null);
-  const [cmdForm, setCmdForm] = useState<CommandForm>(EMPTY_COMMAND_FORM);
+  const [cmdForm, setCmdForm] = useState<CommandForm>(getEmptyCommandForm());
   const [confirmDeleteCmd, setConfirmDeleteCmd] = useState<number | null>(null);
   const [cmdSaving, setCmdSaving] = useState(false);
   const [cmdSaveError, setCmdSaveError] = useState<string | null>(null);
@@ -136,6 +136,8 @@ export default function TemplatesPage() {
   const stopAutoScroll = () => {
     if (autoScrollRaf.current) { cancelAnimationFrame(autoScrollRaf.current); autoScrollRaf.current = null; }
   };
+  // 组件卸载时清理动画帧，防止内存泄漏
+  useEffect(() => () => { stopAutoScroll(); }, []);
 
   const loadTemplates = () => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: templateVendor || undefined })
@@ -169,7 +171,7 @@ export default function TemplatesPage() {
   // ----- Template handlers -----
   const openAddTemplate = () => {
     setEditingTemplate(null);
-    setTemplateForm(EMPTY_TEMPLATE_FORM);
+    setTemplateForm(getEmptyTemplateForm());
     setTemplateModal(true);
   };
   const openEditTemplate = (t: InspectionTemplate) => {
@@ -210,7 +212,7 @@ export default function TemplatesPage() {
   };
 
   // ----- Command handlers -----
-  const openAddCmd = () => { setEditingCmd(null); setCmdForm(EMPTY_COMMAND_FORM); setCmdSaveError(null); setCmdModal(true); };
+  const openAddCmd = () => { setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null); setCmdModal(true); };
   const openEditCmd = (c: CommandPool) => {
     setEditingCmd(c); setCmdSaveError(null);
     setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general" });
@@ -223,7 +225,7 @@ export default function TemplatesPage() {
       ? invoke<CommandPool>("update_command", { commandId: editingCmd.id, data: { ...cmdForm } })
       : invoke<CommandPool>("create_command", { data: { ...cmdForm } });
     promise
-      .then(() => { setCmdModal(false); setCmdForm(EMPTY_COMMAND_FORM); setEditingCmd(null); loadCommands(); })
+      .then(() => { setCmdModal(false); setCmdForm(getEmptyCommandForm()); setEditingCmd(null); loadCommands(); })
       .catch((e) => { setCmdSaveError(friendlyError(e)); triggerShake("cmd_command"); })
       .finally(() => setCmdSaving(false));
   };

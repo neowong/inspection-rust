@@ -33,6 +33,7 @@ export default function InspectionPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [retrying, setRetrying] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Record detail
   const [expandedRecordId, setExpandedRecordId] = useState<number | null>(null);
@@ -66,13 +67,21 @@ export default function InspectionPage() {
     loadDevices();
   }, [loadBatches, loadDevices]);
 
-  // Auto-refresh while any batch is running
+  // Auto-refresh while any batch is running（用 ref 跟踪，避免 batches 变化重建 interval）
+  const batchesRef = useRef(batches);
+  batchesRef.current = batches;
   useEffect(() => {
-    const hasRunning = batches.some((b: any) => b.status === "running");
-    if (!hasRunning) return;
-    const id = setInterval(loadBatches, 3000);
+    const checkAndPoll = () => {
+      const hasRunning = batchesRef.current.some((b: any) => b.status === "running");
+      return hasRunning;
+    };
+    if (!checkAndPoll()) return;
+    const id = setInterval(() => {
+      if (!checkAndPoll()) { clearInterval(id); return; }
+      loadBatches();
+    }, 3000);
     return () => clearInterval(id);
-  }, [batches, loadBatches]);
+  }, [loadBatches]);
 
   // ----- Batch actions -----
   const handleAction = (batchId: number, action: string) => {
@@ -133,6 +142,7 @@ export default function InspectionPage() {
       triggerShake("devices");
       return;
     }
+    setCreating(true);
     try {
       await invoke("create_batch", {
         data: {
@@ -145,6 +155,8 @@ export default function InspectionPage() {
       loadBatches();
     } catch (e: any) {
       console.error(typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -365,7 +377,7 @@ export default function InspectionPage() {
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-          <Button onClick={handleCreate}>创建</Button>
+          <Button onClick={handleCreate} loading={creating}>创建</Button>
         </div>
       </Modal>
 
