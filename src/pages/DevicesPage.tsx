@@ -482,6 +482,18 @@ export default function DevicesPage() {
                   <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
                 </div>
               )}
+              {form.device_type !== "server" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
+                    <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
+                    <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
                 <Select
@@ -493,19 +505,6 @@ export default function DevicesPage() {
                   {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </Select>
               </div>
-              {/* 自动检测（仅网络设备） */}
-          {form.device_type !== "server" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
-                <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
-                <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
-              </div>
-            </div>
-          )}
         </div>
       </Modal>
 
