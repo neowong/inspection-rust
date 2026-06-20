@@ -338,7 +338,7 @@ export default function TemplatesPage() {
         <div>
           <Toolbar>
             <Button onClick={openAddTemplate} size="sm">添加模板</Button>
-            <Select className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
+            <Select size="sm" className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
               <option value="">全部厂商</option>
               {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>

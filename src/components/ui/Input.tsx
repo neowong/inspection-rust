@@ -30,11 +30,14 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   size?: "sm" | "md";
 }
 
+/** 与 Input 共用同一套高度尺寸，额外添加 leading-none + py-0 消除浏览器原生
+ *  select 内边距，确保放在 Toolbar 里和按钮、搜索框、Input 的视觉高度一致。 */
 export function Select({ className, size = "md", children, ...props }: SelectProps) {
   return (
     <select
       className={cn(
         "w-full rounded-md bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] outline-none transition-colors duration-150 cursor-pointer",
+        "leading-none py-0",
         "focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)]",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         sizeClasses[size],

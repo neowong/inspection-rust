@@ -356,6 +356,7 @@ export default function DevicesPage() {
       <Toolbar>
         <Button onClick={openAdd} size="sm">添加设备</Button>
         <Select
+          size="sm"
           className="w-28"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -366,6 +367,7 @@ export default function DevicesPage() {
           <option value="server">服务器</option>
         </Select>
         <Select
+          size="sm"
           className="w-28"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
