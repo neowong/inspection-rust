@@ -17,6 +17,7 @@ import { VENDORS } from "../lib/constants";
 interface DeviceForm {
   name: string;
   ip: string;
+  device_type: string;
   vendor: string;
   model: string;
   ssh_username: string;
@@ -29,7 +30,7 @@ interface DeviceForm {
 }
 
 const EMPTY_FORM: DeviceForm = {
-  name: "", ip: "", vendor: "H3C", model: "",
+  name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   serial_number: "", manufacturing_date: "", sysname: "",
 };
@@ -99,6 +100,7 @@ export default function DevicesPage() {
     setForm({
       name: d.name,
       ip: d.ip,
+      device_type: d.device_type || "router",
       vendor: d.vendor,
       model: d.model || "",
       ssh_username: d.ssh_username || "",
@@ -151,7 +153,7 @@ export default function DevicesPage() {
     const data: Record<string, unknown> = {
       name: form.name,
       ip: form.ip,
-      device_type: form.model ? "switch" : "router",
+      device_type: form.device_type,
       vendor: form.vendor,
       ssh_port: form.ssh_port,
     };
@@ -407,7 +409,25 @@ export default function DevicesPage() {
               {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
+              <Select value={form.device_type} onChange={(e) => {
+                const dt = e.target.value;
+                const networkVendors = ["H3C", "华为", "思科", "锐捷", "飞塔"];
+                const updated: Partial<DeviceForm> = { device_type: dt };
+                if (dt === "server" && networkVendors.includes(form.vendor)) {
+                  updated.vendor = "Linux";
+                }
+                setForm({ ...form, ...updated });
+              }}>
+                <option value="switch">交换机</option>
+                <option value="router">路由器</option>
+                <option value="firewall">防火墙</option>
+                <option value="loadbalancer">负载均衡</option>
+                <option value="server">服务器</option>
+              </Select>
+            </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
               <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>

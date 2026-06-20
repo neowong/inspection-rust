@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock } from "lucide-react";
 import type {
   InspectionTemplate, CommandPool, ReportTemplate, TemplateCommandConfig,
   ReportTemplateConfig, TableColumn, DeviceField,
@@ -1286,6 +1286,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   version: "版本信息", clock: "系统时钟", cpu: "CPU", memory: "内存",
   hardware: "硬件信息", storage: "存储", interface: "接口", vlan: "VLAN", log: "日志",
   protocol: "协议", vpn: "VPN", ha: "高可用", security: "安全策略", wireless: "无线", general: "通用",
+  system: "系统信息", disk: "磁盘", network: "网络", service: "服务", process: "进程", schedule: "定时任务",
 };
 
 function CommandList({
@@ -1340,6 +1341,7 @@ function CommandList({
                 {cmds.map((cmd) => (
                   <div key={cmd.id} className="flex items-center gap-3 px-4 py-2 hover:bg-[hsl(var(--bg-hover))] transition-colors group">
                     <code className="flex-1 text-xs bg-[hsl(var(--bg-hover))] px-2 py-1 rounded font-mono text-[hsl(var(--text-primary))]">{cmd.command}</code>
+                    {cmd.needs_root && <span title="需要 root 权限"><Lock size={12} className="text-[hsl(var(--warning))] shrink-0" /></span>}
                     {cmd.description && <span className="text-xs text-[hsl(var(--text-tertiary))] max-w-[200px] truncate hidden sm:block">{cmd.description}</span>}
                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                       <button onClick={() => onEdit(cmd)} className="p-1 rounded hover:bg-[hsl(var(--bg-active))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))]" title="编辑">
