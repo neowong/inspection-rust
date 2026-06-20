@@ -445,13 +445,15 @@ export default function DevicesPage() {
             },
           },
           {
-            key: "last_checked_at", header: "最后检测时间", render: (r) =>
-              r.last_checked_at ? new Date(r.last_checked_at).toLocaleString("zh-CN") : "-",
+            key: "last_checked_at", header: "最后检测", width: "105px", render: (r) =>
+              r.last_checked_at
+                ? (() => { const d = new Date(r.last_checked_at); return `${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })()
+                : "-",
           },
           {
             key: "actions",
             header: "操作",
-            width: "200px",
+            width: "210px",
             noTruncate: true,
             render: (r) => (
               <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
