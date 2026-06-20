@@ -92,10 +92,11 @@ fn check_unique(
 // Query Commands
 // ============================================================
 
-/// 获取设备列表，支持按厂商和状态筛选
+/// 获取设备列表，支持按厂商、设备类型和状态筛选
 #[tauri::command]
 pub fn list_devices(
     vendor: Option<String>,
+    device_type: Option<String>,
     status: Option<String>,
     state: State<AppState>,
 ) -> Result<Vec<Device>, String> {
@@ -107,6 +108,17 @@ pub fn list_devices(
     if let Some(ref v) = vendor {
         sql.push_str(" AND vendor = ?");
         params.push(Box::new(v.clone()));
+    }
+    if let Some(ref dt) = device_type {
+        // 支持逗号分隔的多值过滤，如 "switch,router"
+        let types: Vec<&str> = dt.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if !types.is_empty() {
+            let placeholders: Vec<String> = types.iter().enumerate().map(|(i, _)| format!("?{}", params.len() + i + 1)).collect();
+            sql.push_str(&format!(" AND device_type IN ({})", placeholders.join(",")));
+            for t in types {
+                params.push(Box::new(t.to_string()));
+            }
+        }
     }
     if let Some(ref s) = status {
         sql.push_str(" AND status = ?");
@@ -485,7 +497,6 @@ pub async fn detect_device_model(
     ssh_password: String,
     vendor: String,
 ) -> Result<String, String> {
-    use crate::services::inspection_runner::{self, SSHSessionSource};
     use crate::services::vendor_profile::{self, ExecMode};
 
     let profile = vendor_profile::get_profile(&vendor);
@@ -513,6 +524,8 @@ async fn detect_linux_info(
     use crate::services::linux_runner;
     use std::collections::HashMap;
 
+    tracing::info!("[detect_linux] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
+
     let commands: Vec<String> = vec![
         "hostnamectl".to_string(),
         "cat /etc/os-release".to_string(),
@@ -537,6 +550,8 @@ async fn detect_linux_info(
             None,
             None,
         )?;
+
+        tracing::info!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
 
         // 解析结果
         let mut info = serde_json::Map::new();

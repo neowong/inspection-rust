@@ -12,7 +12,6 @@ import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
-import { VENDORS } from "../lib/constants";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
@@ -44,7 +43,7 @@ export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
   const [searchText, setSearchText] = useState("");
-  const [vendorFilter, setVendorFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -75,10 +74,10 @@ export default function DevicesPage() {
 
   const loadDevices = useCallback(() => {
     invoke<Device[]>("list_devices", {
-      vendor: vendorFilter || undefined,
+      device_type: typeFilter || undefined,
       status: statusFilter || undefined,
     }).then(setDevices).catch(console.error);
-  }, [vendorFilter, statusFilter]);
+  }, [typeFilter, statusFilter]);
 
   const loadTemplates = useCallback(() => {
     invoke<InspectionTemplate[]>("list_templates", { vendor: undefined })
@@ -126,6 +125,7 @@ export default function DevicesPage() {
   const handleDetect = () => {
     setDetecting(true);
     setDetectError(null);
+    console.log("[detect] 手动检测:", { ip: form.ip, vendor: form.vendor });
     invoke<string>("detect_device_model", {
       ip: form.ip.trim(),
       sshPort: form.ssh_port,
@@ -134,6 +134,7 @@ export default function DevicesPage() {
       vendor: form.vendor,
     })
       .then((json) => {
+        console.log("[detect] 手动检测结果:", json);
         try {
           const info = JSON.parse(json);
           setForm({
@@ -204,11 +205,13 @@ export default function DevicesPage() {
         const needMem = form.device_type === "server" && !form.memory_gb.trim();
         const canDetect = form.ssh_username.trim() && form.ssh_password.trim();
         if ((needModel || needSn || needDate || needSysname || needCpu || needMem) && canDetect) {
+          console.log("[detect] 触发自动检测:", { ip: form.ip, vendor: form.vendor, device_type: form.device_type });
           invoke<string>("detect_device_model", {
             ip: form.ip.trim(), sshPort: form.ssh_port,
             sshUsername: form.ssh_username.trim(), sshPassword: form.ssh_password,
             vendor: form.vendor,
           }).then((json) => {
+            console.log("[detect] 检测结果:", json);
             try {
               const info = JSON.parse(json);
               const patch: Record<string, unknown> = {};
@@ -221,8 +224,8 @@ export default function DevicesPage() {
               if (Object.keys(patch).length > 0) {
                 invoke("update_device", { deviceId: devId, data: patch }).then(() => loadDevices());
               }
-            } catch { /* 忽略 */ }
-          }).catch(() => {});
+            } catch (e) { console.error("[detect] 解析失败:", e); }
+          }).catch((e) => { console.error("[detect] 检测失败:", e); });
         }
       })
       .catch((e) => {
@@ -309,11 +312,13 @@ export default function DevicesPage() {
         <Button onClick={openAdd} size="sm">添加设备</Button>
         <Select
           className="w-28"
-          value={vendorFilter}
-          onChange={(e) => setVendorFilter(e.target.value)}
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
         >
-          <option value="">全部厂商</option>
-          {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+          <option value="">全部类型</option>
+          <option value="switch,router">网络设备</option>
+          <option value="firewall,loadbalancer">安全设备</option>
+          <option value="server">服务器</option>
         </Select>
         <Select
           className="w-28"
