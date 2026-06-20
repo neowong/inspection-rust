@@ -87,6 +87,7 @@ export default function TemplatesPage() {
 
   // Command pool state
   const [commands, setCommands] = useState<CommandPool[]>([]);
+  const [templateCommands, setTemplateCommands] = useState<CommandPool[]>([]);
   const [cmdSearch, setCmdSearch] = useState("");
   const [cmdVendor, setCmdVendor] = useState("");
   const [cmdModal, setCmdModal] = useState(false);
@@ -156,6 +157,15 @@ export default function TemplatesPage() {
   useEffect(() => { loadCommands(); }, [cmdVendor]);
   useEffect(() => { loadReportTemplates(); }, []);
 
+  // Load commands for template editor independently (not affected by command pool tab vendor filter)
+  useEffect(() => {
+    if (templateModal && templateForm.vendor) {
+      invoke<CommandPool[]>("list_commands", { vendor: templateForm.vendor })
+        .then(setTemplateCommands)
+        .catch(console.error);
+    }
+  }, [templateModal, templateForm.vendor]);
+
   const filteredTemplates = useMemo(() => templates.filter((t) =>
     !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase())
   ), [templates, templateSearch]);
@@ -164,9 +174,9 @@ export default function TemplatesPage() {
     !cmdSearch || c.command.toLowerCase().includes(cmdSearch.toLowerCase()) || (c.description && c.description.toLowerCase().includes(cmdSearch.toLowerCase()))
   ), [commands, cmdSearch]);
 
-  const vendorFilteredCommands = useMemo(() => commands.filter((c) =>
+  const vendorFilteredCommands = useMemo(() => templateCommands.filter((c) =>
     c.vendor === templateForm.vendor
-  ), [commands, templateForm.vendor]);
+  ), [templateCommands, templateForm.vendor]);
 
   // ----- Template handlers -----
   const openAddTemplate = () => {
@@ -496,7 +506,7 @@ export default function TemplatesPage() {
               >
                 {templateForm.commands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
                 {templateForm.commands.map((spec, idx) => {
-                  const cmd = commands.find(c => c.id === spec.command_id);
+                  const cmd = templateCommands.find(c => c.id === spec.command_id);
                   if (!cmd) return null;
                   const updateSpec = (patch: Partial<TemplateCommandConfig>) => {
                     const next = [...templateForm.commands];
