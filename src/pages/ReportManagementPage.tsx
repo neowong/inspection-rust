@@ -262,7 +262,6 @@ export default function ReportManagementPage() {
     { key: "actions", header: "操作", width: "w-80", noTruncate: true,
       render: (r: any) => (
         <div className="flex gap-1 flex-wrap">
-          <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); loadRecordDetail(r.id); }}>详情</Button>
           <Button variant="ghost" size="sm" loading={!!generating && generating.id === r.id && generating.action === "analyze"} disabled={r.ai_status === "processing" || (!!generating && generating.id === r.id && generating.action === "direct")}
             onClick={(e: any) => { e.stopPropagation(); handleAnalyzeAndGenerateRecord(r.id, r.ai_status === "completed"); }}>
             {r.ai_status === "completed" ? "重新分析并生成报告" : "AI 分析并生成报告"}
