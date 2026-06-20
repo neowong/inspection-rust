@@ -2,7 +2,7 @@
 name = "inspection-rust"
 version = "3.2.0"
 edition = "2021"
-description = "网络设备巡检系统"
+description = "运维巡检系统"
 
 [lib]
 name = "inspection_rust_lib"

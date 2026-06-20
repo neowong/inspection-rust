@@ -23,7 +23,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "网工工具",
+    label: "运维工具",
     items: [
       { key: "tools",      label: "工具箱", path: "/tools",      icon: Wrench },
       { key: "logs",       label: "日志分析",   path: "/logs",       icon: FileSearch },

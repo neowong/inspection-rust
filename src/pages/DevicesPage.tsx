@@ -350,7 +350,7 @@ export default function DevicesPage() {
     <div className="space-y-6">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">设备管理</h1>
-        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">管理网络设备信息</p>
+        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">管理网络设备与服务器信息</p>
       </div>
 
       <Toolbar>

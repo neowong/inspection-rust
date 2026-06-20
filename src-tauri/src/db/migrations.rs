@@ -264,7 +264,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         // 内置 H3C 专用报告模板
         let h3c_config = serde_json::json!({
             "cover": {
-                "title": "H3C 网络设备巡检报告",
+                "title": "H3C 设备巡检报告",
                 "subtitle": "运维巡检中心",
                 "logo_path": "",
                 "primary_color": "#0066CC"

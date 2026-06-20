@@ -109,7 +109,7 @@ export default function AboutPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-xl font-bold text-[hsl(var(--text-primary))]">AI巡检助手</h2>
             <p className="mt-1 text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
-              AI巡检助手 是面向网络工程师的桌面巡检工具，用于集中管理网络设备、维护巡检命令模板、批量执行 SSH 巡检、调用 AI 生成评判结论，并输出可编辑的 DOCX 巡检报告。
+              AI巡检助手 是面向运维工程师的桌面巡检工具，用于集中管理网络设备与服务器、维护巡检命令模板、批量执行 SSH 巡检、调用 AI 生成评判结论，并输出可编辑的 DOCX 巡检报告。
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-[hsl(var(--text-secondary))]">
               <span className="rounded-full bg-[hsl(var(--bg-hover))] px-2 py-1">设备巡检</span>
