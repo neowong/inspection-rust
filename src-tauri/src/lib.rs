@@ -314,10 +314,16 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
 }
 
 /// Background poller: TCP-connect each device's SSH port in parallel and update status.
+/// After status update, triggers static-info SSH detection for newly-online devices
+/// that don't yet have model/sysname (skips devices already auto-detected on save).
 fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
-    let devices: Vec<(i64, String, i64)> = {
+    // Phase 1: read id/ip/port + model/sysname — the latter used to skip redundant SSH
+    #[allow(clippy::type_complexity)]
+    let devices: Vec<(i64, String, i64, Option<String>, Option<String>)> = {
         if let Some(conn) = db.try_lock() {
-            let mut stmt = match conn.prepare("SELECT id, ip, ssh_port FROM devices") {
+            let mut stmt = match conn.prepare(
+                "SELECT id, ip, ssh_port, model, sysname FROM devices",
+            ) {
                 Ok(s) => s,
                 Err(_) => return,
             };
@@ -327,6 +333,8 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, i64>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
                     ))
                 })
                 .ok()
@@ -334,7 +342,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                 .unwrap_or_default();
             rows
         } else {
-            return; // DB locked, skip this round
+            return;
         }
     };
 
@@ -345,17 +353,21 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let online_count = std::sync::atomic::AtomicU32::new(0);
     let offline_count = std::sync::atomic::AtomicU32::new(0);
+    // Collect device IDs that came online and need static info detection
+    let needs_detect: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 
     std::thread::scope(|s| {
-        for (id, ip, port) in &devices {
+        for (id, ip, port, model, sysname) in &devices {
             let db = Arc::clone(db);
             let now = now.clone();
             let online_ref = &online_count;
             let offline_ref = &offline_count;
+            let needs_detect = &needs_detect;
+            let has_static = model.as_ref().filter(|s| !s.is_empty()).is_some()
+                || sysname.as_ref().filter(|s| !s.is_empty()).is_some();
             s.spawn(move || {
                 let new_status = match ip.parse::<std::net::IpAddr>() {
                     Ok(ip_addr) => {
-                        // 端口越界（非法 i64）按离线处理，避免 as u16 截断连错端口
                         match u16::try_from(*port).ok().filter(|&p| p > 0) {
                             Some(port) => {
                                 match std::net::TcpStream::connect_timeout(
@@ -390,6 +402,11 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                         rusqlite::params![new_status, now, now, id],
                     );
                 }
+
+                // 在线且无静态信息的设备 → 标记待 SSH 采集
+                if new_status == "online" && !has_static {
+                    needs_detect.lock().push(*id);
+                }
             });
         }
     });
@@ -397,8 +414,28 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     tracing::info!(
         "后台设备检测完成: {} 在线, {} 离线",
         online_count.load(std::sync::atomic::Ordering::Relaxed),
-        offline_count.load(std::sync::atomic::Ordering::Relaxed)
+        offline_count.load(std::sync::atomic::Ordering::Relaxed),
     );
+
+    // Phase 2: 对需要采集静态信息的在线设备做后台 SSH 检测
+    // 每批最多 3 台并发，完成后再取下一批
+    let pending = needs_detect.lock();
+    if !pending.is_empty() {
+        tracing::info!(
+            "后台静态信息采集: {} 台设备需要检测（每批并发 3）",
+            pending.len()
+        );
+        for chunk in pending.chunks(3) {
+            std::thread::scope(|s| {
+                for id in chunk {
+                    let db = Arc::clone(db);
+                    s.spawn(move || {
+                        commands::devices::detect_static_info_if_missing(*id, &db);
+                    });
+                }
+            });
+        }
+    }
 }
 
 /// Load optional config from `inspection.toml` next to the exe.

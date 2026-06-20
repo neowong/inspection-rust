@@ -664,6 +664,116 @@ pub async fn detect_device_model_by_id(
     Ok(json)
 }
 
+/// 后台轮询专用：检测单台设备的静态信息（同步，可从 std::thread 调用）。
+///
+/// 仅对在线且尚缺静态信息（model/sysname 均为空）的设备执行。
+/// 内部完成 DB 读取→解密→SSH→DB 写入。
+pub fn detect_static_info_if_missing(
+    device_id: i64,
+    db: &Arc<parking_lot::Mutex<rusqlite::Connection>>,
+) {
+    use crate::services::crypto::CryptoService;
+    use crate::services::vendor_profile::{self, ExecMode};
+
+    // 1. 读取设备信息 + 检查是否需要检测
+    let device_info = {
+        let conn = db.lock();
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        match crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row) {
+            Ok(Some(d)) => d,
+            _ => return,
+        }
+    };
+
+    // 已有型号或主机名 → 跳过
+    if device_info.model.as_ref().filter(|s| !s.is_empty()).is_some()
+        || device_info.sysname.as_ref().filter(|s| !s.is_empty()).is_some()
+    {
+        return;
+    }
+
+    let port = match port_u16(device_info.ssh_port) {
+        Some(p) => p,
+        None => return,
+    };
+    let password = match device_info.ssh_password_encrypted.as_deref() {
+        Some(p) if !p.is_empty() => match CryptoService::decrypt(p) {
+            Ok(s) => s,
+            Err(_) => return,
+        },
+        _ => return,
+    };
+    let ip = device_info.ip.clone();
+    let vendor = device_info.vendor.clone();
+    let username = device_info.ssh_username.clone().unwrap_or_default();
+    drop(device_info);
+
+    // 2. SSH 检测（锁外）
+    let profile = vendor_profile::get_profile(&vendor);
+    let result = match profile.exec_mode {
+        ExecMode::Exec => detect_linux_info_sync(&ip, port, &username, &password),
+        ExecMode::Shell => detect_network_device_info_sync(&ip, port, &username, &password, &vendor),
+    };
+
+    // 3. 写入 DB（短暂获锁）
+    match result {
+        Ok(json) => {
+            let parsed: serde_json::Value = match serde_json::from_str(&json) {
+                Ok(v) => v,
+                Err(_) => return,
+            };
+            let conn = db.lock();
+            let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+            if let Some(obj) = parsed.as_object() {
+                if let Some(s) = obj.get("model").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("model", s.to_string());
+                }
+                if let Some(s) = obj.get("sysname").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("sysname", s.to_string());
+                }
+                if let Some(s) = obj.get("serial_number").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("serial_number", s.to_string());
+                }
+                if let Some(s) = obj.get("manufacturing_date").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("manufacturing_date", s.to_string());
+                }
+                if let Some(s) = obj.get("cpu_cores").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    if let Ok(n) = s.parse::<i64>() {
+                        updater.push_raw("cpu_cores", n);
+                    }
+                }
+                if let Some(s) = obj.get("memory_gb").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    let num_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+                    if let Ok(n) = num_str.parse::<f64>() {
+                        updater.push_raw("memory_gb", n);
+                    }
+                }
+            }
+            if !updater.is_empty() {
+                updater.push_raw("auth_status", "ok".to_string());
+                updater.push_raw("auth_message", Option::<String>::None);
+                updater.push_raw("updated_at", now_str());
+                let (set_parts, mut params) = updater.finish();
+                let idx = params.len() as i32 + 1;
+                let sql = format!("UPDATE devices SET {} WHERE id = ?{}", set_parts.join(", "), idx);
+                params.push(Box::new(device_id));
+                let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
+                let _ = conn.execute(&sql, param_refs.as_slice());
+            }
+            tracing::info!("[bg-detect] 设备 #{} 静态信息后台采集成功", device_id);
+        }
+        Err(e) => {
+            let (auth_status, brief) = classify_detect_error(&e);
+            let conn = db.lock();
+            let _ = conn.execute(
+                "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
+                rusqlite::params![auth_status, brief, now_str(), device_id],
+            );
+            tracing::warn!("[bg-detect] 设备 #{} 静态信息后台采集失败: {}", device_id, e);
+        }
+    }
+}
+
 /// 把 SSH 检测错误分类为 auth_status 标记和简短中文消息。
 /// 返回 (status_code, brief_message)。
 fn classify_detect_error(err: &str) -> (&'static str, String) {
@@ -692,12 +802,26 @@ fn classify_detect_error(err: &str) -> (&'static str, String) {
     }
 }
 
-/// Linux 服务器静态信息检测（exec channel）
+/// Linux 服务器静态信息检测（exec channel）— async 版本（供 Tauri command 调用）
 async fn detect_linux_info(
     ip: String,
     ssh_port: u16,
     ssh_username: String,
     ssh_password: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        detect_linux_info_sync(&ip, ssh_port, &ssh_username, &ssh_password)
+    })
+    .await
+    .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
+/// detect_linux_info 的同步版本（供后台 std::thread 直接调用）
+fn detect_linux_info_sync(
+    ip: &str,
+    ssh_port: u16,
+    ssh_username: &str,
+    ssh_password: &str,
 ) -> Result<String, String> {
     use crate::services::inspection_runner::SSHSessionSource;
     use crate::services::linux_runner;
@@ -715,92 +839,92 @@ async fn detect_linux_info(
     let mut needs_root_map = HashMap::new();
     needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
 
-    tokio::task::spawn_blocking(move || {
-        let source = SSHSessionSource {
-            host: ip,
-            port: ssh_port,
-            username: ssh_username,
-            password: ssh_password,
-        };
+    let source = SSHSessionSource {
+        host: ip.to_string(),
+        port: ssh_port,
+        username: ssh_username.to_string(),
+        password: ssh_password.to_string(),
+    };
 
-        let outputs = linux_runner::run_commands_exec(
-            &source,
-            &commands,
-            &needs_root_map,
-            None,
-            None,
-        )?;
+    let outputs = linux_runner::run_commands_exec(
+        &source, &commands, &needs_root_map, None, None,
+    )?;
 
-        tracing::info!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
-        for (cmd, output) in &outputs {
-            // 取首 200 字节并按 char 边界截断，避免落在 UTF-8 多字节中间导致 panic
-            let mut end = output.len().min(200);
-            while end > 0 && !output.is_char_boundary(end) {
-                end -= 1;
-            }
-            tracing::debug!("[detect_linux] 命令 '{}' → {}", cmd, &output[..end]);
+    tracing::info!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
+    for (cmd, output) in &outputs {
+        let mut end = output.len().min(200);
+        while end > 0 && !output.is_char_boundary(end) {
+            end -= 1;
         }
+        tracing::debug!("[detect_linux] 命令 '{}' → {}", cmd, &output[..end]);
+    }
 
-        // 解析结果
-        let mut info = serde_json::Map::new();
+    let mut info = serde_json::Map::new();
 
-        // hostnamectl → sysname
-        if let Some(output) = outputs.get("hostnamectl") {
-            if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
-                info.insert("sysname".to_string(), serde_json::Value::String(hostname));
-            }
-            if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
-                info.insert("model".to_string(), serde_json::Value::String(os));
-            }
+    if let Some(output) = outputs.get("hostnamectl") {
+        if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
+            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
         }
+        if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
+            info.insert("model".to_string(), serde_json::Value::String(os));
+        }
+    }
 
-        // /etc/os-release → model (fallback)
-        if !info.contains_key("model") {
-            if let Some(output) = outputs.get("cat /etc/os-release") {
-                if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
-                    info.insert("model".to_string(), serde_json::Value::String(name));
-                }
+    if !info.contains_key("model") {
+        if let Some(output) = outputs.get("cat /etc/os-release") {
+            if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
+                info.insert("model".to_string(), serde_json::Value::String(name));
             }
         }
+    }
 
-        // nproc → cpu_cores（首选，最稳定）
-        if let Some(output) = outputs.get("nproc") {
-            let trimmed = output.trim();
-            if trimmed.parse::<i64>().is_ok() {
-                info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
+    if let Some(output) = outputs.get("nproc") {
+        let trimmed = output.trim();
+        if trimmed.parse::<i64>().is_ok() {
+            info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
+        }
+    }
+    if !info.contains_key("cpu_cores") {
+        if let Some(output) = outputs.get("lscpu") {
+            if let Some(cores) = extract_lscpu_cores(output) {
+                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
             }
         }
-        // lscpu → cpu_cores (fallback，nproc 失败时使用)
-        if !info.contains_key("cpu_cores") {
-            if let Some(output) = outputs.get("lscpu") {
-                if let Some(cores) = extract_lscpu_cores(output) {
-                    info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
-                }
-            }
-        }
+    }
 
-        // dmidecode memory → memory_gb
-        if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
-            if let Some(mem) = extract_dmidecode_memory(output) {
-                info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
-            }
+    if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
+        if let Some(mem) = extract_dmidecode_memory(output) {
+            info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
         }
+    }
 
-        let result = serde_json::Value::Object(info).to_string();
-        tracing::info!("[detect_linux] 返回结果: {}", result);
-        Ok(result)
-    })
-    .await
-    .map_err(|e| format!("检测任务失败: {}", e))?
+    let result = serde_json::Value::Object(info).to_string();
+    tracing::info!("[detect_linux] 返回结果: {}", result);
+    Ok(result)
 }
 
-/// 网络设备静态信息检测（shell 会话）
+/// 网络设备静态信息检测（shell 会话）— async 版本（供 Tauri command 调用）
 async fn detect_network_device_info(
     ip: String,
     ssh_port: u16,
     ssh_username: String,
     ssh_password: String,
     vendor: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        detect_network_device_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor)
+    })
+    .await
+    .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
+/// detect_network_device_info 的同步版本（供后台 std::thread 直接调用）
+fn detect_network_device_info_sync(
+    ip: &str,
+    ssh_port: u16,
+    ssh_username: &str,
+    ssh_password: &str,
+    vendor: &str,
 ) -> Result<String, String> {
     use crate::services::inspection_runner::{self, SSHSessionSource};
 
@@ -810,7 +934,6 @@ async fn detect_network_device_info(
         || vendor_lower == "fortigate";
     let is_h3c = vendor == "H3C" || vendor == "华三" || vendor_lower == "h3c";
 
-    // 厂商对应的 (主命令, sysname 命令 [可选])
     let (manu_cmd, sysname_cmd_opt): (&str, Option<&str>) = if is_h3c {
         (
             "display device manuinfo",
@@ -822,71 +945,50 @@ async fn detect_network_device_info(
         return Err(format!("暂不支持 {} 设备自动检测型号", vendor));
     };
 
-    tokio::task::spawn_blocking(move || {
-        let source = SSHSessionSource {
-            host: ip,
-            port: ssh_port,
-            username: ssh_username,
-            password: ssh_password.clone(),
-        };
+    let source = SSHSessionSource {
+        host: ip.to_string(),
+        port: ssh_port,
+        username: ssh_username.to_string(),
+        password: ssh_password.to_string(),
+    };
 
-        let session = inspection_runner::connect_session(&source)?;
-        let (base_prompt, mut channel) = inspection_runner::open_shell_session(
-            &session,
-            &vendor,
-            &source.password,
-            &source.host,
-            None,
+    let session = inspection_runner::connect_session(&source)?;
+    let (base_prompt, mut channel) = inspection_runner::open_shell_session(
+        &session, vendor, &source.password, &source.host, None,
+    )?;
+
+    let cmd_result: Result<(String, String), String> = (|| {
+        let output = inspection_runner::send_command(
+            &mut channel, manu_cmd, &base_prompt, &source.password, &source.host, vendor, None,
         )?;
-
-        let cmd_result: Result<(String, String), String> = (|| {
-            let output = inspection_runner::send_command(
-                &mut channel,
-                manu_cmd,
-                &base_prompt,
-                &source.password,
-                &source.host,
-                &vendor,
-                None,
-            )?;
-            let sysname_output = if let Some(scmd) = sysname_cmd_opt {
-                inspection_runner::send_command(
-                    &mut channel,
-                    scmd,
-                    &base_prompt,
-                    &source.password,
-                    &source.host,
-                    &vendor,
-                    None,
-                )
-                .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            Ok((output, sysname_output))
-        })();
-
-        let _ = channel.close();
-        let _ = session.disconnect(None, "done", None);
-
-        let (output, sysname_output) = cmd_result?;
-        let cleaned = inspection_runner::clean_output(&output, &base_prompt);
-
-        let info_json = if is_h3c {
-            let sysname_cleaned =
-                inspection_runner::clean_output(&sysname_output, &base_prompt);
-            let mut info = parse_h3c_device_info(&cleaned);
-            info.sysname = parse_sysname(&sysname_cleaned);
-            serde_json::json!(info)
-        } else if is_fortinet {
-            serde_json::json!(parse_fortinet_device_info(&cleaned))
+        let sysname_output = if let Some(scmd) = sysname_cmd_opt {
+            inspection_runner::send_command(
+                &mut channel, scmd, &base_prompt, &source.password, &source.host, vendor, None,
+            )
+            .unwrap_or_default()
         } else {
-            serde_json::json!({})
+            String::new()
         };
-        Ok(info_json.to_string())
-    })
-    .await
-    .map_err(|e| format!("检测任务失败: {}", e))?
+        Ok((output, sysname_output))
+    })();
+
+    let _ = channel.close();
+    let _ = session.disconnect(None, "done", None);
+
+    let (output, sysname_output) = cmd_result?;
+    let cleaned = inspection_runner::clean_output(&output, &base_prompt);
+
+    let info_json = if is_h3c {
+        let sysname_cleaned = inspection_runner::clean_output(&sysname_output, &base_prompt);
+        let mut info = parse_h3c_device_info(&cleaned);
+        info.sysname = parse_sysname(&sysname_cleaned);
+        serde_json::json!(info)
+    } else if is_fortinet {
+        serde_json::json!(parse_fortinet_device_info(&cleaned))
+    } else {
+        serde_json::json!({})
+    };
+    Ok(info_json.to_string())
 }
 
 /// H3C 设备信息
