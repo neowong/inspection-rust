@@ -274,7 +274,7 @@ export default function ReportManagementPage() {
               {/* Batch toolbar */}
               <div className="flex items-center gap-2 flex-wrap mb-3">
                 <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `任务 #${selectedBatch.id}`}</h2>
-                <Button size="sm" variant="primary"
+                <Button size="sm" variant="ghost"
                   loading={batchGenerating === "ai"} disabled={!!batchGenerating}
                   onClick={handleBatchAiJudge}>
                   AI评判
