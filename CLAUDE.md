@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-网络设备巡检系统 (Network Device Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷），执行巡检命令收集状态数据，调用 AI（OpenAI/Anthropic/DeepSeek）分析结果并生成可编辑 DOCX 报告。
+网络设备巡检系统 (Network Device Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷/飞塔）和 Linux 服务器，执行巡检命令收集状态数据，调用 AI（OpenAI/Anthropic/DeepSeek）分析结果并生成可编辑 DOCX 报告。
 
 ## Tech Stack
 
