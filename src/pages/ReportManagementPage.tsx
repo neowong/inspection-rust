@@ -55,6 +55,7 @@ export default function ReportManagementPage() {
 
   const selectBatch = async (batch: any) => {
     selectedIdRef.current = batch.id;
+    setBatchGenerating(""); // 切批次时清除上一批次的 loading 状态
     setSelectedBatch(batch);
     setExpandedRecordId(null);
     setFullRecord(null);
