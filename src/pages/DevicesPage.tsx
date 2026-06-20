@@ -290,20 +290,24 @@ export default function DevicesPage() {
       .then((onlineDevices) => {
         if (!onlineDevices || onlineDevices.length === 0) return;
         showStatusHint(`正在检测 ${onlineDevices.length} 台在线设备的静态信息...`, "info", 120000);
-        // 串行触发，避免大量并发 SSH 连接
+        // 并发执行（最多 3 台同时），避免大量 SSH 同时冲击 sshd
+        const CONCURRENCY = 3;
         const targets = onlineDevices;
-        const runOne = (i: number): Promise<void> => {
-          const dev = targets[i];
-          if (!dev) return Promise.resolve();
-          return invoke<string>("detect_device_model_by_id", { deviceId: dev.id })
+        const runOne = (dev: Device): Promise<void> =>
+          invoke<string>("detect_device_model_by_id", { deviceId: dev.id })
             .then(() => { okCount++; })
             .catch((e) => {
               failCount++;
               console.error(`[check_all] ${dev.name} 静态信息检测失败:`, e);
-            })
-            .then(() => runOne(i + 1));
+            });
+        // 分批执行：每次取出 CONCURRENCY 台并发，完成后再取下一批
+        const runBatch = async (start: number): Promise<void> => {
+          const batch = targets.slice(start, start + CONCURRENCY);
+          if (batch.length === 0) return;
+          await Promise.all(batch.map(runOne));
+          return runBatch(start + CONCURRENCY);
         };
-        return runOne(0);
+        return runBatch(0);
       })
       .then(() => loadDevices())
       .then(() => {
