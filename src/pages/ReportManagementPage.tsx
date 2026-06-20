@@ -283,13 +283,12 @@ export default function ReportManagementPage() {
                   onClick={handleBatchManual}>
                   人工评判
                 </Button>
-                {selectedBatch?.records?.some((r: any) => r.report_path) && (
-                  <Button size="sm" variant="ghost"
-                    loading={batchGenerating === "combined"} disabled={!!batchGenerating}
-                    onClick={handleDownloadCombined}>
-                    下载综合报告
-                  </Button>
-                )}
+                <Button size="sm" variant="ghost"
+                  loading={batchGenerating === "combined"}
+                  disabled={!!batchGenerating || !selectedBatch?.records?.some((r: any) => r.report_path)}
+                  onClick={handleDownloadCombined}>
+                  下载综合报告
+                </Button>
               </div>
 
               {/* Records table */}
