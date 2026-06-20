@@ -125,7 +125,6 @@ export default function DevicesPage() {
   const handleDetect = () => {
     setDetecting(true);
     setDetectError(null);
-    console.log("[detect] 手动检测:", { ip: form.ip, vendor: form.vendor });
     invoke<string>("detect_device_model", {
       ip: form.ip.trim(),
       sshPort: form.ssh_port,
@@ -134,7 +133,6 @@ export default function DevicesPage() {
       vendor: form.vendor,
     })
       .then((json) => {
-        console.log("[detect] 手动检测结果:", json);
         try {
           const info = JSON.parse(json);
           setForm({
@@ -151,7 +149,11 @@ export default function DevicesPage() {
           setForm({ ...form, model: json });
         }
       })
-      .catch((e) => setDetectError(typeof e === "string" ? e : JSON.stringify(e)))
+      .catch((e) => {
+        const msg = typeof e === "string" ? e : JSON.stringify(e);
+        setDetectError(msg);
+        alert("检测失败: " + msg);
+      })
       .finally(() => setDetecting(false));
   };
 

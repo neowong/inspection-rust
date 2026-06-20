@@ -100,6 +100,7 @@ pub fn list_devices(
     status: Option<String>,
     state: State<AppState>,
 ) -> Result<Vec<Device>, String> {
+    eprintln!("[list_devices] vendor={:?}, device_type={:?}, status={:?}", vendor, device_type, status);
     let conn = state.db.lock();
 
     let mut sql = format!("SELECT {} FROM devices WHERE 1=1", DEVICE_COLUMNS);
@@ -500,6 +501,7 @@ pub async fn detect_device_model(
     use crate::services::vendor_profile::{self, ExecMode};
 
     let profile = vendor_profile::get_profile(&vendor);
+    eprintln!("[detect] vendor={}, exec_mode={:?}", vendor, profile.exec_mode);
 
     match profile.exec_mode {
         ExecMode::Exec => {
@@ -524,7 +526,7 @@ async fn detect_linux_info(
     use crate::services::linux_runner;
     use std::collections::HashMap;
 
-    tracing::info!("[detect_linux] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
+    eprintln!("[detect_linux] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
 
     let commands: Vec<String> = vec![
         "hostnamectl".to_string(),
@@ -551,7 +553,10 @@ async fn detect_linux_info(
             None,
         )?;
 
-        tracing::info!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
+        eprintln!("[detect_linux] 命令执行完成，输出数: {}", outputs.len());
+        for (cmd, output) in &outputs {
+            eprintln!("[detect_linux] 命令: {} → 输出前200字符: {}", cmd, &output[..output.len().min(200)]);
+        }
 
         // 解析结果
         let mut info = serde_json::Map::new();
@@ -589,7 +594,9 @@ async fn detect_linux_info(
             }
         }
 
-        Ok(serde_json::Value::Object(info).to_string())
+        let result = serde_json::Value::Object(info).to_string();
+        eprintln!("[detect_linux] 返回结果: {}", result);
+        Ok(result)
     })
     .await
     .map_err(|e| format!("检测任务失败: {}", e))?
