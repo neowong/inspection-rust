@@ -93,6 +93,8 @@ pub fn generate_template(
             // Linux static_info commands: extract cpu_cores / memory_gb
             let extract_fields: Vec<&str> = if cmd_trimmed == "lscpu" {
                 vec!["cpu_cores"]
+            } else if cmd_trimmed.contains("dmidecode -t memory") && cmd_trimmed.contains("grep") {
+                vec!["memory_gb"]
             } else if cmd_trimmed == "free -h" {
                 vec!["memory_gb"]
             } else {

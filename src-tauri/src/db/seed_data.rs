@@ -174,6 +174,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Linux", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
         ("Linux", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
         ("Linux", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Linux", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("Linux", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // 定时任务
         ("Linux", "crontab -l", "当前用户定时任务", "schedule", 0),
@@ -223,6 +224,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Ubuntu", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
         ("Ubuntu", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
         ("Ubuntu", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Ubuntu", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("Ubuntu", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Ubuntu", "apt list --installed 2>/dev/null | head -20", "已安装软件包", "system", 0),
@@ -273,6 +275,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("CentOS", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
         ("CentOS", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
         ("CentOS", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("CentOS", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("CentOS", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("CentOS", "cat /etc/centos-release", "CentOS 版本", "system", 0),
@@ -323,6 +326,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Rocky", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
         ("Rocky", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
         ("Rocky", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Rocky", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("Rocky", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Rocky", "cat /etc/rocky-release", "Rocky 版本", "system", 0),
@@ -373,6 +377,7 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Debian", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
         ("Debian", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
         ("Debian", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Debian", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("Debian", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Debian", "cat /etc/debian_version", "Debian 版本", "system", 0),

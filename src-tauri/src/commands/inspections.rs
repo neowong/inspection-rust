@@ -442,13 +442,46 @@ fn extract_cpu_cores(output: &str) -> Option<String> {
 
 /// 从 free -h 输出提取内存大小（GB）
 fn extract_memory_gb(output: &str) -> Option<String> {
+    // 优先：dmidecode -t memory | grep -i Size 输出
+    // 格式: "Size: 8192 MB" 或 "Size: No Module Installed"
+    let mut total_mb: u64 = 0;
+    let mut found_dmidecode = false;
     for line in output.lines() {
         let trimmed = line.trim();
-        // free -h format: "Mem:           7.7Gi       2.1Gi       1.2Gi       ..."
+        if let Some(rest) = trimmed.strip_prefix("Size:") {
+            let val = rest.trim();
+            if val.contains("No Module") || val.is_empty() {
+                continue;
+            }
+            // 解析 "8192 MB" 或 "16384 MB"
+            let parts: Vec<&str> = val.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(size) = parts[0].parse::<u64>() {
+                    let unit = parts[1].to_uppercase();
+                    if unit.starts_with("MB") {
+                        total_mb += size;
+                        found_dmidecode = true;
+                    } else if unit.starts_with("GB") {
+                        total_mb += size * 1024;
+                        found_dmidecode = true;
+                    }
+                }
+            }
+        }
+    }
+    if found_dmidecode && total_mb > 0 {
+        let gb = total_mb as f64 / 1024.0;
+        return Some(format!("{:.1}Gi", gb));
+    }
+
+    // 回退：free -h 输出
+    // 格式: "Mem:           7.7Gi       2.1Gi       1.2Gi       ..."
+    for line in output.lines() {
+        let trimmed = line.trim();
         if trimmed.starts_with("Mem:") {
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             if parts.len() >= 2 {
-                return Some(parts[1].to_string()); // e.g. "7.7Gi"
+                return Some(parts[1].to_string());
             }
         }
     }
