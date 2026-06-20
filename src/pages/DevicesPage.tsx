@@ -399,11 +399,7 @@ export default function DevicesPage() {
           </div>
         }
       >
-        <div className="space-y-4">
-          {/* 身份信息 */}
-          <div>
-            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">身份信息</p>
-            <div className="space-y-3">
+        <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
@@ -466,13 +462,6 @@ export default function DevicesPage() {
                 </div>
                 {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
               </div>
-            </div>
-          </div>
-
-          {/* 连接信息 */}
-          <div>
-            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">连接信息</p>
-            <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
@@ -487,26 +476,24 @@ export default function DevicesPage() {
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 端口</label>
                 <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
               </div>
-            </div>
-          </div>
-
-          {/* 巡检配置 */}
-          <div>
-            <p className="text-xs font-semibold text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">巡检配置</p>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
-              <Select
-                value={form.template_id ?? ""}
-                className={shakeFields.has("template_id") ? "animate-shake" : ""}
-                onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
-              >
-                <option value="">请选择模板</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </Select>
-            </div>
-          </div>
-
-          {/* 自动检测（仅网络设备） */}
+              {form.device_type === "server" && (
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                  <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
+                <Select
+                  value={form.template_id ?? ""}
+                  className={shakeFields.has("template_id") ? "animate-shake" : ""}
+                  onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
+                >
+                  <option value="">请选择模板</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
+              </div>
+              {/* 自动检测（仅网络设备） */}
           {form.device_type !== "server" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
