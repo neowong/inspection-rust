@@ -30,12 +30,14 @@ interface DeviceForm {
   serial_number: string;
   manufacturing_date: string;
   sysname: string;
+  cpu_cores: string;
+  memory_gb: string;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
-  serial_number: "", manufacturing_date: "", sysname: "",
+  serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
 };
 
 export default function DevicesPage() {
@@ -113,6 +115,8 @@ export default function DevicesPage() {
       serial_number: d.serial_number || "",
       manufacturing_date: d.manufacturing_date || "",
       sysname: d.sysname || "",
+      cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
+      memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
     });
     setModalOpen(true);
   };
@@ -167,6 +171,8 @@ export default function DevicesPage() {
     if (form.serial_number) data.serial_number = form.serial_number;
     if (form.manufacturing_date) data.manufacturing_date = form.manufacturing_date;
     if (form.sysname) data.sysname = form.sysname;
+    if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
+    if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
 
     setSaving(true);
     setSaveError(null);
@@ -477,10 +483,22 @@ export default function DevicesPage() {
                 <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
               </div>
               {form.device_type === "server" && (
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
-                  <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
+                      <Input value={form.cpu_cores} placeholder="自动检测" readOnly />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
+                      <Input value={form.memory_gb} placeholder="自动检测" readOnly />
+                    </div>
+                  </div>
+                </>
               )}
               {form.device_type !== "server" && (
                 <div className="grid grid-cols-2 gap-3">

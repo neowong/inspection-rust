@@ -344,6 +344,8 @@ fn build_static_info(
                     extract_by_patterns(output, &["MANUFACTURING_DATE", "Manufacturing Date"])
                 }
                 "model" => extract_model(output),
+                "cpu_cores" => extract_cpu_cores(output),
+                "memory_gb" => extract_memory_gb(output),
                 _ => None,
             };
             if let Some(v) = val.filter(|s| !s.trim().is_empty()) {
@@ -423,6 +425,36 @@ fn extract_model(output: &str) -> Option<String> {
     })
 }
 
+/// 从 lscpu 输出提取 CPU 核心数
+fn extract_cpu_cores(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        // lscpu format: "CPU(s):                4"
+        if let Some(rest) = trimmed.strip_prefix("CPU(s):") {
+            let val = rest.trim().split_whitespace().next()?;
+            if let Ok(n) = val.parse::<i64>() {
+                return Some(n.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// 从 free -h 输出提取内存大小（GB）
+fn extract_memory_gb(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        // free -h format: "Mem:           7.7Gi       2.1Gi       1.2Gi       ..."
+        if trimmed.starts_with("Mem:") {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 2 {
+                return Some(parts[1].to_string()); // e.g. "7.7Gi"
+            }
+        }
+    }
+    None
+}
+
 fn extract_by_patterns(output: &str, keys: &[&str]) -> Option<String> {
     for line in output.lines() {
         let trimmed = line.trim();
@@ -460,6 +492,23 @@ fn visible_outputs(
     visible
 }
 
+/// 解析内存字符串（如 "7.7Gi", "512Mi", "1.5Ti"）为 GB
+fn parse_memory_to_gb(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let (num_str, unit) = s.split_at(
+        s.find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(s.len()),
+    );
+    let num: f64 = num_str.parse().ok()?;
+    match unit.to_lowercase().as_str() {
+        "gi" | "g" => Some(num),
+        "mi" | "m" => Some(num / 1024.0),
+        "ti" | "t" => Some(num * 1024.0),
+        "ki" | "k" => Some(num / (1024.0 * 1024.0)),
+        _ => Some(num), // assume GB if no unit
+    }
+}
+
 fn sync_device_static_info(
     conn: &rusqlite::Connection,
     device_id: i64,
@@ -475,10 +524,14 @@ fn sync_device_static_info(
     let model = get("model");
     let serial_number = get("serial_number");
     let manufacturing_date = get("manufacturing_date");
+    let cpu_cores = get("cpu_cores").and_then(|s| s.parse::<i64>().ok());
+    let memory_gb = get("memory_gb").and_then(|s| parse_memory_to_gb(s));
     if sysname.is_none()
         && model.is_none()
         && serial_number.is_none()
         && manufacturing_date.is_none()
+        && cpu_cores.is_none()
+        && memory_gb.is_none()
     {
         return;
     }
@@ -488,8 +541,10 @@ fn sync_device_static_info(
          model = COALESCE(?2, model), \
          serial_number = COALESCE(?3, serial_number), \
          manufacturing_date = COALESCE(?4, manufacturing_date), \
-         updated_at = ?5 WHERE id = ?6",
-        rusqlite::params![sysname, model, serial_number, manufacturing_date, now_str(), device_id],
+         cpu_cores = COALESCE(?5, cpu_cores), \
+         memory_gb = COALESCE(?6, memory_gb), \
+         updated_at = ?7 WHERE id = ?8",
+        rusqlite::params![sysname, model, serial_number, manufacturing_date, cpu_cores, memory_gb, now_str(), device_id],
     );
 }
 

@@ -23,6 +23,8 @@ pub struct Device {
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
     pub sysname: Option<String>,
+    pub cpu_cores: Option<i64>,
+    pub memory_gb: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -44,6 +46,8 @@ pub struct DeviceCreate {
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
     pub sysname: Option<String>,
+    pub cpu_cores: Option<i64>,
+    pub memory_gb: Option<f64>,
 }
 
 /// 更新设备 - 前端请求 DTO（全部可选）
@@ -63,6 +67,8 @@ pub struct DeviceUpdate {
     pub serial_number: Option<String>,
     pub manufacturing_date: Option<String>,
     pub sysname: Option<String>,
+    pub cpu_cores: Option<i64>,
+    pub memory_gb: Option<f64>,
 }
 
 // ============================
@@ -300,7 +306,7 @@ pub fn now_str() -> String {
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
      ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, \
-     created_at, updated_at";
+     cpu_cores, memory_gb, created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
     "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
@@ -346,8 +352,10 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         serial_number: row.get(12)?,
         manufacturing_date: row.get(13)?,
         sysname: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        cpu_cores: row.get(15)?,
+        memory_gb: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 

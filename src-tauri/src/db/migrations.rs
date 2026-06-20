@@ -347,5 +347,23 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 18: {}", e))?;
     }
 
+    // ── v19: devices 增加 cpu_cores、memory_gb 字段（Linux 服务器静态信息） ──
+    if version < 19 {
+        for col in &["cpu_cores", "memory_gb"] {
+            let has: bool = conn
+                .prepare(&format!("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{}'", col))
+                .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !has {
+                let ty = if *col == "cpu_cores" { "INTEGER" } else { "REAL" };
+                conn.execute_batch(&format!("ALTER TABLE devices ADD COLUMN {} {};", col, ty))
+                    .map_err(|e| format!("migration 19: {}", e))?;
+            }
+        }
+        conn.execute_batch("PRAGMA user_version = 19;")
+            .map_err(|e| format!("migration 19: {}", e))?;
+    }
+
     Ok(())
 }

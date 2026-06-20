@@ -76,18 +76,44 @@ pub fn generate_template(
     // Sort by category priority, then by id
     commands.sort_by(|a, b| a.4.cmp(&b.4).then(a.0.cmp(&b.0)));
 
-    let command_ids: Vec<i64> = commands.iter().map(|c| c.0).collect();
     let template_name = format!("{}-巡检模板", vendor);
 
     info!(
         "Generated template '{}' with {} commands for vendor '{}'",
         template_name,
-        command_ids.len(),
+        commands.len(),
         vendor
     );
 
+    // Build commands array with extract_fields for static_info commands
+    let commands_json: Vec<serde_json::Value> = commands
+        .iter()
+        .map(|(id, cmd, _desc, _cat, _priority)| {
+            let cmd_trimmed = cmd.trim();
+            // Linux static_info commands: extract cpu_cores / memory_gb
+            let extract_fields: Vec<&str> = if cmd_trimmed == "lscpu" {
+                vec!["cpu_cores"]
+            } else if cmd_trimmed == "free -h" {
+                vec!["memory_gb"]
+            } else {
+                vec![]
+            };
+            let purpose = if extract_fields.is_empty() {
+                "inspection"
+            } else {
+                "static_info"
+            };
+            serde_json::json!({
+                "command_id": id,
+                "purpose": purpose,
+                "show_in_report": extract_fields.is_empty(),
+                "extract_fields": extract_fields,
+            })
+        })
+        .collect();
+
     Ok(serde_json::json!({
-        "command_ids": command_ids,
+        "commands": commands_json,
         "name": template_name
     }))
 }

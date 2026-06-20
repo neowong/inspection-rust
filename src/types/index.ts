@@ -13,6 +13,8 @@ export interface Device {
   serial_number: string | null;
   manufacturing_date: string | null;
   sysname: string | null;
+  cpu_cores: number | null;
+  memory_gb: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -155,7 +155,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -171,6 +171,8 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.serial_number,
             data.manufacturing_date,
             data.sysname,
+            data.cpu_cores,
+            data.memory_gb,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -230,6 +232,8 @@ pub fn update_device(
     updater.push_opt("serial_number", &data.serial_number);
     updater.push_opt("manufacturing_date", &data.manufacturing_date);
     updater.push_opt("sysname", &data.sysname);
+    updater.push_opt("cpu_cores", &data.cpu_cores);
+    updater.push_opt("memory_gb", &data.memory_gb);
 
     // 处理密码加密
     if let Some(ref pass) = data.ssh_password_encrypted {
