@@ -107,6 +107,7 @@ export default function DevicesPage() {
 
   const openAdd = () => {
     setEditing(null);
+    setPasswordSet(false);
     setForm(EMPTY_FORM);
     setSaveError(null);
     setModalOpen(true);
