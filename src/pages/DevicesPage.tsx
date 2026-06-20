@@ -468,7 +468,7 @@ export default function DevicesPage() {
                 </div>
                 {detectError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{detectError}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
                   <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
@@ -477,28 +477,26 @@ export default function DevicesPage() {
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
                   <Input type="password" value={form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "留空则不修改" : "输入密码"} />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
+                  <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
+                </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 端口</label>
-                <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
               </div>
               {form.device_type === "server" && (
-                <>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
-                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
+                    <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
-                      <Input value={form.cpu_cores} placeholder="自动检测" readOnly />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
-                      <Input value={form.memory_gb} placeholder="自动检测" readOnly />
-                    </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
+                    <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
                   </div>
-                </>
+                </div>
               )}
               {form.device_type !== "server" && (
                 <div className="grid grid-cols-2 gap-3">
