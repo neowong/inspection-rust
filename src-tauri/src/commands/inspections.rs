@@ -409,6 +409,7 @@ fn extract_model(output: &str) -> Option<String> {
             "Model",
             "Operating System",
             "Manufacturer",
+            "PRETTY_NAME",
         ],
     )
     .map(|value| {
@@ -426,7 +427,13 @@ fn extract_by_patterns(output: &str, keys: &[&str]) -> Option<String> {
         let trimmed = line.trim();
         for key in keys {
             if let Some(rest) = trimmed.strip_prefix(key) {
-                let value = rest.trim_start().strip_prefix(':').unwrap_or(rest).trim();
+                let rest_trimmed = rest.trim_start();
+                let value = rest_trimmed
+                    .strip_prefix(':')
+                    .or_else(|| rest_trimmed.strip_prefix('='))
+                    .unwrap_or(rest_trimmed)
+                    .trim()
+                    .trim_matches('"');
                 if !value.is_empty() && !value.contains("----") {
                     return Some(value.to_string());
                 }
