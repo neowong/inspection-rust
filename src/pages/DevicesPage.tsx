@@ -14,6 +14,9 @@ import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
 import { VENDORS } from "../lib/constants";
 
+const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
+const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
+
 interface DeviceForm {
   name: string;
   ip: string;
@@ -414,10 +417,11 @@ export default function DevicesPage() {
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
               <Select value={form.device_type} onChange={(e) => {
                 const dt = e.target.value;
-                const networkVendors = ["H3C", "华为", "思科", "锐捷", "飞塔"];
                 const updated: Partial<DeviceForm> = { device_type: dt };
-                if (dt === "server" && networkVendors.includes(form.vendor)) {
+                if (dt === "server" && !SERVER_VENDORS.includes(form.vendor)) {
                   updated.vendor = "Linux";
+                } else if (dt !== "server" && !NETWORK_VENDORS.includes(form.vendor)) {
+                  updated.vendor = "H3C";
                 }
                 setForm({ ...form, ...updated });
               }}>
@@ -431,7 +435,7 @@ export default function DevicesPage() {
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
               <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+                {(form.device_type === "server" ? SERVER_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
               </Select>
             </div>
             <div>
@@ -485,16 +489,18 @@ export default function DevicesPage() {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
-              <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+          {form.device_type !== "server" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
+                <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
+                <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
-              <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
-            </div>
-          </div>
+          )}
         </div>
       </Modal>
 
