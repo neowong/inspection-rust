@@ -32,8 +32,6 @@ export default function ReportManagementPage() {
   // Report generation - 区分动作类型，避免两个按钮共享同一 loading 状态导致同时转圈
   const [generating, setGenerating] = useState<{ id: number; action: "analyze" | "direct" } | null>(null);
   const [batchGenerating, setBatchGenerating] = useState<"" | "zip" | "combined-analyze" | "combined-direct">("");
-  // 已生成的综合报告本地路径（生成后存此，供"下载综合报告"按钮使用；切换批次时清空）
-  const [combinedReportPath, setCombinedReportPath] = useState<string | null>(null);
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
@@ -64,7 +62,6 @@ export default function ReportManagementPage() {
     setExpandedRecordId(null);
     setFullRecord(null);
     setLogResult(null);
-    setCombinedReportPath(null);
     try {
       const full: any = await invoke("get_batch", { batchId: batch.id });
       // 用户可能在 await 期间切换了批次，丢弃过期响应避免指向错误批次
@@ -149,17 +146,20 @@ export default function ReportManagementPage() {
     }
   };
 
-  // 批次：AI 分析并生成综合报告（生成后不弹下载，存路径到 state 供"下载综合报告"按钮用）
+  const refreshBatch = async (batchId: number) => {
+    const full = await invoke<any>("get_batch", { batchId });
+    if (selectedIdRef.current === batchId) setSelectedBatch(full);
+  };
+
+  // 批次：AI 分析并生成综合报告（路径自动回写到批次，刷新后"下载综合报告"按钮出现）
   const handleAnalyzeAndGenerateCombined = async () => {
     if (!selectedBatch) return;
     setBatchGenerating("combined-analyze");
     try {
-      // 已分析过则 force 重新分析，否则首次分析
       await invoke("analyze_batch", { batchId: selectedBatch.id, force: hasAnalyzedRecords });
       await refreshAfterMutation(expandedRecordId ?? undefined);
-      // 生成合并 docx
-      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
-      setCombinedReportPath(path);
+      await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
+      await refreshBatch(selectedBatch.id);
       await refreshAfterMutation(expandedRecordId ?? undefined);
     } catch (e) {
       console.error(String(e));
@@ -173,8 +173,8 @@ export default function ReportManagementPage() {
     if (!selectedBatch) return;
     setBatchGenerating("combined-direct");
     try {
-      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
-      setCombinedReportPath(path);
+      await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
+      await refreshBatch(selectedBatch.id);
     } catch (e) {
       console.error(String(e));
     } finally {
@@ -182,13 +182,14 @@ export default function ReportManagementPage() {
     }
   };
 
-  // 批次：下载已生成的综合报告
+  // 批次：下载已生成的综合报告（路径从批次 DB 中读取，可跨会话使用）
   const handleDownloadCombined = async () => {
-    if (!selectedBatch || !combinedReportPath) return;
+    const path = selectedBatch?.combined_report_path;
+    if (!selectedBatch || !path) return;
     const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
     try {
       await invoke("save_generated_file", {
-        sourcePath: combinedReportPath,
+        sourcePath: path,
         suggestedName: `${safeName}-综合报告.docx`,
         extension: "docx",
       });
@@ -340,7 +341,7 @@ export default function ReportManagementPage() {
                     </Button>
                     <Button size="sm" variant="ghost" loading={batchGenerating === "combined-direct"} disabled={batchGenerating === "combined-analyze"}
                       onClick={handleGenerateCombined}>直接生成综合报告</Button>
-                    {combinedReportPath && (
+                    {selectedBatch?.combined_report_path && (
                       <Button size="sm" variant="ghost" onClick={handleDownloadCombined}>下载综合报告</Button>
                     )}
                   </>

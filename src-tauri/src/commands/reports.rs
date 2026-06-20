@@ -697,7 +697,12 @@ pub fn generate_batch_docx_zip(
 
     crate::services::docx_engine::generate_zip_bundle(&configs, &items, &cmd_descs, &output_path)?;
 
-    Ok(output_path.to_string_lossy().to_string())
+    let path_str = output_path.to_string_lossy().to_string();
+    let _ = conn.execute(
+        "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![path_str, now_str(), batch_id],
+    );
+    Ok(path_str)
 }
 
 /// 将批次合并为单个 docx，每台设备从新页开始。返回 docx 文件路径。
@@ -730,7 +735,13 @@ pub fn generate_batch_docx_combined(
         &cover,
     )?;
 
-    Ok(output_path.to_string_lossy().to_string())
+    let path_str = output_path.to_string_lossy().to_string();
+    // 回写路径到批次，后续可随时下载
+    let _ = conn.execute(
+        "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![path_str, now_str(), batch_id],
+    );
+    Ok(path_str)
 }
 
 // ============================================================

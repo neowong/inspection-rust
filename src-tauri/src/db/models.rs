@@ -179,6 +179,7 @@ pub struct InspectionBatch {
     pub device_ids: Option<String>,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub combined_report_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -318,7 +319,7 @@ pub const COMMAND_COLUMNS: &str =
     "id, vendor, command, description, category, model, needs_root, created_at, updated_at";
 
 pub const BATCH_COLUMNS: &str =
-    "id, name, status, triggered_by, device_ids, started_at, completed_at, created_at, updated_at";
+    "id, name, status, triggered_by, device_ids, started_at, completed_at, combined_report_path, created_at, updated_at";
 
 pub const RECORD_COLUMNS: &str =
     "id, batch_id, device_id, status, error_message, command_outputs, static_info, ai_status, ai_result, \
@@ -412,8 +413,9 @@ pub fn batch_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionBatch> 
         device_ids: row.get(4)?,
         started_at: row.get(5)?,
         completed_at: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        combined_report_path: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 

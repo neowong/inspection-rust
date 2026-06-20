@@ -365,6 +365,21 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 19: {}", e))?;
     }
 
+    // ── v21: inspection_batches 增加 combined_report_path（综合报告持久化） ──
+    if version < 21 {
+        let has_col: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('inspection_batches') WHERE name = 'combined_report_path'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_col {
+            conn.execute_batch("ALTER TABLE inspection_batches ADD COLUMN combined_report_path TEXT;")
+                .map_err(|e| format!("migration 21: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 21;")
+            .map_err(|e| format!("migration 21: {}", e))?;
+    }
+
     // ── v20: devices 增加 auth_status / auth_message（SSH 账号验证状态） ──
     if version < 20 {
         for (col, ty) in &[("auth_status", "TEXT DEFAULT 'unknown'"), ("auth_message", "TEXT")] {

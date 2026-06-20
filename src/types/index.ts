@@ -76,6 +76,7 @@ export interface InspectionBatch {
   device_ids: number[];
   started_at: string | null;
   completed_at: string | null;
+  combined_report_path: string | null;
   created_at: string;
   records: InspectionRecordSummary[];
 }
