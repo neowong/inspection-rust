@@ -405,6 +405,7 @@ fn extract_model(output: &str) -> Option<String> {
             "PRODUCT_NAME",
             "Product Name",
             "Version",
+            "VERSION",
             "Platform Type",
             "Model",
             "Operating System",

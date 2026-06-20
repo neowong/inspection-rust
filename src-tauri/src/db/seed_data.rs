@@ -167,6 +167,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Linux", "lspci", "PCI 设备列表", "hardware", 0),
         ("Linux", "cat /proc/loadavg", "负载均值", "hardware", 0),
         ("Linux", "sysctl -a 2>/dev/null | head -30", "内核参数", "hardware", 0),
+        // VM 环境检测
+        ("Linux", "systemd-detect-virt", "虚拟化平台检测", "system", 0),
+        ("Linux", "cat /sys/class/dmi/id/product_name", "虚拟化产品名称", "system", 0),
+        ("Linux", "cat /sys/class/dmi/id/sys_vendor", "虚拟化厂商", "system", 0),
+        ("Linux", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
+        ("Linux", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
+        ("Linux", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Linux", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // 定时任务
         ("Linux", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("Linux", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
@@ -208,6 +216,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Ubuntu", "sysctl -a 2>/dev/null | head -30", "内核参数", "hardware", 0),
         ("Ubuntu", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("Ubuntu", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
+        // VM 环境检测
+        ("Ubuntu", "systemd-detect-virt", "虚拟化平台检测", "system", 0),
+        ("Ubuntu", "cat /sys/class/dmi/id/product_name", "虚拟化产品名称", "system", 0),
+        ("Ubuntu", "cat /sys/class/dmi/id/sys_vendor", "虚拟化厂商", "system", 0),
+        ("Ubuntu", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
+        ("Ubuntu", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
+        ("Ubuntu", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Ubuntu", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Ubuntu", "apt list --installed 2>/dev/null | head -20", "已安装软件包", "system", 0),
         ("Ubuntu", "cat /etc/apt/sources.list", "APT 源配置", "system", 0),
@@ -250,6 +266,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("CentOS", "sysctl -a 2>/dev/null | head -30", "内核参数", "hardware", 0),
         ("CentOS", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("CentOS", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
+        // VM 环境检测
+        ("CentOS", "systemd-detect-virt", "虚拟化平台检测", "system", 0),
+        ("CentOS", "cat /sys/class/dmi/id/product_name", "虚拟化产品名称", "system", 0),
+        ("CentOS", "cat /sys/class/dmi/id/sys_vendor", "虚拟化厂商", "system", 0),
+        ("CentOS", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
+        ("CentOS", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
+        ("CentOS", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("CentOS", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("CentOS", "cat /etc/centos-release", "CentOS 版本", "system", 0),
         ("CentOS", "rpm -qa | head -20", "已安装 RPM 包", "system", 0),
@@ -292,6 +316,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Rocky", "sysctl -a 2>/dev/null | head -30", "内核参数", "hardware", 0),
         ("Rocky", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("Rocky", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
+        // VM 环境检测
+        ("Rocky", "systemd-detect-virt", "虚拟化平台检测", "system", 0),
+        ("Rocky", "cat /sys/class/dmi/id/product_name", "虚拟化产品名称", "system", 0),
+        ("Rocky", "cat /sys/class/dmi/id/sys_vendor", "虚拟化厂商", "system", 0),
+        ("Rocky", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
+        ("Rocky", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
+        ("Rocky", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Rocky", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Rocky", "cat /etc/rocky-release", "Rocky 版本", "system", 0),
         ("Rocky", "rpm -qa | head -20", "已安装 RPM 包", "system", 0),
@@ -334,6 +366,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Debian", "sysctl -a 2>/dev/null | head -30", "内核参数", "hardware", 0),
         ("Debian", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("Debian", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
+        // VM 环境检测
+        ("Debian", "systemd-detect-virt", "虚拟化平台检测", "system", 0),
+        ("Debian", "cat /sys/class/dmi/id/product_name", "虚拟化产品名称", "system", 0),
+        ("Debian", "cat /sys/class/dmi/id/sys_vendor", "虚拟化厂商", "system", 0),
+        ("Debian", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "cpu", 0),
+        ("Debian", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "cpu", 0),
+        ("Debian", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
+        ("Debian", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // --- 发行版特有命令 ---
         ("Debian", "cat /etc/debian_version", "Debian 版本", "system", 0),
         ("Debian", "dpkg -l | head -20", "已安装 DEB 包", "system", 0),
