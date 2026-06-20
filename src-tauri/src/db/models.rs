@@ -133,6 +133,7 @@ pub struct CommandPool {
     pub description: Option<String>,
     pub category: Option<String>,
     pub model: Option<String>,
+    pub needs_root: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -144,6 +145,7 @@ pub struct CommandCreate {
     pub description: Option<String>,
     pub category: Option<String>,
     pub model: Option<String>,
+    pub needs_root: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +155,7 @@ pub struct CommandUpdate {
     pub description: Option<String>,
     pub category: Option<String>,
     pub model: Option<String>,
+    pub needs_root: Option<bool>,
 }
 
 // ============================
@@ -304,7 +307,7 @@ pub const TEMPLATE_COLUMNS: &str =
      created_at, updated_at";
 
 pub const COMMAND_COLUMNS: &str =
-    "id, vendor, command, description, category, model, created_at, updated_at";
+    "id, vendor, command, description, category, model, needs_root, created_at, updated_at";
 
 pub const BATCH_COLUMNS: &str =
     "id, name, status, triggered_by, device_ids, started_at, completed_at, created_at, updated_at";
@@ -382,8 +385,9 @@ pub fn command_from_row(row: &rusqlite::Row) -> rusqlite::Result<CommandPool> {
         description: row.get(3)?,
         category: row.get(4)?,
         model: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        needs_root: row.get::<_, i64>(6).unwrap_or(0) != 0,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 

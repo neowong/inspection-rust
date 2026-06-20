@@ -332,5 +332,20 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         conn.execute_batch("PRAGMA user_version = 17")?;
     }
 
+    // ── v18: command_pool 增加 needs_root 字段（Linux sudo 支持） ──
+    if version < 18 {
+        let has_column: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('command_pool') WHERE name = 'needs_root'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute_batch("ALTER TABLE command_pool ADD COLUMN needs_root INTEGER DEFAULT 0;")
+                .map_err(|e| format!("migration 18: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 18;")
+            .map_err(|e| format!("migration 18: {}", e))?;
+    }
+
     Ok(())
 }
