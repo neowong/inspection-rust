@@ -28,12 +28,12 @@ export default function ReportManagementPage() {
   const [fullRecord, setFullRecord] = useState<InspectionRecord | null>(null);
   const [recordLoading, setRecordLoading] = useState(false);
 
-  // AI analysis
-  const [analyzing, setAnalyzing] = useState<number | null>(null);
-  const [batchAnalyzing, setBatchAnalyzing] = useState<number | null>(null);
-  // Report generation
-  const [generating, setGenerating] = useState<number | null>(null);
-  const [batchGenerating, setBatchGenerating] = useState<"" | "zip" | "combined">("");
+  // AI analysis (批次级组合操作复用 batchGenerating 作 loading)
+  // Report generation - 区分动作类型，避免两个按钮共享同一 loading 状态导致同时转圈
+  const [generating, setGenerating] = useState<{ id: number; action: "analyze" | "direct" } | null>(null);
+  const [batchGenerating, setBatchGenerating] = useState<"" | "zip" | "combined-analyze" | "combined-direct">("");
+  // 已生成的综合报告本地路径（生成后存此，供"下载综合报告"按钮使用；切换批次时清空）
+  const [combinedReportPath, setCombinedReportPath] = useState<string | null>(null);
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
@@ -64,6 +64,7 @@ export default function ReportManagementPage() {
     setExpandedRecordId(null);
     setFullRecord(null);
     setLogResult(null);
+    setCombinedReportPath(null);
     try {
       const full: any = await invoke("get_batch", { batchId: batch.id });
       // 用户可能在 await 期间切换了批次，丢弃过期响应避免指向错误批次
@@ -106,89 +107,93 @@ export default function ReportManagementPage() {
     loadBatches();
   }, [selectedBatch?.id, loadBatches]);
 
-  // ----- AI Analysis -----
-  const handleAnalyzeRecord = (recordId: number) => {
-    setAnalyzing(recordId);
-    invoke("analyze_record", { recordId })
-      .then(() => { setAnalyzing(null); refreshAfterMutation(recordId); })
-      .catch((e) => { setAnalyzing(null); console.error(String(e)); });
-  };
-
-  const handleAnalyzeBatch = async (batchId: number, force: boolean = false) => {
-    setBatchAnalyzing(batchId);
+  // 组合操作：AI 分析 → 成功后生成报告并弹保存框；失败则中止不生成
+  // 单设备：AI 分析并生成报告（analyze_record 内部对已完成的记录会重跑）
+  const handleAnalyzeAndGenerateRecord = async (recordId: number, _alreadyAnalyzed: boolean) => {
+    setGenerating({ id: recordId, action: "analyze" });
     try {
-      await invoke("analyze_batch", { batchId, force });
-      refreshAfterMutation(expandedRecordId ?? undefined);
+      // 1. AI 分析
+      await invoke("analyze_record", { recordId });
+      await refreshAfterMutation(recordId);
+      // 2. 生成 docx
+      const path = await invoke<string>("generate_docx_report", { recordId });
+      // 3. 弹保存对话框
+      await invoke("save_generated_file", {
+        sourcePath: path,
+        suggestedName: `report_${recordId}.docx`,
+        extension: "docx",
+      });
+      await refreshAfterMutation(recordId);
     } catch (e) {
       console.error(String(e));
     } finally {
-      setBatchAnalyzing(null);
+      setGenerating(null);
     }
   };
 
+  // 单设备：直接生成报告（跳过 AI 分析）
+  const handleGenerateRecord = async (recordId: number) => {
+    setGenerating({ id: recordId, action: "direct" });
+    try {
+      const path = await invoke<string>("generate_docx_report", { recordId });
+      await invoke("save_generated_file", {
+        sourcePath: path,
+        suggestedName: `report_${recordId}.docx`,
+        extension: "docx",
+      });
+      await refreshAfterMutation(recordId);
+    } catch (e) {
+      console.error(String(e));
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  // 批次：AI 分析并生成综合报告（生成后不弹下载，存路径到 state 供"下载综合报告"按钮用）
   const handleAnalyzeAndGenerateCombined = async () => {
     if (!selectedBatch) return;
-    setBatchAnalyzing(selectedBatch.id);
-    setBatchGenerating("combined");
+    setBatchGenerating("combined-analyze");
     try {
-      await invoke("analyze_batch", { batchId: selectedBatch.id, force: true });
+      // 已分析过则 force 重新分析，否则首次分析
+      await invoke("analyze_batch", { batchId: selectedBatch.id, force: hasAnalyzedRecords });
+      await refreshAfterMutation(expandedRecordId ?? undefined);
+      // 生成合并 docx
       const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
-      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
-      await invoke("save_generated_file", {
-        sourcePath: path,
-        suggestedName: `${safeName}-重新分析合并报告.docx`,
-        extension: "docx",
-      });
-      refreshAfterMutation(expandedRecordId ?? undefined);
+      setCombinedReportPath(path);
+      await refreshAfterMutation(expandedRecordId ?? undefined);
     } catch (e) {
       console.error(String(e));
     } finally {
-      setBatchAnalyzing(null);
       setBatchGenerating("");
     }
   };
 
-  // ----- DOCX Generation -----
-  const handleGenerateDocx = (recordId: number) => {
-    setGenerating(recordId);
-    invoke<string>("generate_docx_report", { recordId })
-      .then(() => { setGenerating(null); refreshAfterMutation(recordId); })
-      .catch((e) => { setGenerating(null); console.error(e); });
-  };
-
-  const handleBatchZip = async () => {
+  // 批次：直接生成综合报告（跳过 AI 分析）
+  const handleGenerateCombined = async () => {
     if (!selectedBatch) return;
-    setBatchGenerating("zip");
+    setBatchGenerating("combined-direct");
     try {
-      const path = await invoke<string>("generate_batch_docx_zip", { batchId: selectedBatch.id });
-      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
-      await invoke("save_generated_file", {
-        sourcePath: path,
-        suggestedName: `${safeName}-巡检报告.zip`,
-        extension: "zip",
-      });
+      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
+      setCombinedReportPath(path);
     } catch (e) {
-      console.error(e);
+      console.error(String(e));
     } finally {
       setBatchGenerating("");
     }
   };
 
-  const handleBatchCombined = async () => {
-    if (!selectedBatch) return;
-    setBatchGenerating("combined");
+  // 批次：下载已生成的综合报告
+  const handleDownloadCombined = async () => {
+    if (!selectedBatch || !combinedReportPath) return;
+    const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
     try {
-      const path = await invoke<string>("generate_batch_docx_combined", { batchId: selectedBatch.id });
-      const safeName = (selectedBatch.name || `batch_${selectedBatch.id}`).replace(/[/\\:*?"<>|]/g, "_");
       await invoke("save_generated_file", {
-        sourcePath: path,
-        suggestedName: `${safeName}-合并报告.docx`,
+        sourcePath: combinedReportPath,
+        suggestedName: `${safeName}-综合报告.docx`,
         extension: "docx",
       });
     } catch (e) {
-      console.error(e);
-    } finally {
-      setBatchGenerating("");
+      console.error(String(e));
     }
   };
 
@@ -245,7 +250,7 @@ export default function ReportManagementPage() {
       const d = deviceMap.get(r.device_id);
       return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`;
     }},
-    { key: "status", header: "巡检状态", width: "w-24", render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+    { key: "status", header: "巡检状态", width: "w-24", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
     { key: "ai_status", header: "AI", width: "w-20", render: (r: any) =>
       r.ai_status === "completed" ? <span className="text-[hsl(var(--success))] text-xs font-medium">已完成</span>
         : r.ai_status === "processing" ? <span className="text-[hsl(var(--warning))] text-xs">分析中</span>
@@ -253,18 +258,16 @@ export default function ReportManagementPage() {
     },
     { key: "report", header: "报告", width: "w-16", render: (r: any) =>
       r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : "-" },
-    { key: "actions", header: "操作", width: "w-72",
+    { key: "actions", header: "操作", width: "w-80", noTruncate: true,
       render: (r: any) => (
         <div className="flex gap-1 flex-wrap">
           <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); loadRecordDetail(r.id); }}>详情</Button>
-          <Button variant="ghost" size="sm" loading={analyzing === r.id} disabled={r.ai_status === "processing"}
-            onClick={(e: any) => { e.stopPropagation(); handleAnalyzeRecord(r.id); }}>
-            {r.ai_status === "completed" ? "重新分析" : "AI 分析"}
+          <Button variant="ghost" size="sm" loading={!!generating && generating.id === r.id && generating.action === "analyze"} disabled={r.ai_status === "processing" || (!!generating && generating.id === r.id && generating.action === "direct")}
+            onClick={(e: any) => { e.stopPropagation(); handleAnalyzeAndGenerateRecord(r.id, r.ai_status === "completed"); }}>
+            {r.ai_status === "completed" ? "重新分析并生成报告" : "AI 分析并生成报告"}
           </Button>
-          <Button variant="ghost" size="sm" loading={generating === r.id}
-            onClick={(e: any) => { e.stopPropagation(); handleGenerateDocx(r.id); }}>
-            {r.report_path ? "重新生成" : "生成报告"}
-          </Button>
+          <Button variant="ghost" size="sm" loading={!!generating && generating.id === r.id && generating.action === "direct"} disabled={!!generating && generating.id === r.id && generating.action === "analyze"}
+            onClick={(e: any) => { e.stopPropagation(); handleGenerateRecord(r.id); }}>直接生成报告</Button>
           {r.report_path && (
             <>
               <Button variant="ghost" size="sm" loading={downloading === r.id}
@@ -276,7 +279,7 @@ export default function ReportManagementPage() {
         </div>
       ),
     },
-  ], [deviceMap, analyzing, generating, downloading, deleting, handleAnalyzeRecord, handleGenerateDocx, handleDownload, handleDelete, loadRecordDetail]);
+  ], [deviceMap, generating, downloading, deleting, handleAnalyzeAndGenerateRecord, handleGenerateRecord, handleDownload, handleDelete, loadRecordDetail]);
 
   return (
     <div>
@@ -290,7 +293,7 @@ export default function ReportManagementPage() {
         {/* Left: Batch list */}
         <div className="w-[300px] shrink-0 flex flex-col border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-card))] overflow-hidden">
           <div className="p-3 border-b border-[hsl(var(--border))]">
-            <p className="text-xs text-[hsl(var(--text-tertiary))]">{batches.length} 个批次</p>
+            <p className="text-xs text-[hsl(var(--text-tertiary))]">{batches.length} 个任务</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             {batches.map((b) => {
@@ -321,29 +324,25 @@ export default function ReportManagementPage() {
         <div className="flex-1 overflow-y-auto space-y-4">
           {!selectedBatch ? (
             <div className="flex items-center justify-center h-full text-[hsl(var(--text-tertiary))]">
-              <p className="text-sm">← 选择左侧批次</p>
+              <p className="text-sm">← 选择左侧任务</p>
             </div>
           ) : (
             <>
               {/* Toolbar */}
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `批次 #${selectedBatch.id}`}</h2>
+                <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `任务 #${selectedBatch.id}`}</h2>
                 {hasCompletedRecords && (
                   <>
-                    <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id && batchGenerating !== "combined"}
-                      onClick={() => handleAnalyzeBatch(selectedBatch.id, hasAnalyzedRecords)}>
-                      {hasAnalyzedRecords ? "重新分析全部" : "AI 分析全部"}
+                    <Button size="sm" variant="ghost"
+                      loading={batchGenerating === "combined-analyze"} disabled={batchGenerating === "combined-direct"}
+                      onClick={handleAnalyzeAndGenerateCombined}>
+                      {hasAnalyzedRecords ? "重新分析并生成综合报告" : "AI 分析并生成综合报告"}
                     </Button>
-                    {hasAnalyzedRecords && (
-                      <Button size="sm" variant="ghost" loading={batchAnalyzing === selectedBatch.id || batchGenerating === "combined"}
-                        onClick={handleAnalyzeAndGenerateCombined}>
-                        重新分析并生成合并报告
-                      </Button>
+                    <Button size="sm" variant="ghost" loading={batchGenerating === "combined-direct"} disabled={batchGenerating === "combined-analyze"}
+                      onClick={handleGenerateCombined}>直接生成综合报告</Button>
+                    {combinedReportPath && (
+                      <Button size="sm" variant="ghost" onClick={handleDownloadCombined}>下载综合报告</Button>
                     )}
-                    <Button size="sm" variant="ghost" loading={batchGenerating === "zip"}
-                      onClick={handleBatchZip}>下载 ZIP</Button>
-                    <Button size="sm" variant="ghost" loading={batchGenerating === "combined"}
-                      onClick={handleBatchCombined}>下载合并 DOCX</Button>
                   </>
                 )}
               </div>
@@ -371,14 +370,12 @@ export default function ReportManagementPage() {
                     </h3>
                     <div className="flex gap-1.5 flex-wrap">
                       <Button variant="ghost" size="sm" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
-                      <Button variant="ghost" size="sm" loading={analyzing === fullRecord.id} disabled={fullRecord.ai_status === "processing"}
-                        onClick={() => handleAnalyzeRecord(fullRecord.id)}>
-                        {fullRecord.ai_status === "completed" ? "重新分析" : "AI 分析"}
+                      <Button variant="ghost" size="sm" loading={!!generating && generating.id === fullRecord.id && generating.action === "analyze"} disabled={fullRecord.ai_status === "processing" || (!!generating && generating.id === fullRecord.id && generating.action === "direct")}
+                        onClick={() => handleAnalyzeAndGenerateRecord(fullRecord.id, fullRecord.ai_status === "completed")}>
+                        {fullRecord.ai_status === "completed" ? "重新分析并生成报告" : "AI 分析并生成报告"}
                       </Button>
-                      <Button variant="ghost" size="sm" loading={generating === fullRecord.id}
-                        onClick={() => handleGenerateDocx(fullRecord.id)}>
-                        {fullRecord.report_path ? "重新生成" : "生成报告"}
-                      </Button>
+                      <Button variant="ghost" size="sm" loading={!!generating && generating.id === fullRecord.id && generating.action === "direct"} disabled={!!generating && generating.id === fullRecord.id && generating.action === "analyze"}
+                        onClick={() => handleGenerateRecord(fullRecord.id)}>直接生成报告</Button>
                       {fullRecord.report_path && (
                         <>
                           <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}

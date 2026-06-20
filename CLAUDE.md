@@ -93,6 +93,7 @@ inspection-rust/
 - **DataTable generic pattern**: `DataTable<T>` with typed `Column<T>[]` config for rendering
 - **Chinese-first**: All labels, messages, and prompts in Chinese. AI inspection prompts are Chinese.
 - **Form standard pattern**: Pages with modal forms use `saving` + `saveError` states, `<Button loading={saving}>`, and error alert box `.bg-[hsl(var(--danger)_/_0.1)]` for validation
+- **Per-action loading state**: 同一行/同一目标对象上有多个会触发后台异步操作的按钮时，loading state 必须按动作区分（如 `{id, action: "analyze" | "direct"}`），不能让两个按钮共享同一个标量 `loading={generating === r.id}`，否则点击 A 按钮 B 也会跟着转圈。同一对象的"另一个动作"应在当前动作进行时设为 `disabled`
 - **DataTable**: Supports `onRowClick`, `onRowDoubleClick`, `selectedKey` props. TemplatesPage is reference implementation
 - **Config field encoding**: Template `config` is stored as JSON string in SQLite, `JSON.stringify()` on frontend, `serde_json::from_str()` on list. Frontend types declare `config: {...}` object, invoke params must send string
 - **API key/password fields**: Rust models use `api_key_encrypted` / `ssh_password_encrypted`. Frontend send `api_key_encrypted` / `ssh_password_encrypted` (NOT `api_key` / `ssh_password`)
