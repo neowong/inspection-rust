@@ -35,53 +35,6 @@ impl AppState {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn ensure_webview2_runtime() {
-    if is_webview2_installed() {
-        return;
-    }
-
-    tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
-
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-
-    let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
-
-    // 尝试从嵌入资源释放安装程序
-    if std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")).is_err() {
-        // 嵌入失败，尝试从安装目录读取（bundle.resources 释放的文件）
-        if !setup_path.exists() {
-            show_webview2_error_and_exit();
-            return;
-        }
-    }
-
-    // 静默安装
-    let install_ok = match std::process::Command::new(&setup_path)
-        .args(["/silent", "/install"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => match child.wait() {
-            Ok(status) => status.success(),
-            Err(_) => false,
-        },
-        Err(_) => false,
-    };
-
-    let _ = std::fs::remove_file(&setup_path);
-
-    // 安装后再次检测
-    if !install_ok || !is_webview2_installed() {
-        show_webview2_error_and_exit();
-    }
-
-    tracing::info!("WebView2 Runtime 安装成功");
-}
 
 #[cfg(target_os = "windows")]
 fn show_webview2_error_and_exit() {
@@ -126,9 +79,92 @@ fn is_webview2_installed() -> bool {
 #[cfg(not(target_os = "windows"))]
 fn ensure_webview2_runtime() {}
 
+/// 启动日志：写到 exe 同目录的 startup.log，用于排查启动阶段崩溃
+fn startup_log(msg: &str) {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    if let Some(dir) = exe_dir {
+        let log_path = dir.join("startup.log");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let line = format!("[{}] {}\n", ts, msg);
+        let _ = std::fs::OpenOptions::new()
+            .create(true).append(true).open(&log_path)
+            .and_then(|mut f| { use std::io::Write; f.write_all(line.as_bytes()) });
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_webview2_runtime_with_log() {
+    startup_log("检查 WebView2 Runtime...");
+    if is_webview2_installed() {
+        startup_log("WebView2 已安装");
+        return;
+    }
+    startup_log("WebView2 未安装，尝试自动安装...");
+
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
+    startup_log(&format!("安装程序路径: {}", setup_path.display()));
+
+    // 尝试从嵌入资源释放
+    match std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")) {
+        Ok(_) => startup_log("安装程序已释放"),
+        Err(e) => {
+            startup_log(&format!("释放安装程序失败: {}，尝试读取已有文件", e));
+            if !setup_path.exists() {
+                startup_log("安装程序不存在，弹窗退出");
+                show_webview2_error_and_exit();
+                return;
+            }
+        }
+    }
+
+    startup_log("开始静默安装 WebView2...");
+    let install_ok = match std::process::Command::new(&setup_path)
+        .args(["/silent", "/install"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => match child.wait() {
+            Ok(status) => {
+                startup_log(&format!("安装器退出码: {}", status.code().unwrap_or(-1)));
+                status.success()
+            }
+            Err(e) => {
+                startup_log(&format!("等待安装器失败: {}", e));
+                false
+            }
+        },
+        Err(e) => {
+            startup_log(&format!("启动安装器失败: {}", e));
+            false
+        }
+    };
+
+    let _ = std::fs::remove_file(&setup_path);
+
+    if !install_ok || !is_webview2_installed() {
+        startup_log("WebView2 安装失败，弹窗退出");
+        show_webview2_error_and_exit();
+    }
+
+    startup_log("WebView2 安装成功");
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_webview2_runtime_with_log() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    ensure_webview2_runtime();
+    startup_log("=== 程序启动 ===");
+    ensure_webview2_runtime_with_log();
+    startup_log("WebView2 检查通过，继续启动...");
 
     let exe_dir = std::env::current_exe()
         .ok()
@@ -187,8 +223,13 @@ pub fn run() {
     tracing::info!("数据目录: {}", app_data_dir.display());
     tracing::info!("日志目录: {}", log_dir.display());
 
+    startup_log(&format!("数据目录: {}", app_data_dir.display()));
+    startup_log(&format!("日志目录: {}", log_dir.display()));
+
     let db_path = app_data_dir.join("inspection.db");
+    startup_log("初始化数据库...");
     let state = AppState::new(db_path.to_str().unwrap());
+    startup_log("数据库初始化完成");
 
     // Create data directories
     let data_dir = app_data_dir.join("data");
@@ -203,12 +244,16 @@ pub fn run() {
         poll_device_statuses(&bg_db);
     });
 
+    startup_log("注册插件和命令...");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .setup(|_app| Ok(()))
+        .setup(|_app| {
+            startup_log("Tauri setup 完成，窗口即将显示");
+            Ok(())
+        })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // Devices
@@ -279,6 +324,10 @@ pub fn run() {
             get_stats,
         ])
         .run(tauri::generate_context!())
+        .map_err(|e| {
+            startup_log(&format!("Tauri 启动失败: {}", e));
+            e
+        })
         .expect("error while running tauri application");
 }
 
