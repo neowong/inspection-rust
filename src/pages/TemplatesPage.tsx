@@ -458,48 +458,48 @@ export default function TemplatesPage() {
               <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors select-none">
                 基本信息
               </summary>
-              <div className="mt-3 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+              <div className="mt-2 space-y-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">名称</label>
                     <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""}
                       onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
-                    {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
+                    {saveError && <p className="mt-0.5 text-[11px] text-[hsl(var(--danger))]">{saveError}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">厂商</label>
                     <Select value={templateForm.vendor} onChange={(e) => {
                       setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
                     }}>
                       {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
                     </Select>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号（可选）</label>
-                    <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型（可选）</label>
-                    <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} />
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">型号</label>
+                    <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} placeholder="可选" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
-                  <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联报告模板（可选）</label>
-                  <Select
-                    value={templateForm.report_template_id ?? ""}
-                    onChange={(e) => setTemplateForm({ ...templateForm, report_template_id: e.target.value ? Number(e.target.value) : null })}
-                  >
-                    <option value="">跟随默认（按厂商自动匹配）</option>
-                    {reportTemplates.map((rt) => (
-                      <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}{rt.vendor ? ` · ${rt.vendor}` : ""}</option>
-                    ))}
-                  </Select>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">设备类型</label>
+                    <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} placeholder="可选" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">描述</label>
+                    <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="可选" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">报告模板</label>
+                    <Select
+                      value={templateForm.report_template_id ?? ""}
+                      onChange={(e) => setTemplateForm({ ...templateForm, report_template_id: e.target.value ? Number(e.target.value) : null })}
+                    >
+                      <option value="">跟随默认</option>
+                      {reportTemplates.map((rt) => (
+                        <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}{rt.vendor ? ` · ${rt.vendor}` : ""}</option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               </div>
             </details>
