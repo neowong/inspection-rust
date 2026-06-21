@@ -132,64 +132,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 使用流程 */}
-      <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--text-tertiary))] mb-3">
-          使用流程
-        </h2>
-        <div className="overflow-x-auto">
-          <svg viewBox="0 0 960 480" className="min-w-[860px] w-full" role="img" aria-label="AI巡检助手 使用流程图">
-            <defs>
-              <linearGradient id="g0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#818CF8" /><stop offset="1" stopColor="#6366F1" /></linearGradient>
-              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#34D399" /><stop offset="1" stopColor="#10B981" /></linearGradient>
-              <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#60A5FA" /><stop offset="1" stopColor="#3B82F6" /></linearGradient>
-              <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#A78BFA" /><stop offset="1" stopColor="#8B5CF6" /></linearGradient>
-              <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F472B6" /><stop offset="1" stopColor="#EC4899" /></linearGradient>
-              <linearGradient id="g5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FB923C" /><stop offset="1" stopColor="#F97316" /></linearGradient>
-              <linearGradient id="g6" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#38BDF8" /><stop offset="1" stopColor="#0EA5E9" /></linearGradient>
-              <linearGradient id="g7" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#4ADE80" /><stop offset="1" stopColor="#22C55E" /></linearGradient>
-              <marker id="fa" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1,1 L7,4 L1,7Z" fill="#94A3B8" /></marker>
-            </defs>
-
-            {[
-              ["01", "配置 AI 模型", "添加 OpenAI / DeepSeek 等 AI 供应商", "可选，未启用时可人工评判"],
-              ["02", "维护命令库", "按厂商录入巡检命令和中文说明", "支持 H3C / 华为 / 思科 / 服务器等"],
-              ["03", "设计报告模板", "配置封面、列定义、页眉页脚", "右侧 A4 实时预览报告效果"],
-              ["04", "创建巡检模板", "选择巡检项与静态信息命令", "静态信息提取 sysname / SN / 型号"],
-              ["05", "添加设备", "录入 IP、SSH 凭据并绑定模板", "保存后自动检测连通性和型号"],
-              ["06", "执行巡检", "多设备并发 SSH 执行命令", "支持暂停 / 停止 / 重试"],
-              ["07", "AI 分析评判", "逐条命令评判：正常 / 注意 / 警告 / 严重", "结论自动合并到报告评判列"],
-              ["08", "导出 DOCX", "生成可编辑 Word 巡检报告", "支持单设备 / 批量 ZIP / 合并"],
-            ].map(([no, title, desc, note], i) => {
-              const col = i % 4;
-              const row = Math.floor(i / 4);
-              const x = 20 + col * 235;
-              const y = 20 + row * 230;
-              return (
-                <g key={no}>
-                  <rect x={x} y={y} width="215" height="200" rx="16" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x={x} y={y} width="215" height="6" rx="3" fill={`url(#g${i})`} />
-                  <circle cx={x + 30} cy={y + 40} r="18" fill={`url(#g${i})`} />
-                  <text x={x + 30} y={y + 45} textAnchor="middle" fontFamily="Inter, monospace" fontSize="13" fontWeight="700" fill="white">{no}</text>
-                  <text x={x + 56} y={y + 46} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="18" fontWeight="700" fill="#0F172A">{title}</text>
-                  <line x1={x + 16} y1={y + 65} x2={x + 199} y2={y + 65} stroke="#E2E8F0" strokeWidth="1" />
-                  <text x={x + 16} y={y + 92} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fill="#475569">{desc}</text>
-                  <rect x={x + 12} y={y + 115} width="191" height="52" rx="8" fill="#F1F5F9" />
-                  <text x={x + 22} y={y + 138} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">{note}</text>
-                </g>
-              );
-            })}
-
-            <path d="M235 120 L255 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M470 120 L490 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M705 120 L725 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M825 220 L825 250" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M805 350 L785 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M570 350 L550 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-            <path d="M335 350 L315 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
-          </svg>
-        </div>
-      </div>
     </div>
   );
 }
