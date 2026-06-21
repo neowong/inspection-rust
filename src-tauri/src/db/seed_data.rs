@@ -395,10 +395,14 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let inserted = {
+        // INSERT ... ON CONFLICT DO UPDATE：新命令插入，已存在命令仅修正 needs_root
+        // （不覆盖 description/category，尊重用户可能的修改），保证全新安装与升级用户一致。
         let mut stmt = tx
-            .prepare("INSERT OR IGNORE INTO command_pool (vendor, command, description, category, needs_root) \
-                      SELECT ?1, ?2, ?3, ?4, ?5 \
-                      WHERE NOT EXISTS (SELECT 1 FROM deleted_seed_commands WHERE vendor = ?1 AND command = ?2)")
+            .prepare(
+                "INSERT INTO command_pool (vendor, command, description, category, needs_root) \
+                 SELECT ?1, ?2, ?3, ?4, ?5 \
+                 WHERE NOT EXISTS (SELECT 1 FROM deleted_seed_commands WHERE vendor = ?1 AND command = ?2) \
+                 ON CONFLICT(vendor, command) DO UPDATE SET needs_root = excluded.needs_root")
             .map_err(|e| e.to_string())?;
         let mut inserted = 0usize;
         for (vendor, command, description, category, needs_root) in &commands {

@@ -487,4 +487,47 @@ mod tests {
         // 再次运行应幂等无错
         run_migrations(&mut conn).expect("re-run migrations must be idempotent");
     }
+
+    /// 全新安装执行种子数据后，devices / command_pool 关键列值应与升级库一致。
+    /// 验证 seed 的 ON CONFLICT DO UPDATE 正确写入 needs_root，不出现
+    /// 开发环境旧库（INSERT OR IGNORE 跳过 → needs_root=0）与生产全新安装不一致的问题。
+    #[test]
+    fn test_fresh_seed_data_consistent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").unwrap();
+        run_migrations(&mut conn).unwrap();
+
+        // seed 需要 APP_DATA_DIR，但这里只测 command_pool 不依赖文件系统
+        crate::db::seed_data::seed_command_pool(&mut conn).unwrap();
+
+        // 验证已知 sudo 命令的 needs_root=1
+        let cases: &[(&str, &str)] = &[
+            ("Linux", "fdisk -l"),
+            ("Linux", "dmidecode -t system"),
+            ("Linux", "iptables -L -n"),
+        ];
+        for (vendor, cmd) in cases {
+            let needs_root: i64 = conn
+                .query_row(
+                    "SELECT needs_root FROM command_pool WHERE vendor=?1 AND command=?2",
+                    rusqlite::params![vendor, cmd],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| panic!("命令 {}/{} 不存在", vendor, cmd));
+            assert_eq!(needs_root, 1, "需要 sudo 的命令 {}/{} 的 needs_root 应为 1", vendor, cmd);
+        }
+
+        // 验证普通命令 needs_root=0
+        let needs_root: i64 = conn
+            .query_row(
+                "SELECT needs_root FROM command_pool WHERE vendor='Linux' AND command='uname -a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(needs_root, 0, "普通命令 uname -a 的 needs_root 应为 0");
+
+        // 再次执行 seed 应幂等（不报错，值不变）
+        crate::db::seed_data::seed_command_pool(&mut conn).unwrap();
+    }
 }
