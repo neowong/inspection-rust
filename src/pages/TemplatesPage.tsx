@@ -543,13 +543,13 @@ export default function TemplatesPage() {
                         <div className="flex items-center gap-1.5">
                           <GripVertical size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />
                           <span className="text-[10px] text-[hsl(var(--text-tertiary))] w-4 text-right shrink-0">{idx + 1}</span>
-                          <code className="text-[11px] bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
+                          <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
                           <button type="button"
                             onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
                             className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-5 text-[10px]">
-                          <Select className="h-5 w-20 text-[10px]" value={spec.purpose} onChange={(e) => {
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-5 text-[11px]">
+                          <Select className="text-xs py-0.5" value={spec.purpose} onChange={(e) => {
                             const purpose = e.target.value as "inspection" | "static_info";
                             updateSpec({ purpose, show_in_report: purpose !== "static_info" });
                           }}>
@@ -605,8 +605,8 @@ export default function TemplatesPage() {
                         })}
                         className="accent-[hsl(var(--accent))] shrink-0" />
                       <span className="text-xs leading-tight">
-                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-[11px]">{cmd.command}</code>
-                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1 text-[11px]">{cmd.description}</span>}
+                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-xs">{cmd.command}</code>
+                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1 text-xs">{cmd.description}</span>}
                       </span>
                     </label>
                   ))}
