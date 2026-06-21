@@ -1,8 +1,5 @@
-import { useState } from "react";
-import { Heart, Network, Wrench, MessageSquare, Copy, Check, ExternalLink, Send } from "lucide-react";
+import { Network, Wrench } from "lucide-react";
 import Card from "../components/ui/Card";
-import Button from "../components/ui/Button";
-import Input, { Select } from "../components/ui/Input";
 
 function WorkflowSvg() {
   const steps = [
@@ -86,123 +83,12 @@ function WorkflowSvg() {
   );
 }
 
-function FeedbackSection() {
-  const [category, setCategory] = useState("bug");
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [copied, setCopied] = useState(false);
-
-  const GITHUB_URL = "https://github.com/neowong/inspection-rust/issues";
-
-  const buildFeedbackText = () => {
-    const lines = [
-      `## ${category === "bug" ? "Bug 反馈" : category === "feature" ? "功能建议" : "其它反馈"}`,
-      "",
-      `**标题**: ${title || "(未填写)"}`,
-      "",
-      "**描述**:",
-      desc || "(未填写)",
-      "",
-      "**环境信息**:",
-      `- App 版本: v3.2.0`,
-      `- 平台: ${navigator.platform}`,
-      `- User-Agent: ${navigator.userAgent}`,
-      "",
-    ];
-    return lines.join("\n");
-  };
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(buildFeedbackText());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleOpenGithub = () => {
-    const params = new URLSearchParams({
-      title: `[${category === "bug" ? "Bug" : "建议"}] ${title || "问题反馈"}`,
-      body: buildFeedbackText(),
-      labels: category === "bug" ? "bug" : category === "feature" ? "enhancement" : "",
-    });
-    window.open(`${GITHUB_URL}/new?${params.toString()}`, "_blank");
-  };
-
-  return (
-    <Card>
-      <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
-        <MessageSquare size={18} className="text-[hsl(var(--accent))]" />
-        问题反馈
-      </div>
-      <p className="mt-1.5 text-xs text-[hsl(var(--text-tertiary))]">
-        遇到 Bug 或有功能建议？欢迎反馈，帮助我们改进产品。
-      </p>
-
-      <div className="mt-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">反馈类型</label>
-            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="bug">Bug 报告</option>
-              <option value="feature">功能建议</option>
-              <option value="other">其它反馈</option>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">标题</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="简短描述问题或建议" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">详细描述</label>
-          <textarea
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            placeholder="请描述问题的复现步骤、期望行为、实际行为等..."
-            className="w-full h-24 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] px-3 py-2 text-sm text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] outline-none focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] resize-none"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={handleCopy}>
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? "已复制" : "复制反馈内容"}
-          </Button>
-          <Button size="sm" variant="primary" onClick={handleOpenGithub}>
-            <Send size={14} />
-            提交到 GitHub
-          </Button>
-        </div>
-
-        <div className="rounded-lg bg-[hsl(var(--bg-hover))] px-3 py-2 text-xs text-[hsl(var(--text-tertiary))] space-y-1">
-          <p className="flex items-center gap-1.5">
-            <ExternalLink size={12} />
-            <span>也可直接访问：</span>
-            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer"
-              className="text-[hsl(var(--accent))] hover:underline">{GITHUB_URL}</a>
-          </p>
-          <p>反馈内容会自动附带系统环境信息（版本、平台、浏览器），无需手动填写。</p>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function DonateQrCode({ title, subtitle, src }: { title: string; subtitle: string; src: string }) {
-  return (
-    <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-4 text-center">
-      <img src={src} alt={title} className="mx-auto h-48 w-48 rounded-lg object-contain" />
-      <div className="mt-3 text-sm font-medium text-[hsl(var(--text-primary))]">{title}</div>
-      <div className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">{subtitle}</div>
-    </div>
-  );
-}
-
 export default function AboutPage() {
   return (
     <div className="space-y-5">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-lg font-bold">关于</h1>
-        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">项目介绍、使用流程与支持作者</p>
+        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">项目介绍与使用流程</p>
       </div>
 
       <Card>
@@ -225,22 +111,6 @@ export default function AboutPage() {
           </div>
         </div>
       </Card>
-
-      <Card>
-        <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
-          <Heart size={18} className="text-[hsl(var(--danger))]" />
-          支持作者
-        </div>
-        <p className="mt-2 text-sm text-[hsl(var(--text-secondary))]">
-          如果这个项目对你的网络巡检工作有帮助，可以通过扫码打赏支持后续维护。
-        </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <DonateQrCode title="微信打赏" subtitle="扫码支持作者" src="/wx.png" />
-          <DonateQrCode title="支付宝打赏" subtitle="扫码支持作者" src="/zfb.png" />
-        </div>
-      </Card>
-
-      <FeedbackSection />
 
       <Card>
         <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
