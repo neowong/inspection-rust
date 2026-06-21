@@ -592,12 +592,12 @@ export default function TemplatesPage() {
                 <label className="shrink-0 text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
                   可选命令
                 </label>
-                <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-0.5">
+                <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
                   {vendorFilteredCommands.length === 0 && (
                     <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>
                   )}
                   {vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id)).map((cmd) => (
-                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1.5 py-1">
+                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
                       <input type="checkbox" checked={false}
                         onChange={() => setTemplateForm({
                           ...templateForm,
