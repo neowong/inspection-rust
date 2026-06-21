@@ -324,7 +324,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
 
     if version < 17 {
         // report_templates 补建索引：按 is_default / vendor 查询排序频繁（reports.rs 多处）。
-        // 全新安装已由 001_init.sql 建立，此处为升级库补建（IF NOT EXISTS 幂等）。
+        // is_default 列由 v4 添加，vendor 列在 001_init 即存在；此处为全新安装与升级库统一补建
+        // （IF NOT EXISTS 幂等）。注意 001_init.sql 不再创建 is_default 索引——建表时该列尚不存在。
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_report_templates_is_default ON report_templates(is_default);
              CREATE INDEX IF NOT EXISTS idx_report_templates_vendor ON report_templates(vendor);",
@@ -452,4 +453,38 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 全新数据库（user_version=0）跑完所有迁移不应报错。
+    /// 复现 Linux 全新安装崩溃：001_init.sql 曾在 is_default 列被 v4 添加前就建索引。
+    #[test]
+    fn test_fresh_migrations_complete() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").unwrap();
+        run_migrations(&mut conn).expect("fresh migrations must complete without error");
+
+        // 校验关键列与索引确实存在
+        let has_is_default: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('report_templates') WHERE name = 'is_default'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap();
+        assert!(has_is_default, "is_default 列应存在");
+
+        let idx_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_report_templates_is_default'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx_count, 1, "is_default 索引应已创建");
+
+        // 再次运行应幂等无错
+        run_migrations(&mut conn).expect("re-run migrations must be idempotent");
+    }
 }

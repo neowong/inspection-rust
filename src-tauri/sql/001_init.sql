@@ -134,5 +134,6 @@ CREATE INDEX IF NOT EXISTS idx_inspection_batches_status ON inspection_batches(s
 CREATE INDEX IF NOT EXISTS idx_inspection_records_batch_id  ON inspection_records(batch_id);
 CREATE INDEX IF NOT EXISTS idx_inspection_records_device_id ON inspection_records(device_id);
 CREATE INDEX IF NOT EXISTS idx_inspection_records_ai_status ON inspection_records(ai_status);
-CREATE INDEX IF NOT EXISTS idx_report_templates_is_default ON report_templates(is_default);
 CREATE INDEX IF NOT EXISTS idx_report_templates_vendor     ON report_templates(vendor);
+-- 注意：is_default 列由迁移 v4（004_enrich_report_templates.sql）通过 ALTER 添加，
+-- 此处建表时该列尚不存在，故 is_default 索引改由迁移 v17 在列添加后创建。
