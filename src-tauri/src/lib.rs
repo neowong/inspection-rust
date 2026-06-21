@@ -76,9 +76,6 @@ fn is_webview2_installed() -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn ensure_webview2_runtime() {}
-
 /// 启动日志：写到 exe 同目录的 startup.log，用于排查启动阶段崩溃
 fn startup_log(msg: &str) {
     let exe_dir = std::env::current_exe()
