@@ -534,10 +534,15 @@ export default function TemplatesPage() {
                         }}
                         className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1.5 cursor-grab active:cursor-grabbing"
                       >
-                        <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="flex items-center gap-1.5">
                           <GripVertical size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />
-                          <span className="text-[10px] text-[hsl(var(--text-tertiary))] w-4 text-right shrink-0">{idx + 1}</span>
+                          <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-4 text-right shrink-0">{idx + 1}</span>
                           <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
+                          <button type="button"
+                            onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
+                            className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1 pl-5 text-[11px]">
                           <Select className="text-xs py-0.5 shrink-0" value={spec.purpose} onChange={(e) => {
                             const purpose = e.target.value as "inspection" | "static_info";
                             updateSpec({ purpose, show_in_report: purpose !== "static_info" });
@@ -545,14 +550,14 @@ export default function TemplatesPage() {
                             <option value="inspection">巡检项</option>
                             <option value="static_info">静态信息</option>
                           </Select>
-                          <label className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer text-[11px] shrink-0">
+                          <label className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer shrink-0">
                             <input type="checkbox" checked={spec.show_in_report} onChange={(e) => updateSpec({ show_in_report: e.target.checked })} className="accent-[hsl(var(--accent))]" />
                             报告
                           </label>
                           {spec.purpose === "static_info" && (
-                            <div className="flex flex-wrap gap-0.5">
+                            <>
                               {["sysname", "model", "serial_number", "manufacturing_date"].map((field) => (
-                                <label key={field} className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer text-[11px]">
+                                <label key={field} className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer">
                                   <input type="checkbox"
                                     checked={spec.extract_fields?.includes(field) ?? false}
                                     onChange={(e) => {
@@ -566,11 +571,8 @@ export default function TemplatesPage() {
                                   <span className="whitespace-nowrap">{field}</span>
                                 </label>
                               ))}
-                            </div>
+                            </>
                           )}
-                          <button type="button"
-                            onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
-                            className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
                         </div>
                       </div>
                     );
