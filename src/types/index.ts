@@ -243,5 +243,9 @@ export interface Stats {
   batch_count: number;
   pending_batch_count: number;
   completed_batch_count: number;
+  network_device_count: number;
+  server_count: number;
+  database_count: number;
+  report_count: number;
 }
 

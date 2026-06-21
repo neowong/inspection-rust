@@ -15,6 +15,7 @@ import AuthBadge from "../components/AuthBadge";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
+const DB_VENDORS = ["MySQL", "PostgreSQL", "Oracle", "SQL Server", "Redis", "MongoDB", "其它"];
 
 interface DeviceForm {
   name: string;
@@ -376,9 +377,9 @@ export default function DevicesPage() {
           onChange={(e) => setTypeFilter(e.target.value)}
         >
           <option value="">全部类型</option>
-          <option value="switch,router">网络设备</option>
-          <option value="firewall,loadbalancer">安全设备</option>
+          <option value="switch,router,firewall,loadbalancer">网络设备</option>
           <option value="server">服务器</option>
+          <option value="database">数据库</option>
         </Select>
         <Select
           size="sm"
@@ -516,7 +517,9 @@ export default function DevicesPage() {
                     const updated: Partial<DeviceForm> = { device_type: dt };
                     if (dt === "server" && !SERVER_VENDORS.includes(form.vendor)) {
                       updated.vendor = "Linux";
-                    } else if (dt !== "server" && !NETWORK_VENDORS.includes(form.vendor)) {
+                    } else if (dt === "database" && !DB_VENDORS.includes(form.vendor)) {
+                      updated.vendor = "MySQL";
+                    } else if (dt !== "server" && dt !== "database" && !NETWORK_VENDORS.includes(form.vendor)) {
                       updated.vendor = "H3C";
                     }
                     setForm({ ...form, ...updated });
@@ -526,12 +529,13 @@ export default function DevicesPage() {
                     <option value="firewall">防火墙</option>
                     <option value="loadbalancer">负载均衡</option>
                     <option value="server">服务器</option>
+                    <option value="database">数据库</option>
                   </Select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
                   <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
-                    {(form.device_type === "server" ? SERVER_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
+                    {(form.device_type === "server" ? SERVER_VENDORS : form.device_type === "database" ? DB_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
                   </Select>
                 </div>
               </div>
@@ -548,7 +552,7 @@ export default function DevicesPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" ? "发行版本号" : "型号"}</label>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" || form.device_type === "database" ? "发行版本号" : "型号"}</label>
                 <Input
                   value={form.model}
                   onChange={(e) => setForm({ ...form, model: e.target.value })}
@@ -593,7 +597,7 @@ export default function DevicesPage() {
                   </div>
                 </div>
               )}
-              {form.device_type !== "server" && (
+              {form.device_type !== "server" && form.device_type !== "database" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
