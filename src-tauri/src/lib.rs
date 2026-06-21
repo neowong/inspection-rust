@@ -282,16 +282,18 @@ pub fn run() {
 
     debug_log("开始检查 WebView2...");
     ensure_webview2_runtime_with_log();
-    debug_log("WebView2 检查完成");
+    debug_log("WebView2 检查完成，准备加载配置...");
     startup_log("WebView2 检查通过，继续启动...");
 
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
+    debug_log(&format!("exe_dir: {}", exe_dir.display()));
 
     // Load optional config file (inspection.toml next to exe → portable mode)
     let config = load_config(&exe_dir);
+    debug_log("配置加载完成");
 
     // Determine data & log directories
     let app_data_dir = config
@@ -305,6 +307,7 @@ pub fn run() {
         });
 
     std::fs::create_dir_all(&app_data_dir).ok();
+    debug_log(&format!("数据目录: {}", app_data_dir.display()));
 
     // 初始化全局数据目录，供其他模块读取
     let _ = APP_DATA_DIR.set(app_data_dir.clone());
@@ -338,6 +341,7 @@ pub fn run() {
 
     // Keep the guard alive so logs are flushed on exit
     std::mem::forget(_guard);
+    debug_log("日志系统初始化完成");
 
     tracing::info!("数据目录: {}", app_data_dir.display());
     tracing::info!("日志目录: {}", log_dir.display());
@@ -346,6 +350,7 @@ pub fn run() {
     startup_log(&format!("日志目录: {}", log_dir.display()));
 
     let db_path = app_data_dir.join("inspection.db");
+    debug_log(&format!("数据库路径: {}", db_path.display()));
     startup_log("初始化数据库...");
     let state = AppState::new(
         db_path
@@ -357,12 +362,18 @@ pub fn run() {
             }),
     );
     startup_log("数据库初始化完成");
+    debug_log("数据库初始化完成");
+    debug_log(&format!("DB 连接测试: 设备数量 = {}", {
+        let conn = state.db.lock();
+        conn.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get::<_, i64>(0)).unwrap_or(-1)
+    }));
 
     // Create data directories
     let data_dir = app_data_dir.join("data");
     for sub in &["reports", "report_templates", "uploads", "logs"] {
         std::fs::create_dir_all(data_dir.join(sub)).ok();
     }
+    debug_log("数据子目录创建完成");
 
     // Background task: auto-detect device status every 5 minutes (blocking TCP, parallel via std::thread::scope)
     let bg_db = state.db.clone();
@@ -370,9 +381,11 @@ pub fn run() {
         std::thread::sleep(std::time::Duration::from_secs(5 * 60));
         poll_device_statuses(&bg_db);
     });
+    debug_log("后台检测线程已启动");
 
     startup_log("注册插件和命令...");
     debug_log("准备创建 Tauri Builder...");
+    debug_log("创建 Tauri Builder...");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -453,8 +466,12 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .map_err(|e| {
-            startup_log(&format!("Tauri 启动失败: {}", e));
-            e
+            let err_msg = format!("Tauri 启动失败: {}", e);
+            startup_log(&err_msg);
+            debug_log(&err_msg);
+            tracing::error!("{}", err_msg);
+            // 在 Windows 无控制台时，panic hook 的 MessageBox 会显示此错误
+            panic!("{}", err_msg);
         })
         .expect("error while running tauri application");
 }
