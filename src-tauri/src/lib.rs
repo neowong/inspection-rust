@@ -53,47 +53,106 @@ fn show_webview2_error_and_exit() {
 }
 
 #[cfg(target_os = "windows")]
-fn is_webview2_installed() -> bool {
-    // Try to check via the registry (HKLM)
-    let output = std::process::Command::new("reg")
-        .args(["query", r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", "/v", "pv"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.contains("pv")
-        }
-        _ => {
-            // Fallback: check if any WebView2 runtime DLL exists in system32
-            let sys32 = std::path::Path::new(r"C:\Windows\System32");
-            // WebView2 Runtime installs edgeupdate and related files
-            // The simplest check: look for the WebView2 loader in common locations
-            sys32.join("Microsoft-Edge-WebView").exists()
-                || std::path::Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application")
-                    .exists()
+fn check_registry_guid(guid: &str) -> bool {
+    for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node", r"HKCU\SOFTWARE"] {
+        let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, guid);
+        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+            if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
+                return true;
+            }
         }
     }
+    false
 }
 
-/// 启动日志：写到 exe 同目录的 startup.log，用于排查启动阶段崩溃
-fn startup_log(msg: &str) {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    if let Some(dir) = exe_dir {
-        let log_path = dir.join("startup.log");
-        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let line = format!("[{}] {}\n", ts, msg);
-        let _ = std::fs::OpenOptions::new()
-            .create(true).append(true).open(&log_path)
-            .and_then(|mut f| { use std::io::Write; f.write_all(line.as_bytes()) });
+#[cfg(target_os = "windows")]
+fn is_webview2_installed() -> bool {
+    // 1. 检查独立安装的 WebView2 Runtime（注册表）
+    let guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+    for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node"] {
+        let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, guid);
+        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+            if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
+                return true;
+            }
+        }
     }
+
+    // 2. 检查 Edge 附带的 WebView2（注册表，不同 GUID）
+    for edge_guid in [
+        "{F3C4FE00-EFD5-403D-956B-27C74A676A66}", // Edge WebView2 (per-machine)
+        "{A1C8A206-5A2E-4E56-B231-D486B80023D1}", // Edge WebView2 (per-user)
+    ] {
+        for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node", r"HKCU\SOFTWARE"] {
+            let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, edge_guid);
+            if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+                if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 3. 文件系统回退：检查常见安装路径
+    let paths = [
+        r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application",
+        r"C:\Program Files\Microsoft\EdgeWebView\Application",
+        r"C:\Windows\System32\Microsoft-Edge-WebView",
+    ];
+    for p in &paths {
+        if std::path::Path::new(p).exists() {
+            return true;
+        }
+    }
+
+    // 4. 最后尝试：直接加载 WebView2 loader DLL
+    let loader_paths = [
+        r"C:\Windows\System32\WebView2Loader.dll",
+        r"C:\Windows\SysWOW64\WebView2Loader.dll",
+    ];
+    for p in &loader_paths {
+        if std::path::Path::new(p).exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// 启动日志：优先写到 exe 同目录，若无权限则写到 %LOCALAPPDATA%\inspection-rust\startup.log
+pub fn startup_log_path() -> std::path::PathBuf {
+    // 优先尝试 exe 目录（便携模式 / 有写权限时）
+    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+        let test_file = exe_dir.join("startup.log");
+        // 测试能否写入
+        if std::fs::OpenOptions::new().create(true).append(true).open(&test_file).is_ok() {
+            return test_file;
+        }
+    }
+    // 回退到 %LOCALAPPDATA%\inspection-rust\
+    let fallback = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("inspection-rust");
+    std::fs::create_dir_all(&fallback).ok();
+    fallback.join("startup.log")
+}
+
+fn startup_log(msg: &str) {
+    let log_path = startup_log_path();
+    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+    let line = format!("[{}] {}\n", ts, msg);
+    let _ = std::fs::OpenOptions::new()
+        .create(true).append(true).open(&log_path)
+        .and_then(|mut f| { use std::io::Write; f.write_all(line.as_bytes()) });
 }
 
 #[cfg(target_os = "windows")]
 fn ensure_webview2_runtime_with_log() {
     startup_log("检查 WebView2 Runtime...");
+    startup_log(&format!("  Edge 注册表 (独立 GUID): {}", check_registry_guid("{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}")));
+    startup_log(&format!("  Edge WebView2 路径存在: {}", std::path::Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application").exists()));
+    startup_log(&format!("  WebView2Loader.dll 存在: {}", std::path::Path::new(r"C:\Windows\System32\WebView2Loader.dll").exists()));
+
     if is_webview2_installed() {
         startup_log("WebView2 已安装");
         return;
