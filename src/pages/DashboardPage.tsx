@@ -137,58 +137,65 @@ export default function DashboardPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--text-tertiary))] mb-3">
           使用流程
         </h2>
-        <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-3">
-          <svg viewBox="0 0 980 900" className="min-w-[880px] w-full" role="img" aria-label="AI巡检助手 使用流程图">
+        <div className="overflow-x-auto">
+          <svg viewBox="0 0 960 480" className="min-w-[860px] w-full" role="img" aria-label="AI巡检助手 使用流程图">
             <defs>
-              <linearGradient id="flowNode" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor="#38BDF8" />
-                <stop offset="1" stopColor="#22C55E" />
-              </linearGradient>
-              <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
-                <path d="M2,2 L10,6 L2,10 Z" fill="#64748B" />
-              </marker>
-              <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#020617" floodOpacity="0.16" />
-              </filter>
+              <linearGradient id="g0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#818CF8" /><stop offset="1" stopColor="#6366F1" /></linearGradient>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#34D399" /><stop offset="1" stopColor="#10B981" /></linearGradient>
+              <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#60A5FA" /><stop offset="1" stopColor="#3B82F6" /></linearGradient>
+              <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#A78BFA" /><stop offset="1" stopColor="#8B5CF6" /></linearGradient>
+              <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F472B6" /><stop offset="1" stopColor="#EC4899" /></linearGradient>
+              <linearGradient id="g5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FB923C" /><stop offset="1" stopColor="#F97316" /></linearGradient>
+              <linearGradient id="g6" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#38BDF8" /><stop offset="1" stopColor="#0EA5E9" /></linearGradient>
+              <linearGradient id="g7" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#4ADE80" /><stop offset="1" stopColor="#22C55E" /></linearGradient>
+              <marker id="fa" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1,1 L7,4 L1,7Z" fill="#94A3B8" /></marker>
             </defs>
 
-            <rect x="20" y="20" width="940" height="860" rx="22" fill="var(--bg-card, #F8FAFC)" />
-            <text x="490" y="60" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="26" fontWeight="700" fill="var(--text-primary, #0F172A)">
-              AI巡检助手 使用流程
-            </text>
-            <text x="490" y="88" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="14" fill="var(--text-tertiary, #64748B)">
-              从模板准备到批量巡检，再到 AI 分析和 DOCX 报告交付
-            </text>
-
-            {/* 主流程连线 */}
-            <path d="M190 145 L190 780" stroke="var(--text-tertiary, #94A3B8)" strokeWidth="3" strokeDasharray="8 8" markerEnd="url(#arrow)" fill="none" />
-
             {[
-              ["01", "配置 AI 模型", "在系统设置中添加并激活 AI 供应商（OpenAI/DeepSeek 等）", "可选步骤；未启用时可人工评判，不影响巡检执行。"],
-              ["02", "维护命令库", "按厂商分类录入巡检命令，支持 H3C/华为/思科/锐捷/飞塔/服务器", "命令说明会作为报告里的巡检项目名称，支持拖拽排序。"],
-              ["03", "设计报告模板", "配置封面、设备信息、巡检明细列、页眉页脚，右侧 A4 实时预览", "DOCX 模板决定最终报告的版式，可按厂商创建多套模板。"],
-              ["04", "创建巡检模板", "从命令库选择巡检项，标记静态信息命令（提取 sysname/SN/型号）", "静态信息命令执行后不进报告明细，仅提取字段写入设备表。"],
-              ["05", "添加设备", "录入 IP、SSH 凭据，绑定巡检模板；支持自动检测型号、SN、sysname", "设备保存后自动触发连通性检测和静态信息采集。"],
-              ["06", "执行巡检", "创建批次并运行，多设备并发 SSH 执行命令，实时进度追踪", "支持暂停/停止/重试，Linux 服务器使用 exec 通道并行执行。"],
-              ["07", "AI 分析评判", "调用 AI 对每条命令输出逐条评判：正常/注意/警告/严重", "评判结论自动合并到报告的评判结论列，生成巡检总结。"],
-              ["08", "导出 DOCX 报告", "生成可编辑的 Word 巡检报告，支持单设备/批量 ZIP/合并 DOCX", "合并报告每台设备从新页开始，内置目录和页码。"],
+              ["01", "配置 AI 模型", "添加 OpenAI / DeepSeek 等 AI 供应商", "可选，未启用时可人工评判"],
+              ["02", "维护命令库", "按厂商录入巡检命令和中文说明", "支持 H3C / 华为 / 思科 / 服务器等"],
+              ["03", "设计报告模板", "配置封面、列定义、页眉页脚", "右侧 A4 实时预览报告效果"],
+              ["04", "创建巡检模板", "选择巡检项与静态信息命令", "静态信息提取 sysname / SN / 型号"],
+              ["05", "添加设备", "录入 IP、SSH 凭据并绑定模板", "保存后自动检测连通性和型号"],
+              ["06", "执行巡检", "多设备并发 SSH 执行命令", "支持暂停 / 停止 / 重试"],
+              ["07", "AI 分析评判", "逐条命令评判：正常 / 注意 / 警告 / 严重", "结论自动合并到报告评判列"],
+              ["08", "导出 DOCX", "生成可编辑 Word 巡检报告", "支持单设备 / 批量 ZIP / 合并"],
             ].map(([no, title, desc, note], i) => {
-              const y = 130 + i * 90;
+              const col = i % 4;
+              const row = Math.floor(i / 4);
+              const x = 20 + col * 235;
+              const y = 20 + row * 230;
               return (
                 <g key={no}>
-                  <rect x="80" y={y} width="220" height="62" rx="16" fill="var(--bg-card, white)" stroke="var(--border, #CBD5E1)" strokeWidth="1.5" filter="url(#shadow)" />
-                  <circle cx="112" cy={y + 31} r="21" fill="url(#flowNode)" />
-                  <text x="112" y={y + 36} textAnchor="middle" fontFamily="Inter, Arial, sans-serif" fontSize="13" fontWeight="700" fill="white">{no}</text>
-                  <text x="145" y={y + 26} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="17" fontWeight="700" fill="var(--text-primary, #0F172A)">{title}</text>
-                  <text x="145" y={y + 48} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="var(--text-tertiary, #64748B)">{desc}</text>
-
-                  <path d={`M300 ${y + 31} L365 ${y + 31}`} stroke="var(--text-tertiary, #94A3B8)" strokeWidth="1.5" markerEnd="url(#arrow)" fill="none" />
-                  <rect x="375" y={y + 5} width="520" height="52" rx="12" fill="var(--bg-card, #FFFFFF)" stroke="var(--border, #E2E8F0)" strokeWidth="1.2" />
-                  <text x="397" y={y + 28} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fontWeight="700" fill="var(--text-primary, #334155)">注释</text>
-                  <text x="397" y={y + 47} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="var(--text-tertiary, #64748B)">{note}</text>
+                  {/* 卡片 */}
+                  <rect x={x} y={y} width="215" height="200" rx="16" fill="var(--bg-card, #FFFFFF)" stroke="var(--border, #E2E8F0)" strokeWidth="1.5" />
+                  {/* 顶部色条 */}
+                  <rect x={x} y={y} width="215" height="6" rx="16" fill={`url(#g${i})`} />
+                  <rect x={x} y={y + 3} width="215" height="3" fill={`url(#g${i})`} />
+                  {/* 编号圆 */}
+                  <circle cx={x + 30} cy={y + 40} r="18" fill={`url(#g${i})`} />
+                  <text x={x + 30} y={y + 45} textAnchor="middle" fontFamily="Inter, monospace" fontSize="13" fontWeight="700" fill="white">{no}</text>
+                  {/* 标题 */}
+                  <text x={x + 56} y={y + 46} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="18" fontWeight="700" fill="var(--text-primary, #0F172A)">{title}</text>
+                  {/* 分割线 */}
+                  <line x1={x + 16} y1={y + 65} x2={x + 199} y2={y + 65} stroke="var(--border, #E2E8F0)" strokeWidth="1" />
+                  {/* 描述 */}
+                  <text x={x + 16} y={y + 92} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fill="var(--text-secondary, #475569)">{desc}</text>
+                  {/* 注释 */}
+                  <rect x={x + 12} y={y + 115} width={191} height="52" rx="8" fill="var(--bg-hover, #F1F5F9)" />
+                  <text x={x + 22} y={y + 138} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="var(--text-tertiary, #64748B)">{note}</text>
                 </g>
               );
             })}
+
+            {/* 连线 */}
+            <path d="M235 120 L255 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M470 120 L490 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M705 120 L725 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M825 220 L825 250" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M805 350 L785 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M570 350 L550 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
+            <path d="M335 350 L315 350" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
           </svg>
         </div>
       </div>
