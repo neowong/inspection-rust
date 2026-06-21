@@ -1,12 +1,47 @@
 use crate::services;
 use std::str::FromStr;
+use std::sync::Arc;
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn scan_live_hosts(
+    app_handle: tauri::AppHandle,
     subnet: String,
     timeout_ms: u64,
 ) -> Result<Vec<services::live_scanner::LiveHostResult>, String> {
-    services::live_scanner::scan_subnet(&subnet, timeout_ms).await
+    let ips = services::live_scanner::parse_cidr(&subnet)?;
+    let timeout_secs = (timeout_ms as f64 / 1000.0).ceil() as u64;
+    let sem = Arc::new(tokio::sync::Semaphore::new(80));
+    let mut handles = Vec::with_capacity(ips.len());
+
+    for ip in ips {
+        let sem = sem.clone();
+        let ip_str = ip.to_string();
+        let app = app_handle.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            let result = services::live_scanner::check_alive(&ip_str, timeout_secs).await;
+            // 每扫完一个 IP 立即推事件给前端
+            let _ = app.emit("live-scan-result", &result);
+            result
+        }));
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for h in handles {
+        match h.await {
+            Ok(r) => results.push(r),
+            Err(e) => tracing::warn!("存活扫描任务 panic: {}", e),
+        }
+    }
+    results.sort_by_key(|r| {
+        let parts: Vec<u32> = r.ip.split('.').filter_map(|s| s.parse().ok()).collect();
+        (parts.first().copied().unwrap_or(0) << 24)
+            | (parts.get(1).copied().unwrap_or(0) << 16)
+            | (parts.get(2).copied().unwrap_or(0) << 8)
+            | parts.get(3).copied().unwrap_or(0)
+    });
+    Ok(results)
 }
 
 #[tauri::command]

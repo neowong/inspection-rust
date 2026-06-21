@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CheckCircle2, XCircle, Plug, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Select, SpinInput } from "../components/ui/Input";
 
 const TOOLS = [
@@ -233,17 +234,25 @@ function LiveScanner() {
 
   const handleScan = async () => {
     setError("");
-    setResults(null);
+    setResults([]);  // 先清空，准备接收实时结果
     setScanning(true);
+
+    // 监听实时结果事件——每扫到一个 IP 就追加到列表
+    const unlisten = await listen<LiveHostResult>("live-scan-result", (event) => {
+      setResults(prev => [...(prev ?? []), event.payload]);
+    });
+
     try {
       const data = await invoke<LiveHostResult[]>("scan_live_hosts", {
         subnet: subnet.trim(),
         timeoutMs: parseInt(timeout, 10) || 2000,
       });
+      // 扫描完成后用排序结果替换
       setResults(data);
     } catch (e: any) {
       setError(typeof e === "string" ? e : e?.message || String(e));
     } finally {
+      unlisten();
       setScanning(false);
     }
   };
@@ -274,14 +283,14 @@ function LiveScanner() {
           />
         </div>
         <button onClick={handleScan} disabled={scanning} className={btnClass}>
-          {scanning ? "扫描中..." : "开始扫描"}
+          {scanning ? `扫描中... (${results?.length ?? 0})` : "开始扫描"}
         </button>
       </div>
 
       {scanning && (
         <div className="flex items-center gap-2 text-sm text-[hsl(var(--text-secondary))]">
           <Loader2 size={16} className="animate-spin" />
-          扫描中 ...
+          已发现 {results?.filter(r => r.alive).length ?? 0} 个在线 / 扫描 {results?.length ?? 0} 个 ...
         </div>
       )}
 

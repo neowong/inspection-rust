@@ -113,7 +113,7 @@ async fn tcp_fallback(ip: &str, per_port_ms: u64) -> bool {
     false
 }
 
-async fn check_alive(ip: &str, timeout_secs: u64) -> LiveHostResult {
+pub async fn check_alive(ip: &str, timeout_secs: u64) -> LiveHostResult {
     // 1. ICMP ping
     let r = tokio::task::spawn_blocking({
         let ip = ip.to_string();
@@ -140,7 +140,7 @@ async fn check_alive(ip: &str, timeout_secs: u64) -> LiveHostResult {
 
 // ---- CIDR parser -----------------------------------------------------------
 
-fn parse_cidr(subnet: &str) -> Result<Vec<std::net::Ipv4Addr>, String> {
+pub fn parse_cidr(subnet: &str) -> Result<Vec<std::net::Ipv4Addr>, String> {
     let parts: Vec<&str> = subnet.split('/').collect();
     if parts.len() != 2 {
         return Err("无效的CIDR格式，示例: 192.168.1.0/24".into());
@@ -174,33 +174,5 @@ fn parse_cidr(subnet: &str) -> Result<Vec<std::net::Ipv4Addr>, String> {
 }
 
 // ---- Public API ------------------------------------------------------------
-
-pub async fn scan_subnet(subnet: &str, timeout_ms: u64) -> Result<Vec<LiveHostResult>, String> {
-    let ips = parse_cidr(subnet)?;
-    let timeout_secs = (timeout_ms as f64 / 1000.0).ceil() as u64;
-    let max_concurrent = 80usize;
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
-    let mut handles = Vec::with_capacity(ips.len());
-
-    for ip in ips {
-        let sem = semaphore.clone();
-        let ip_str = ip.to_string();
-        handles.push(tokio::spawn(async move {
-            let _permit = sem.acquire().await;
-            check_alive(&ip_str, timeout_secs).await
-        }));
-    }
-
-    let mut results = Vec::with_capacity(handles.len());
-    for h in handles {
-        results.push(h.await.unwrap());
-    }
-    results.sort_by_key(|r| {
-        let mut parts = r.ip.split('.').map(|s| s.parse::<u32>().unwrap_or(0));
-        (parts.next().unwrap_or(0) << 24)
-            | (parts.next().unwrap_or(0) << 16)
-            | (parts.next().unwrap_or(0) << 8)
-            | parts.next().unwrap_or(0)
-    });
-    Ok(results)
-}
+// scan_subnet removed: 实时推送版在 commands/tools.rs::scan_live_hosts 中实现
+// 底层函数 parse_cidr / check_alive 仍为 pub，供其他模块复用
