@@ -54,9 +54,13 @@ fn show_webview2_error_and_exit() {
 
 #[cfg(target_os = "windows")]
 fn check_registry_guid(guid: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
     for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node", r"HKCU\SOFTWARE"] {
         let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, guid);
-        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"])
+            .creation_flags(CREATE_NO_WINDOW).output()
+        {
             if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
                 return true;
             }
@@ -67,11 +71,16 @@ fn check_registry_guid(guid: &str) -> bool {
 
 #[cfg(target_os = "windows")]
 fn is_webview2_installed() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     // 1. 检查独立安装的 WebView2 Runtime（注册表）
     let guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
     for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node"] {
         let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, guid);
-        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+        if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"])
+            .creation_flags(CREATE_NO_WINDOW).output()
+        {
             if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
                 return true;
             }
@@ -85,7 +94,9 @@ fn is_webview2_installed() -> bool {
     ] {
         for root in [r"HKLM\SOFTWARE", r"HKLM\SOFTWARE\WOW6432Node", r"HKCU\SOFTWARE"] {
             let key = format!(r"{}\Microsoft\EdgeUpdate\Clients\{}", root, edge_guid);
-            if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"]).output() {
+            if let Ok(o) = std::process::Command::new("reg").args(["query", &key, "/v", "pv"])
+                .creation_flags(CREATE_NO_WINDOW).output()
+            {
                 if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pv") {
                     return true;
                 }
@@ -181,10 +192,13 @@ fn ensure_webview2_runtime_with_log() {
     }
 
     startup_log("开始静默安装 WebView2...");
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
     let install_ok = match std::process::Command::new(&setup_path)
         .args(["/silent", "/install"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .creation_flags(0x08000000)  // CREATE_NO_WINDOW
         .spawn()
     {
         Ok(mut child) => match child.wait() {

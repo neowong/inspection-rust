@@ -1,5 +1,5 @@
-// 临时启用控制台窗口，排查闪退问题
-// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// 生产环境隐藏控制台窗口
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
     // 超早期日志：写到临时目录，确认程序是否能启动
@@ -32,27 +32,7 @@ fn main() {
             .and_then(|mut f| { use std::io::Write; f.write_all(log_line.as_bytes()) });
     }));
 
-    // 用 catch_unwind 捕获任何未处理的错误
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        inspection_rust_lib::run();
-    }));
-
-    if let Err(e) = result {
-        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let msg = format!("[{}] 捕获到错误: {:?}\n", ts, e);
-        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp)
-            .and_then(|mut f| { use std::io::Write; f.write_all(msg.as_bytes()) });
-
-        // 尝试显示错误对话框
-        #[cfg(target_os = "windows")]
-        {
-            extern "system" {
-                fn MessageBoxW(hWnd: *const core::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
-            }
-            let err_msg = format!("程序发生错误，请查看日志：\n{}", temp.display());
-            let msg_utf16: Vec<u16> = err_msg.encode_utf16().chain(std::iter::once(0)).collect();
-            let title: Vec<u16> = "AI巡检助手 - 错误".encode_utf16().chain(std::iter::once(0)).collect();
-            unsafe { MessageBoxW(std::ptr::null(), msg_utf16.as_ptr(), title.as_ptr(), 0x10); }
-        }
-    }
+    // panic = "abort" 下 catch_unwind 无效，直接调用 run()
+    // panic hook 已在上方安装，会将 panic 信息写入日志文件
+    inspection_rust_lib::run();
 }
