@@ -543,7 +543,7 @@ export default function TemplatesPage() {
                             className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
                         </div>
                         <div className="flex items-center gap-1.5 mt-1 pl-5 text-[11px]">
-                          <Select className="text-xs py-0.5 shrink-0" value={spec.purpose} onChange={(e) => {
+                          <Select className="text-xs py-0.5 shrink-0 w-[88px]" value={spec.purpose} onChange={(e) => {
                             const purpose = e.target.value as "inspection" | "static_info";
                             updateSpec({ purpose, show_in_report: purpose !== "static_info" });
                           }}>
