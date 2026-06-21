@@ -264,8 +264,6 @@ pub fn run() {
             commands::tools::check_zabbix_agent,
             // Stats
             get_stats,
-            // Feedback
-            submit_feedback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
