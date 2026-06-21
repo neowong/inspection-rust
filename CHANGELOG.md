@@ -24,13 +24,22 @@
 - 切换批次时清除 loading 状态，避免跨批次残留
 - 下载综合报告按钮始终显示，无单报告时灰色禁用
 - 添加命令时检查同厂商下是否重复，友好报错
-- 图标改为 RGB 白色背景，修复桌面快捷方式透明问题
+- 图标改为 RGBA 白色背景，修复桌面快捷方式透明问题（Tauri 要求 RGBA 格式）
+- WebView2Loader.dll 和 WebView2Setup.exe 加入 bundle.resources，修复安装包缺失
+- WebView2 安装失败时弹窗提示而非闪退（直接调用 user32.dll MessageBoxW）
+- 启动阶段写 startup.log 到 exe 目录，便于排查 Win10 LTSC 等环境问题
+
+### 🔒 安全
+- 清理测试文件中的硬编码内网 IP 和密码
+- 设计文档中的 Fernet 密钥替换为占位符
+- 删除包含内网信息的巡检报告文件
 
 ### 📝 其它
 - 关于页增加微信好友二维码和问题反馈邮箱
-- 用户手册新增命令库管理、设备分类章节
+- 用户手册全面扩充：系统简介、设备分类、工具箱、Linux 巡检、常见问题
 - 后端 SQL 新增 security_device_count、database_count、report_count
 - 仪表盘统计用 location.key + focus 事件刷新
+- 新增 CHANGELOG.md
 
 ---
 
