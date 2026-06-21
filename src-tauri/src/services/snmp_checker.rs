@@ -62,7 +62,27 @@ impl std::str::FromStr for PrivProtocol {
 }
 impl PrivProtocol {
     fn salt_len(&self) -> usize {
-        match self { PrivProtocol::DES => 8, PrivProtocol::AES128 => 16, PrivProtocol::None => 0 }
+        // RFC 3414 (DES) / RFC 3826 (AES): privParameters (salt) 均为 8 字节
+        match self { PrivProtocol::DES => 8, PrivProtocol::AES128 => 8, PrivProtocol::None => 0 }
+    }
+}
+
+/// 按 RFC 3414 (DES) / RFC 3826 (AES128) 由 salt + 引擎参数构造真正的加密 IV。
+/// DES:  preIV = privKey[8..16]，IV = preIV ⊕ salt（8 字节）
+/// AES:  IV = salt(8) ‖ engineBoots(4 BE) ‖ engineTime(4 BE)（16 字节）
+fn build_priv_iv(priv_key: &[u8], salt: &[u8], engine_boots: u32, engine_time: u32, proto: PrivProtocol) -> Vec<u8> {
+    match proto {
+        PrivProtocol::DES => {
+            let pre_iv = &priv_key[8..16];
+            pre_iv.iter().zip(salt.iter()).map(|(p, s)| p ^ s).collect()
+        }
+        PrivProtocol::AES128 => {
+            let mut iv = salt.to_vec();
+            iv.extend_from_slice(&engine_boots.to_be_bytes());
+            iv.extend_from_slice(&engine_time.to_be_bytes());
+            iv
+        }
+        PrivProtocol::None => vec![],
     }
 }
 
@@ -592,8 +612,10 @@ fn build_v3_message(
         auth_params: vec![0u8; auth_params_len],
         priv_params: {
             if priv_flag {
+                // RFC 3414/3826: salt = engineBoots(4 BE) ‖ randomInt(4)
                 let mut salt = vec![0u8; priv_params_len];
-                rand::thread_rng().fill(&mut salt[..]);
+                salt[..4].copy_from_slice(&engine_boots.to_be_bytes());
+                rand::thread_rng().fill(&mut salt[4..]);
                 salt
             } else {
                 vec![]
@@ -619,7 +641,8 @@ fn build_v3_message(
     // Encrypt scoped PDU if needed; msgData is SEQUENCE (0x30) when unencrypted,
     // OCTET STRING (0x04) only when encryption is applied
     let msg_data_bytes: Vec<u8> = if priv_flag {
-        let enc = cfb_encrypt(&scoped_pdu, priv_key, &usm.priv_params, priv_proto);
+        let iv = build_priv_iv(priv_key, &usm.priv_params, engine_boots, engine_time, priv_proto);
+        let enc = cfb_encrypt(&scoped_pdu, priv_key, &iv, priv_proto);
         encode_octet_string(&enc)
     } else {
         scoped_pdu

@@ -584,44 +584,49 @@ pub fn generate_docx_report(
     template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let conn = state.db.lock();
+    // 锁内只读取数据，随后释放锁——DOCX 生成（文件 IO + XML 构建）在锁外执行，
+    // 避免生成期间阻塞所有 DB 操作。最后短锁写回 report_path。
+    let (record, device, cmd_descs, config, cover) = {
+        let conn = state.db.lock();
 
-    let rec_sql = format!(
-        "SELECT {} FROM inspection_records WHERE id = ?1",
-        RECORD_COLUMNS
-    );
-    let record = crate::db::query::query_one(
-        &conn,
-        &rec_sql,
-        rusqlite::params![record_id],
-        record_from_row,
-    )?
-    .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
+        let rec_sql = format!(
+            "SELECT {} FROM inspection_records WHERE id = ?1",
+            RECORD_COLUMNS
+        );
+        let record = crate::db::query::query_one(
+            &conn,
+            &rec_sql,
+            rusqlite::params![record_id],
+            record_from_row,
+        )?
+        .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
 
-    let dev_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    let device = crate::db::query::query_one(
-        &conn,
-        &dev_sql,
-        rusqlite::params![record.device_id],
-        device_from_row,
-    )?
-    .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
+        let dev_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        let device = crate::db::query::query_one(
+            &conn,
+            &dev_sql,
+            rusqlite::params![record.device_id],
+            device_from_row,
+        )?
+        .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
 
-    let cmd_descs = report_config::load_command_descriptions(&conn);
-    let config = resolve_template_config(&conn, &record, template_id);
+        let cmd_descs = report_config::load_command_descriptions(&conn);
+        let config = resolve_template_config(&conn, &record, template_id);
+        let cover = load_cover_context(
+            &conn,
+            record.batch_id,
+            &device.name,
+            report_date(&record),
+            false,
+        );
+        (record, device, cmd_descs, config, cover)
+    }; // 锁释放
 
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("report_{}_{}.docx", record_id, timestamp);
     let output_path = reports_dir.join(&filename);
 
-    let cover = load_cover_context(
-        &conn,
-        record.batch_id,
-        &device.name,
-        report_date(&record),
-        false,
-    );
     crate::services::docx_engine::generate_record_docx(
         &config,
         &device,
@@ -632,11 +637,14 @@ pub fn generate_docx_report(
     )?;
 
     let output_str = output_path.to_string_lossy().to_string();
-    conn.execute(
-        "UPDATE inspection_records SET report_path = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![output_str, now_str(), record_id],
-    )
-    .map_err(|e| e.to_string())?;
+    {
+        let conn = state.db.lock();
+        conn.execute(
+            "UPDATE inspection_records SET report_path = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![output_str, now_str(), record_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     Ok(output_str)
 }
@@ -681,14 +689,18 @@ pub fn generate_batch_docx_zip(
     template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let conn = state.db.lock();
-    let items = load_batch_items(&conn, batch_id)?;
-    let cmd_descs = report_config::load_command_descriptions(&conn);
-    // 每台设备按其厂商/模板独立解析报告配置，避免多厂商批次套用首台模板
-    let configs: Vec<ReportTemplateConfig> = items
-        .iter()
-        .map(|(_, r)| resolve_template_config(&conn, r, template_id))
-        .collect();
+    // 锁内读数据 → 锁外生成 zip → 短锁写回路径
+    let (items, cmd_descs, configs) = {
+        let conn = state.db.lock();
+        let items = load_batch_items(&conn, batch_id)?;
+        let cmd_descs = report_config::load_command_descriptions(&conn);
+        // 每台设备按其厂商/模板独立解析报告配置，避免多厂商批次套用首台模板
+        let configs: Vec<ReportTemplateConfig> = items
+            .iter()
+            .map(|(_, r)| resolve_template_config(&conn, r, template_id))
+            .collect();
+        (items, cmd_descs, configs)
+    }; // 锁释放
 
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -698,10 +710,13 @@ pub fn generate_batch_docx_zip(
     crate::services::docx_engine::generate_zip_bundle(&configs, &items, &cmd_descs, &output_path)?;
 
     let path_str = output_path.to_string_lossy().to_string();
-    let _ = conn.execute(
-        "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![path_str, now_str(), batch_id],
-    );
+    {
+        let conn = state.db.lock();
+        let _ = conn.execute(
+            "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![path_str, now_str(), batch_id],
+        );
+    }
     Ok(path_str)
 }
 
@@ -712,21 +727,25 @@ pub fn generate_batch_docx_combined(
     template_id: Option<i64>,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let conn = state.db.lock();
-    let items = load_batch_items(&conn, batch_id)?;
-    let cmd_descs = report_config::load_command_descriptions(&conn);
-    // 每台设备按其厂商/模板独立解析报告配置，避免多厂商批次套用首台模板
-    let configs: Vec<ReportTemplateConfig> = items
-        .iter()
-        .map(|(_, r)| resolve_template_config(&conn, r, template_id))
-        .collect();
+    // 锁内读数据 → 锁外生成合并 docx → 短锁写回路径
+    let (items, cmd_descs, configs, cover) = {
+        let conn = state.db.lock();
+        let items = load_batch_items(&conn, batch_id)?;
+        let cmd_descs = report_config::load_command_descriptions(&conn);
+        // 每台设备按其厂商/模板独立解析报告配置，避免多厂商批次套用首台模板
+        let configs: Vec<ReportTemplateConfig> = items
+            .iter()
+            .map(|(_, r)| resolve_template_config(&conn, r, template_id))
+            .collect();
+        let cover = load_cover_context(&conn, batch_id, "项目", report_date(&items[0].1), false);
+        (items, cmd_descs, configs, cover)
+    }; // 锁释放
 
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("batch_{}_{}.docx", batch_id, timestamp);
     let output_path = reports_dir.join(&filename);
 
-    let cover = load_cover_context(&conn, batch_id, "项目", report_date(&items[0].1), false);
     crate::services::docx_engine::generate_combined_docx(
         &configs,
         &items,
@@ -737,10 +756,13 @@ pub fn generate_batch_docx_combined(
 
     let path_str = output_path.to_string_lossy().to_string();
     // 回写路径到批次，后续可随时下载
-    let _ = conn.execute(
-        "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![path_str, now_str(), batch_id],
-    );
+    {
+        let conn = state.db.lock();
+        let _ = conn.execute(
+            "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![path_str, now_str(), batch_id],
+        );
+    }
     Ok(path_str)
 }
 

@@ -184,7 +184,7 @@ pub fn check_zabbix_agent(ip: &str, port: u16, timeout_ms: u64) -> ZabbixAgentRe
         .ok()
         .and_then(|r| {
             serde_json::from_str::<serde_json::Value>(&r).ok()
-                .and_then(|v| v.get("response").cloned())
+                .and_then(|v| v.get("version").cloned())
                 .and_then(|v| v.as_str().map(String::from))
         });
 
@@ -193,7 +193,7 @@ pub fn check_zabbix_agent(ip: &str, port: u16, timeout_ms: u64) -> ZabbixAgentRe
         .ok()
         .and_then(|r| {
             serde_json::from_str::<serde_json::Value>(&r).ok()
-                .and_then(|v| v.get("response").cloned())
+                .and_then(|v| v.get("hostname").cloned())
                 .and_then(|v| v.as_str().map(String::from))
         });
 

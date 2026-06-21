@@ -119,9 +119,10 @@ fn parse_h3c_line(line: &str) -> Option<LogEntry> {
         return None;
     }
 
-    // Split into: timestamp(5 tokens) + hostname(1) + rest
+    // Split into: timestamp(5 tokens) + hostname(1) + rest(header + message)
+    // splitn(6): 第 6 段为剩余全部，含 "MODULE/SEVERITY/MNEMONIC: message"
     let rest = &line[1..];
-    let mut tokens = rest.splitn(7, ' ');
+    let mut tokens = rest.splitn(6, ' ');
     let mon = tokens.next()?;
     let day = tokens.next()?;
     let time = tokens.next()?;
@@ -205,10 +206,12 @@ mod tests {
     fn test_parse_h3c_log() {
         let line = "%May 30 11:03:59:450 2026 DeviceA SSHS/6/SSHS_VERSION_MISMATCH: SSH client 10.0.0.100 failed to log in because of version mismatch.";
         let entry = parse_h3c_line(line).unwrap();
-        assert_eq!(entry.hostname, "aHope");
+        assert_eq!(entry.hostname, "DeviceA");
         assert_eq!(entry.severity, "INFO");
         assert_eq!(entry.module, "SSHS");
         assert_eq!(entry.mnemonic, "SSHS_VERSION_MISMATCH");
+        assert!(!entry.message.is_empty());
+        assert!(entry.message.contains("version mismatch"));
     }
 
     #[test]

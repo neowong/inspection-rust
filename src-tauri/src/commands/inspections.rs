@@ -1038,7 +1038,15 @@ async fn await_handles_and_finalize(
         }
     }
 
-    batch_cancels.lock().remove(&batch_id);
+    // 仅移除自己注册的 cancel flag：restart 后旧任务的 finalize 持有的是旧 Arc，
+    // 此时 map 里已是新任务注册的新 Arc，Arc::ptr_eq 不等 → 不删除，避免新批次无法取消。
+    let should_remove = batch_cancels
+        .lock()
+        .get(&batch_id)
+        .is_some_and(|f| Arc::ptr_eq(f, &cancel));
+    if should_remove {
+        batch_cancels.lock().remove(&batch_id);
+    }
 }
 
 /// 执行单台设备的巡检流程：读数据 → 建记录 → SSH → 写结果。
@@ -1430,12 +1438,11 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
             }
         }
 
-        // 仅当本次重试独占批次（非批次运行中触发）时收尾批次并清理 flag，
-        // 否则交由批次的 await_handles_and_finalize 管理。
-        if we_registered {
-            if let Err(e) = finalize_batch_status(&conn, batch_id) {
-                tracing::warn!("重试后批次 #{} 收尾失败: {}", batch_id, e);
-            }
+        // 无论是否独占批次，重试完成后都尝试收尾：finalize 会重新统计 DB，
+        // 若仍有其他设备运行中则保持 running，否则收尾为 completed/failed。
+        // 这避免"主任务先 finalize、retry 后设 batch=running"导致批次卡 running 的竞态。
+        if let Err(e) = finalize_batch_status(&conn, batch_id) {
+            tracing::warn!("重试后批次 #{} 收尾失败: {}", batch_id, e);
         }
     }
 

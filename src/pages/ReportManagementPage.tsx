@@ -83,21 +83,30 @@ export default function ReportManagementPage() {
   }, [selectedBatch?.id, loadBatches]);
 
   // ----- Record detail -----
+  // 序号守卫：快速切换记录时，仅最后一次请求的响应会更新 state，避免旧响应覆盖新数据
+  const recordReqSeq = useRef(0);
   const loadRecordDetail = useCallback((recordId: number) => {
     setExpandedRecordId(recordId);
     setRecordLoading(true);
+    const seq = ++recordReqSeq.current;
     invoke<InspectionRecord>("get_record", { recordId })
-      .then(setFullRecord)
-      .catch((e) => console.error(String(e)))
-      .finally(() => setRecordLoading(false));
+      .then((r) => { if (seq === recordReqSeq.current) setFullRecord(r); })
+      .catch((e) => { if (seq === recordReqSeq.current) console.error(String(e)); })
+      .finally(() => { if (seq === recordReqSeq.current) setRecordLoading(false); });
   }, []);
 
   const refreshAfterMutation = useCallback((recordId?: number) => {
     if (recordId) {
-      invoke<InspectionRecord>("get_record", { recordId }).then(setFullRecord).catch(console.error);
+      const seq = ++recordReqSeq.current;
+      invoke<InspectionRecord>("get_record", { recordId })
+        .then((r) => { if (seq === recordReqSeq.current) setFullRecord(r); })
+        .catch(console.error);
     }
     if (selectedBatch?.id) {
-      invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {});
+      const id = selectedBatch.id;
+      invoke<any>("get_batch", { batchId: id })
+        .then((full) => { if (selectedIdRef.current === id) setSelectedBatch(full); })
+        .catch(() => {});
     }
     loadBatches();
   }, [selectedBatch?.id, loadBatches]);

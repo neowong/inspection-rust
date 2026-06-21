@@ -485,12 +485,13 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
 /// After status update, triggers static-info SSH detection for newly-online devices
 /// that don't yet have model/sysname (skips devices already auto-detected on save).
 fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
-    // Phase 1: read id/ip/port + model/sysname — the latter used to skip redundant SSH
+    // Phase 1: read id/ip/port + model/sysname/status — model/sysname 用于跳过冗余 SSH，
+    // status 用于判断是否变更（仅变更时写状态日志）
     #[allow(clippy::type_complexity)]
-    let devices: Vec<(i64, String, i64, Option<String>, Option<String>)> = {
+    let devices: Vec<(i64, String, i64, Option<String>, Option<String>, String)> = {
         if let Some(conn) = db.try_lock() {
             let mut stmt = match conn.prepare(
-                "SELECT id, ip, ssh_port, model, sysname FROM devices",
+                "SELECT id, ip, ssh_port, model, sysname, status FROM devices",
             ) {
                 Ok(s) => s,
                 Err(_) => return,
@@ -503,6 +504,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                         row.get::<_, i64>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 })
                 .ok()
@@ -523,16 +525,19 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     let offline_count = std::sync::atomic::AtomicU32::new(0);
     // Collect device IDs that came online and need static info detection
     let needs_detect: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    // 收集 (id, new_status, old_status)，scope 结束后一次性持锁批量更新，避免 try_lock 丢更新
+    let results: Mutex<Vec<(i64, String, String)>> = Mutex::new(Vec::new());
 
     std::thread::scope(|s| {
-        for (id, ip, port, model, sysname) in &devices {
-            let db = Arc::clone(db);
-            let now = now.clone();
+        for (id, ip, port, model, sysname, old_status) in &devices {
             let online_ref = &online_count;
             let offline_ref = &offline_count;
             let needs_detect = &needs_detect;
+            let results = &results;
             let has_static = model.as_ref().filter(|s| !s.is_empty()).is_some()
                 || sysname.as_ref().filter(|s| !s.is_empty()).is_some();
+            let id = *id;
+            let old_status = old_status.clone();
             s.spawn(move || {
                 let new_status = match ip.parse::<std::net::IpAddr>() {
                     Ok(ip_addr) => {
@@ -564,20 +569,34 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                     }
                 };
 
-                if let Some(conn) = db.try_lock() {
-                    let _ = conn.execute(
-                        "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
-                        rusqlite::params![new_status, now, now, id],
-                    );
-                }
+                results.lock().push((id, new_status.to_string(), old_status));
 
                 // 在线且无静态信息的设备 → 标记待 SSH 采集
                 if new_status == "online" && !has_static {
-                    needs_detect.lock().push(*id);
+                    needs_detect.lock().push(id);
                 }
             });
         }
     });
+
+    // Phase 1.5: 一次性持锁批量写回状态 + 状态变更日志（持锁时间短，无网络 IO）
+    {
+        let results = results.lock().clone();
+        let conn = db.lock();
+        for (id, new_status, old_status) in &results {
+            let _ = conn.execute(
+                "UPDATE devices SET status = ?1, last_checked_at = ?2 WHERE id = ?3",
+                rusqlite::params![new_status, now, id],
+            );
+            // 仅状态变更时写日志，避免 device_status_logs 无限增长
+            if old_status != new_status {
+                let _ = conn.execute(
+                    "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![id, old_status, new_status, now],
+                );
+            }
+        }
+    }
 
     tracing::info!(
         "后台设备检测完成: {} 在线, {} 离线",

@@ -108,11 +108,13 @@ export default function InspectionPage() {
   // ----- Record detail -----
   useEffect(() => {
     if (!expandedRecordId) { setFullRecord(null); return; }
+    let cancelled = false;
     setRecordLoading(true);
     invoke<InspectionRecord>("get_record", { recordId: expandedRecordId })
-      .then(setFullRecord)
-      .catch((e) => console.error(typeof e === "string" ? e : JSON.stringify(e)))
-      .finally(() => setRecordLoading(false));
+      .then((r) => { if (!cancelled) setFullRecord(r); })
+      .catch((e) => { if (!cancelled) console.error(typeof e === "string" ? e : JSON.stringify(e)); })
+      .finally(() => { if (!cancelled) setRecordLoading(false); });
+    return () => { cancelled = true; };
   }, [expandedRecordId]);
 
   const parsedOutputs = useMemo(
