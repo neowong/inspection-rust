@@ -38,10 +38,10 @@ export default function AboutPage() {
         <p className="mt-2 text-sm text-[hsl(var(--text-secondary))]">
           遇到 Bug 或有功能建议，欢迎通过邮件反馈：
         </p>
-        <a href="mailto:neowong2005@gmail.com" className="mt-2 inline-flex items-center gap-1.5 text-sm text-[hsl(var(--accent))] hover:underline">
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-[hsl(var(--accent))]">
           <Mail size={14} />
           neowong2005@gmail.com
-        </a>
+        </p>
       </Card>
     </div>
   );
