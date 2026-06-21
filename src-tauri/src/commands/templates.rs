@@ -224,6 +224,18 @@ pub fn list_commands(
 pub fn create_command(data: CommandCreate, state: State<AppState>) -> Result<CommandPool, String> {
     let conn = state.db.lock();
 
+    // 检查同厂商下是否已存在相同命令
+    let exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM command_pool WHERE vendor = ?1 AND command = ?2",
+            rusqlite::params![data.vendor, data.command],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if exists {
+        return Err(format!("厂商 '{}' 下已存在命令 '{}'", data.vendor, data.command));
+    }
+
     conn.execute(
         "INSERT INTO command_pool (vendor, command, description, category, model, needs_root) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
