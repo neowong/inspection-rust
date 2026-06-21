@@ -29,11 +29,11 @@ fn test_full_inspection_pipeline() {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 "测试H3C交换机",
-                "192.168.9.254",
+                "10.0.0.1",
                 "switch",
                 "H3C",
                 "admin",
-                inspection_rust_lib::services::crypto::CryptoService::encrypt("Ahope@2021").unwrap(),
+                inspection_rust_lib::services::crypto::CryptoService::encrypt("changeme").unwrap(),
                 22,
                 "online"
             ],

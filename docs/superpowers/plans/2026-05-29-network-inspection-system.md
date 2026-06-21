@@ -438,7 +438,7 @@ git add -A && git commit -m "feat: 数据库层 — 9 表 schema + Rust 模型 +
 - [ ] **Step 1: 创建 crypto.rs**
 
 ```rust
-const MASTER_PASSWORD: &str = "2buJOnYoEeKAjm18AqfX6JT73VIKHI2UQnh-FQUS-bE=";
+const MASTER_PASSWORD: &str = "<your-fernet-key>";
 
 pub struct CryptoService;
 

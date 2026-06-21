@@ -3,10 +3,10 @@ use inspection_rust_lib::services::inspection_runner::{SSHSessionSource, run_com
 #[test]
 fn test_ssh_inspection_commands() {
     let source = SSHSessionSource {
-        host: "192.168.9.254".to_string(),
+        host: "10.0.0.1".to_string(),
         port: 22,
         username: "admin".to_string(),
-        password: "Ahope@2021".to_string(),
+        password: "changeme".to_string(),
     };
 
     let commands = vec![
@@ -41,10 +41,10 @@ fn test_ssh_inspection_commands() {
 #[test]
 fn test_ssh_single_command() {
     let source = SSHSessionSource {
-        host: "192.168.9.254".to_string(),
+        host: "10.0.0.1".to_string(),
         port: 22,
         username: "admin".to_string(),
-        password: "Ahope@2021".to_string(),
+        password: "changeme".to_string(),
     };
 
     let commands = vec!["display version".to_string()];

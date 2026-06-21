@@ -225,7 +225,7 @@ const labelClass = "block text-xs font-medium text-[hsl(var(--text-secondary))] 
 // ---- Alive Scanner ----------------------------------------------------------
 
 function LiveScanner() {
-  const [subnet, setSubnet] = useState("192.168.9.0/24");
+  const [subnet, setSubnet] = useState("192.168.1.0/24");
   const [timeout, setTimeout_] = useState("2000");
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState<LiveHostResult[] | null>(null);
@@ -380,7 +380,7 @@ type ScanType = "tcp" | "udp";
 
 function PortScanner() {
   const [scanType, setScanType] = useState<ScanType>("tcp");
-  const [ip, setIp] = useState("192.168.9.6");
+  const [ip, setIp] = useState("192.168.1.1");
   const [ports, setPorts] = useState("5000");
   const [timeout, setTimeout_] = useState(scanType === "udp" ? "3000" : "2000");
   const [scanning, setScanning] = useState(false);

@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_parse_h3c_log() {
-        let line = "%May 30 11:03:59:450 2026 aHope SSHS/6/SSHS_VERSION_MISMATCH: SSH client 192.168.9.209 failed to log in because of version mismatch.";
+        let line = "%May 30 11:03:59:450 2026 DeviceA SSHS/6/SSHS_VERSION_MISMATCH: SSH client 10.0.0.100 failed to log in because of version mismatch.";
         let entry = parse_h3c_line(line).unwrap();
         assert_eq!(entry.hostname, "aHope");
         assert_eq!(entry.severity, "INFO");
