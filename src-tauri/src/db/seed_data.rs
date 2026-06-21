@@ -2,10 +2,18 @@ use rusqlite::{params, Connection};
 
 /// 种子命令数据（含 H3C/华为/思科/锐捷/飞塔/Linux 常用巡检命令）
 ///
-/// 使用 `INSERT OR IGNORE` 幂等插入：依赖 `command_pool` 的 `UNIQUE(vendor, command)` 约束，
-/// 已存在的命令会被忽略，新增的种子命令会自动补充。每次启动都会执行，确保种子数据完整。
-/// 返回实际新插入的行数。
+/// 使用 `INSERT OR IGNORE` 幂等插入，但会跳过被用户主动删除的命令（通过 `deleted_seed_commands` 墓碑表）。
+/// 每次启动都会执行，确保种子数据完整且用户删除的命令不会复活。
 pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
+    // 确保墓碑表存在
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS deleted_seed_commands (
+            vendor TEXT NOT NULL,
+            command TEXT NOT NULL,
+            deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(vendor, command)
+        )"
+    ).map_err(|e| e.to_string())?;
     let commands: Vec<(&str, &str, &str, &str, i64)> = vec![
         // ==================== H3C (Comware V5/V7，已真机验证) ====================
         ("H3C", "display clock", "查看系统时钟", "clock", 0),
@@ -388,7 +396,9 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let inserted = {
         let mut stmt = tx
-            .prepare("INSERT OR IGNORE INTO command_pool (vendor, command, description, category, needs_root) VALUES (?1, ?2, ?3, ?4, ?5)")
+            .prepare("INSERT OR IGNORE INTO command_pool (vendor, command, description, category, needs_root) \
+                      SELECT ?1, ?2, ?3, ?4, ?5 \
+                      WHERE NOT EXISTS (SELECT 1 FROM deleted_seed_commands WHERE vendor = ?1 AND command = ?2)")
             .map_err(|e| e.to_string())?;
         let mut inserted = 0usize;
         for (vendor, command, description, category, needs_root) in &commands {

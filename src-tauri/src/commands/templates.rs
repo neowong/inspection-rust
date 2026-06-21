@@ -326,6 +326,15 @@ pub fn update_command(
 pub fn delete_command(command_id: i64, state: State<AppState>) -> Result<(), String> {
     let conn = state.db.lock();
 
+    // 先查出 vendor+command，写入墓碑表防止种子数据复活
+    let vendor_cmd: Option<(String, String)> = conn
+        .query_row(
+            "SELECT vendor, command FROM command_pool WHERE id = ?1",
+            rusqlite::params![command_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
     let affected = conn
         .execute(
             "DELETE FROM command_pool WHERE id = ?1",
@@ -335,6 +344,14 @@ pub fn delete_command(command_id: i64, state: State<AppState>) -> Result<(), Str
 
     if affected == 0 {
         return Err(format!("命令 ID {} 不存在", command_id));
+    }
+
+    // 记录墓碑，阻止种子数据在下次启动时重新插入
+    if let Some((vendor, command)) = vendor_cmd {
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO deleted_seed_commands (vendor, command) VALUES (?1, ?2)",
+            rusqlite::params![vendor, command],
+        );
     }
 
     Ok(())
