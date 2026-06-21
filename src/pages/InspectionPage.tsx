@@ -333,6 +333,17 @@ export default function InspectionPage() {
                     <span className="text-[hsl(var(--text-primary))]">{fullRecord.summary_judgment}</span>
                   </div>
                 )}
+                {fullRecord.ai_status === "failed" && fullRecord.error_message && (
+                  <div className="mt-3 p-2 rounded bg-[hsl(var(--danger)_/_0.1)] text-xs text-[hsl(var(--danger))]">
+                    <span className="font-medium">AI 分析失败: </span>
+                    {fullRecord.error_message}
+                  </div>
+                )}
+                {fullRecord.ai_status === "processing" && (
+                  <div className="mt-3 p-2 rounded bg-[hsl(var(--bg-hover))] text-xs text-[hsl(var(--warning))]">
+                    AI 分析中...
+                  </div>
+                )}
               </Card>
             )}
           </>

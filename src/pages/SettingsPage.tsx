@@ -21,7 +21,7 @@ interface ConfigForm {
 const EMPTY_FORM: ConfigForm = { name: "", provider: "openai", model_id: "", api_key: "", base_url: "" };
 const API_FORMATS = [
   { value: "openai", label: "OpenAI 兼容", placeholder: "https://api.openai.com/v1" },
-  { value: "anthropic", label: "Anthropic", placeholder: "https://api.anthropic.com" },
+  { value: "deepseek", label: "DeepSeek", placeholder: "https://api.deepseek.com" },
 ];
 
 export default function SettingsPage() {
@@ -182,7 +182,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模型名称</label>
-            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat, claude-sonnet-4-20250514" />
+            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>

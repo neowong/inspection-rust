@@ -199,10 +199,6 @@ async fn analyze_record_inner(
             ai_inspection::analyze_with_openai(&api_key, &model, &base_url, &command_outputs_map)
                 .await?
         }
-        "anthropic" => {
-            ai_inspection::analyze_with_anthropic(&api_key, &model, &base_url, &command_outputs_map)
-                .await?
-        }
         "deepseek" => {
             let deepseek_base = if base_url.is_empty() {
                 "https://api.deepseek.com".to_string()
@@ -217,7 +213,7 @@ async fn analyze_record_inner(
             )
             .await?
         }
-        _ => return Err(format!("不支持的 AI 提供商: {}", provider)),
+        _ => return Err(format!("不支持的 AI 提供商: {}，请选择 OpenAI 兼容 或 DeepSeek", provider)),
     };
 
     tracing::info!(
@@ -367,6 +363,7 @@ pub async fn analyze_record(
     match analyze_record_inner(&state, record_id).await {
         Ok(v) => Ok(v),
         Err(e) => {
+            tracing::error!("AI 分析失败 record_id={}: {}", record_id, e);
             // analyze_record_inner 已将 ai_status 置为 'processing'，失败时必须回写 'failed'，
             // 否则记录会永久卡在 processing，前端一直显示"分析中"，且不会被 analyze_batch（非 force）重试。
             let now = now_str();
@@ -443,6 +440,7 @@ pub async fn analyze_batch(
             }
             Err(e) => {
                 failed += 1;
+                tracing::error!("AI 分析失败 record_id={}: {}", rid, e);
                 errors.push(serde_json::json!({"record_id": rid, "error": e}));
                 let conn = state.db.lock();
                 let now = now_str();

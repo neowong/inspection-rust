@@ -115,13 +115,21 @@ pub async fn analyze_with_openai(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("OpenAI API 请求失败: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("OpenAI API 请求失败: {}", e);
+            warn!("{}", msg);
+            msg
+        })?;
 
     let status = response.status();
     let response_text = response
         .text()
         .await
-        .map_err(|e| format!("读取 OpenAI 响应失败: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("读取 OpenAI 响应失败: {}", e);
+            warn!("{}", msg);
+            msg
+        })?;
 
     if !status.is_success() {
         warn!("OpenAI API returned error status {}: {}", status, response_text);
@@ -129,7 +137,11 @@ pub async fn analyze_with_openai(
     }
 
     let parsed: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| format!("解析 OpenAI 响应 JSON 失败: {}", e))?;
+        .map_err(|e| {
+            warn!("解析 OpenAI 响应 JSON 失败: {} — 前 300 字: {}", e,
+                  response_text.chars().take(300).collect::<String>());
+            format!("解析 OpenAI 响应 JSON 失败: {}", e)
+        })?;
 
     let content = parsed["choices"][0]["message"]["content"]
         .as_str()
@@ -158,91 +170,4 @@ pub async fn analyze_with_openai(
     Ok(analysis)
 }
 
-/// Analyze command outputs using the Anthropic messages API.
-///
-/// * `api_key` - Anthropic API key
-/// * `model` - Model name (e.g., "claude-sonnet-4-20250514", "claude-3-haiku-20240307")
-/// * `base_url` - API base URL; defaults to "https://api.anthropic.com" if empty
-/// * `command_outputs` - Map of command name to its text output
-pub async fn analyze_with_anthropic(
-    api_key: &str,
-    model: &str,
-    base_url: &str,
-    command_outputs: &HashMap<String, String>,
-) -> Result<serde_json::Value, String> {
-    let base_url = if base_url.is_empty() {
-        "https://api.anthropic.com"
-    } else {
-        base_url.trim_end_matches('/')
-    };
-
-    let url = format!("{}/v1/messages", base_url);
-    let formatted_input = format_command_outputs(command_outputs);
-
-    let body = serde_json::json!({
-        "model": model,
-        "system": SYSTEM_PROMPT,
-        "messages": [
-            {"role": "user", "content": formatted_input}
-        ],
-        "max_tokens": 16384
-    });
-
-    info!(
-        "Sending request to Anthropic API (model: {}, commands: {})",
-        model,
-        command_outputs.len()
-    );
-
-    let client = get_client();
-    let response = client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2025-01-25")
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Anthropic API 请求失败: {}", e))?;
-
-    let status = response.status();
-    let response_text = response
-        .text()
-        .await
-        .map_err(|e| format!("读取 Anthropic 响应失败: {}", e))?;
-
-    if !status.is_success() {
-        warn!("Anthropic API returned error status {}: {}", status, response_text);
-        return Err(format!("Anthropic API 错误 ({}): {}", status, response_text));
-    }
-
-    let parsed: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| format!("解析 Anthropic 响应 JSON 失败: {}", e))?;
-
-    // Anthropic response structure: content[0].text
-    let content = parsed["content"][0]["text"]
-        .as_str()
-        .ok_or_else(|| {
-            warn!("Anthropic 响应缺少 content[0].text: {}", response_text);
-            "Anthropic 响应格式异常: 未找到分析结果".to_string()
-        })?;
-
-    let stop_reason = parsed["stop_reason"].as_str().unwrap_or("");
-
-    // The content itself should be JSON
-    let analysis: serde_json::Value = serde_json::from_str(content).map_err(|e| {
-        if stop_reason == "max_tokens" {
-            warn!(
-                "AI 输出被 max_tokens 截断 (stop_reason=max_tokens)，内容长度 {} 字符",
-                content.len()
-            );
-            "AI 输出被截断（命令数过多导致 max_tokens 不足）。请减少巡检命令数或在系统设置中切换到上下文更长的模型。".to_string()
-        } else {
-            format!("解析 AI 分析结果 JSON 失败: {} — 原始内容前 500 字: {}",
-                e, content.chars().take(500).collect::<String>())
-        }
-    })?;
-
-    info!("Successfully analyzed {} commands with Anthropic", command_outputs.len());
-    Ok(analysis)
-}
+// Anthropic provider removed — 国内环境不适用，所有厂商均走 OpenAI 兼容 API。
