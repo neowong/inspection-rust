@@ -43,6 +43,39 @@
 
 ---
 
+## v3.40.6 (2026-06-21)
+
+### 🐛 关键修复
+- **Windows 启动崩溃彻底修复**：精简版 Win11 / Win10 LTSC 等环境下程序安装后无界面闪退
+  - panic hook 移至 `main()` 第一行，确保任何崩溃都能弹 MessageBox + 写日志到 `%TEMP%`
+  - WebView2 强制软件渲染（`--disable-gpu`），兼容无 GPU 驱动精简系统
+  - WebView2 安装器释放到 TEMP（替代 Program Files），永不会权限失败
+  - 启动全程 debug log 埋点到 `%TEMP%\inspection-debug.log`，可精准定位崩溃点
+- **数据库迁移修复**：全新安装 `is_default` 索引在列存在前创建导致崩溃，移除过早索引
+- **种子数据一致性**：`INSERT OR IGNORE` 改为 `ON CONFLICT DO UPDATE`，升级用户 `needs_root` 与全新安装一致
+
+### 🔒 可靠性
+- CI 门禁工作流（每次 push 跑 tsc/build/check/clippy + 15 项测试）
+- 全新安装迁移 + 种子一致性专项测试，确保开发/生产环境完全一致
+- `Tauri::run()` 失败时 panic 带完整上下文，不再无声消失
+- 离线 WebView2 安装器检测：将 `MicrosoftEdgeWebView2RuntimeInstallerX64.exe` 放 exe 同目录自动离线安装
+
+### 📝 其它
+- releaseDraft 改为 false，构建完直接发布不再草稿
+- 清理所有历史版本 Release 和 Tag，仅保留 v3.40.6
+
+---
+
+## v3.40.1-3.40.2 (2026-06-21)
+
+### 🐛 Bug 修复
+- WebView2 检测优化：reg.exe 查询加 `CREATE_NO_WINDOW`，消除 7 个子进程闪窗
+- `windows_subsystem = "windows"` 恢复，release 不再分配控制台窗口
+- 移除无效 `catch_unwind`（`panic = "abort"` 下是死代码），保留 panic hook 写日志
+- 早期调试日志写入 + 控制台窗口临时启用（调试阶段）
+
+---
+
 ## v3.3.0 (2026-06-20)
 
 ### ✨ 新功能
