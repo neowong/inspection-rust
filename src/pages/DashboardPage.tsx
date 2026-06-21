@@ -167,28 +167,19 @@ export default function DashboardPage() {
               const y = 20 + row * 230;
               return (
                 <g key={no}>
-                  {/* 卡片 */}
-                  <rect x={x} y={y} width="215" height="200" rx="16" fill="var(--bg-card, #FFFFFF)" stroke="var(--border, #E2E8F0)" strokeWidth="1.5" />
-                  {/* 顶部色条 */}
-                  <rect x={x} y={y} width="215" height="6" rx="16" fill={`url(#g${i})`} />
-                  <rect x={x} y={y + 3} width="215" height="3" fill={`url(#g${i})`} />
-                  {/* 编号圆 */}
+                  <rect x={x} y={y} width="215" height="200" rx="16" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
+                  <rect x={x} y={y} width="215" height="6" rx="3" fill={`url(#g${i})`} />
                   <circle cx={x + 30} cy={y + 40} r="18" fill={`url(#g${i})`} />
                   <text x={x + 30} y={y + 45} textAnchor="middle" fontFamily="Inter, monospace" fontSize="13" fontWeight="700" fill="white">{no}</text>
-                  {/* 标题 */}
-                  <text x={x + 56} y={y + 46} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="18" fontWeight="700" fill="var(--text-primary, #0F172A)">{title}</text>
-                  {/* 分割线 */}
-                  <line x1={x + 16} y1={y + 65} x2={x + 199} y2={y + 65} stroke="var(--border, #E2E8F0)" strokeWidth="1" />
-                  {/* 描述 */}
-                  <text x={x + 16} y={y + 92} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fill="var(--text-secondary, #475569)">{desc}</text>
-                  {/* 注释 */}
-                  <rect x={x + 12} y={y + 115} width={191} height="52" rx="8" fill="var(--bg-hover, #F1F5F9)" />
-                  <text x={x + 22} y={y + 138} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="var(--text-tertiary, #64748B)">{note}</text>
+                  <text x={x + 56} y={y + 46} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="18" fontWeight="700" fill="#0F172A">{title}</text>
+                  <line x1={x + 16} y1={y + 65} x2={x + 199} y2={y + 65} stroke="#E2E8F0" strokeWidth="1" />
+                  <text x={x + 16} y={y + 92} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fill="#475569">{desc}</text>
+                  <rect x={x + 12} y={y + 115} width="191" height="52" rx="8" fill="#F1F5F9" />
+                  <text x={x + 22} y={y + 138} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">{note}</text>
                 </g>
               );
             })}
 
-            {/* 连线 */}
             <path d="M235 120 L255 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
             <path d="M470 120 L490 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
             <path d="M705 120 L725 120" stroke="#94A3B8" strokeWidth="2" markerEnd="url(#fa)" fill="none" />
