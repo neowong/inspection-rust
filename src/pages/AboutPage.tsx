@@ -1,85 +1,97 @@
-import { Network, Wrench } from "lucide-react";
+import { useState } from "react";
+import { Network, Mail, Copy, Check, Send } from "lucide-react";
 import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
+import Input, { Select } from "../components/ui/Input";
 
-function WorkflowSvg() {
-  const steps = [
-    ["01", "配置 AI", "设置 AI 模型连接", "可选步骤；启用后自动生成巡检评判。"],
-    ["02", "维护命令库", "录入厂商命令与中文说明", "命令说明会作为报告里的巡检项目名称。"],
-    ["03", "设计报告模板", "配置 DOCX 样式和列定义", "右侧 A4 预览用于确认最终报告版式。"],
-    ["04", "创建巡检模板", "选择巡检项与静态信息命令", "静态信息命令提取 sysname/SN/型号，不进报告明细。"],
-    ["05", "添加设备", "录入 IP、厂商、SSH 和模板", "设备可自动检测型号、SN、出厂日期和 sysname。"],
-    ["06", "执行巡检", "批量 SSH 执行命令", "保存命令输出和本次巡检静态信息快照。"],
-    ["07", "AI 分析", "生成状态、发现和建议", "评判内容会合并到报告的“评判结论”列。"],
-    ["08", "导出 DOCX", "生成 Word 巡检报告", "支持单设备、批量 ZIP 和合并 DOCX。"],
-  ];
+function FeedbackSection() {
+  const [category, setCategory] = useState("bug");
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const EMAIL = "neowong2005@gmail.com";
+
+  const buildEmailBody = () => {
+    const lines = [
+      `反馈类型: ${category === "bug" ? "Bug 报告" : category === "feature" ? "功能建议" : "其它反馈"}`,
+      `标题: ${title || "(未填写)"}`,
+      "",
+      "描述:",
+      desc || "(未填写)",
+      "",
+      "--- 环境信息 ---",
+      `App 版本: v3.2.0`,
+      `平台: ${navigator.platform}`,
+      `User-Agent: ${navigator.userAgent}`,
+    ];
+    return lines.join("\n");
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(buildEmailBody());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSendEmail = () => {
+    const subject = `[${category === "bug" ? "Bug" : "建议"}] ${title || "问题反馈"}`;
+    const mailtoUrl = `mailto:${EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildEmailBody())}`;
+    window.open(mailtoUrl, "_blank");
+  };
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] p-3">
-      <svg viewBox="0 0 980 900" className="min-w-[880px] w-full" role="img" aria-label="AI巡检助手 使用流程图">
-        <defs>
-          <linearGradient id="flowNode" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#38BDF8" />
-            <stop offset="1" stopColor="#22C55E" />
-          </linearGradient>
-          <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
-            <path d="M2,2 L10,6 L2,10 Z" fill="#64748B" />
-          </marker>
-          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#020617" floodOpacity="0.16" />
-          </filter>
-        </defs>
+    <Card>
+      <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
+        <Mail size={18} className="text-[hsl(var(--accent))]" />
+        问题反馈
+      </div>
+      <p className="mt-1.5 text-xs text-[hsl(var(--text-tertiary))]">
+        遇到 Bug 或有功能建议？欢迎通过邮件反馈，帮助我们改进产品。
+      </p>
 
-        <rect x="20" y="20" width="940" height="860" rx="22" fill="#F8FAFC" />
-        <text x="490" y="60" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="26" fontWeight="700" fill="#0F172A">
-          AI巡检助手 使用流程
-        </text>
-        <text x="490" y="88" textAnchor="middle" fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="14" fill="#64748B">
-          从模板准备到批量巡检，再到 AI 分析和 DOCX 报告交付
-        </text>
+      <div className="mt-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">反馈类型</label>
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="bug">Bug 报告</option>
+              <option value="feature">功能建议</option>
+              <option value="other">其它反馈</option>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">标题</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="简短描述问题或建议" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">详细描述</label>
+          <textarea
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="请描述问题的复现步骤、期望行为、实际行为等..."
+            className="w-full h-24 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] px-3 py-2 text-sm text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] outline-none focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] resize-none"
+          />
+        </div>
 
-        {/* 主流程连线 */}
-        <path
-          d="M190 145 L190 780"
-          stroke="#94A3B8"
-          strokeWidth="3"
-          strokeDasharray="8 8"
-          markerEnd="url(#arrow)"
-          fill="none"
-        />
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={handleCopy}>
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? "已复制" : "复制内容"}
+          </Button>
+          <Button size="sm" variant="primary" onClick={handleSendEmail}>
+            <Send size={14} />
+            发送邮件
+          </Button>
+        </div>
 
-        {steps.map(([no, title, desc, note], i) => {
-          const y = 130 + i * 90;
-          return (
-            <g key={no}>
-              {/* 节点 */}
-              <rect x="80" y={y} width="220" height="62" rx="16" fill="white" stroke="#CBD5E1" strokeWidth="1.5" filter="url(#shadow)" />
-              <circle cx="112" cy={y + 31} r="21" fill="url(#flowNode)" />
-              <text x="112" y={y + 36} textAnchor="middle" fontFamily="Inter, Arial, sans-serif" fontSize="13" fontWeight="700" fill="white">
-                {no}
-              </text>
-              <text x="145" y={y + 26} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="17" fontWeight="700" fill="#0F172A">
-                {title}
-              </text>
-              <text x="145" y={y + 48} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">
-                {desc}
-              </text>
-
-              {/* 注释连接线 */}
-              <path d={`M300 ${y + 31} L365 ${y + 31}`} stroke="#94A3B8" strokeWidth="1.5" markerEnd="url(#arrow)" fill="none" />
-
-              {/* 注释框 */}
-              <rect x="375" y={y + 5} width="520" height="52" rx="12" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.2" />
-              <text x="397" y={y + 28} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="13" fontWeight="700" fill="#334155">
-                注释
-              </text>
-              <text x="397" y={y + 47} fontFamily="Microsoft YaHei, PingFang SC, sans-serif" fontSize="12" fill="#64748B">
-                {note}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+        <div className="rounded-lg bg-[hsl(var(--bg-hover))] px-3 py-2 text-xs text-[hsl(var(--text-tertiary))] space-y-1">
+          <p>反馈内容会自动附带系统环境信息（版本、平台、浏览器），无需手动填写。</p>
+          <p>收件邮箱：<span className="text-[hsl(var(--text-primary))] font-medium">{EMAIL}</span></p>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -88,7 +100,7 @@ export default function AboutPage() {
     <div className="space-y-5">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
         <h1 className="text-lg font-bold">关于</h1>
-        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">项目介绍与使用流程</p>
+        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">项目介绍与问题反馈</p>
       </div>
 
       <Card>
@@ -112,13 +124,7 @@ export default function AboutPage() {
         </div>
       </Card>
 
-      <Card>
-        <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
-          <Wrench size={18} className="text-[hsl(var(--accent))]" />
-          推荐使用流程
-        </div>
-        <WorkflowSvg />
-      </Card>
+      <FeedbackSection />
     </div>
   );
 }

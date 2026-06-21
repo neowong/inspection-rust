@@ -89,10 +89,14 @@ export default function DashboardPage() {
   const location = useLocation();
   const [stats, setStats] = useState<Stats | null>(null);
 
-  // 每次进入仪表盘都刷新数据（从其它页面切换回来时也能拿到最新统计）
+  const loadStats = () => invoke<Stats>("get_stats").then(setStats).catch(console.error);
+
+  // 路由变化或窗口聚焦时都刷新（解决切页后统计不更新）
+  useEffect(() => { loadStats(); }, [location.key]);
   useEffect(() => {
-    invoke<Stats>("get_stats").then(setStats).catch(console.error);
-  }, [location.pathname]);
+    window.addEventListener("focus", loadStats);
+    return () => window.removeEventListener("focus", loadStats);
+  }, []);
 
   const val = (key: keyof Stats) => stats ? String(stats[key] ?? 0) : "...";
 
