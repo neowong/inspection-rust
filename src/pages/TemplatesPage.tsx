@@ -453,12 +453,7 @@ export default function TemplatesPage() {
           }
         >
           <div className="space-y-3">
-            {/* 基本信息 — 默认折叠，填完后收起释放空间给命令选择 */}
-            <details open>
-              <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors select-none">
-                基本信息
-              </summary>
-              <div className="mt-2 space-y-2">
+            <div className="space-y-2">
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">名称</label>
@@ -502,7 +497,6 @@ export default function TemplatesPage() {
                   </div>
                 </div>
               </div>
-            </details>
 
             {/* 命令选择 — 左右分栏，始终同时可见 */}
             <div className="grid grid-cols-2 gap-3" style={{ height: "390px" }}>
@@ -590,7 +584,7 @@ export default function TemplatesPage() {
                     );
                   })}
                 </div>
-                <p className="shrink-0 mt-1 text-[10px] text-[hsl(var(--text-tertiary))] text-right">拖拽排序 · 与报告顺序一致</p>
+                <p className="shrink-0 mt-1 text-[10px] text-[hsl(var(--text-tertiary))] text-right">列表顺序即为报告中的展示顺序</p>
               </div>
 
               {/* 右：可选命令 */}
