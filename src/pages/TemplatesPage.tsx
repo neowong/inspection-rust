@@ -454,7 +454,7 @@ export default function TemplatesPage() {
         >
           <div className="space-y-3">
             {/* 基本信息 — 默认折叠，填完后收起释放空间给命令选择 */}
-            <details>
+            <details open>
               <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors select-none">
                 基本信息
               </summary>
