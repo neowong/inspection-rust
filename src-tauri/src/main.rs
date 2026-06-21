@@ -49,6 +49,11 @@ fn main() {
         }
     }));
 
+    // 主动禁用 WebView2 GPU 加速，走纯软件渲染（WARP）。
+    // 精简版/无显卡/驱动缺失的 Windows 上，硬件 D3D11/DWM 合成会崩溃。
+    // 巡检工具是静态页面，软件渲染性能完全足够，兼容性远高于硬件加速。
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu");
+
     // panic = "abort" 下 catch_unwind 无效，直接调用 run()
     // panic hook 已在上方安装，会将 panic 信息写入日志文件
     inspection_rust_lib::run();
