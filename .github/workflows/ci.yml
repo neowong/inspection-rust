@@ -1,0 +1,55 @@
+name: CI
+
+# 门禁：每次 push / PR 跑类型检查、编译、clippy、测试（含 fresh-install 迁移测试）。
+# 目的——消除开发/生产不一致：生产构建（release.yml 打 tag）依赖的代码路径
+# 必须在合并前就被验证，不能靠"开发机有旧库"掩盖全新安装等问题。
+
+on:
+  push:
+    branches: [neo]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Rust check (all targets)
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Rust clippy (deny warnings)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --lib
