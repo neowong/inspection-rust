@@ -38,16 +38,27 @@ impl AppState {
 
 #[cfg(target_os = "windows")]
 fn show_webview2_error_and_exit() {
-    // 直接调用 user32.dll 的 MessageBoxW，不依赖任何额外 crate
     extern "system" {
         fn MessageBoxW(hWnd: *const core::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
     }
-    let msg: Vec<u16> = "本程序需要 Microsoft Edge WebView2 Runtime 才能运行。\n\n\
-        自动安装失败，请手动下载安装：\n\
-        https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n\
-        安装后重新启动本程序。"
-        .encode_utf16().chain(std::iter::once(0)).collect();
-    let title: Vec<u16> = "AI巡检助手".encode_utf16().chain(std::iter::once(0)).collect();
+    let log_path = std::env::temp_dir().join("inspection-debug.log");
+    let msg_text = format!(
+        "本程序需要 Microsoft Edge WebView2 Runtime 才能运行。\n\
+         \n\
+         自动安装失败（需要互联网连接）。\n\
+         \n\
+         解决方案（任选其一）：\n\
+         1. 手动下载离线安装器（~170MB）：\n\
+            https://go.microsoft.com/fwlink/p/?LinkId=2124703\n\
+            放到程序同目录，下次启动会自动检测安装\n\
+         \n\
+         2. 确保本机可访问互联网后重新启动程序\n\
+         \n\
+         调试日志: {}",
+        log_path.display()
+    );
+    let msg: Vec<u16> = msg_text.encode_utf16().chain(std::iter::once(0)).collect();
+    let title: Vec<u16> = "AI巡检助手 - 缺少 WebView2".encode_utf16().chain(std::iter::once(0)).collect();
     unsafe { MessageBoxW(std::ptr::null(), msg.as_ptr(), title.as_ptr(), 0x10); }
     std::process::exit(1);
 }
@@ -175,27 +186,43 @@ fn ensure_webview2_runtime_with_log() {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
-    startup_log(&format!("安装程序路径: {}", setup_path.display()));
+    // 离线优先：检查 exe 目录是否已有独立安装器（用户手动下载的 ~170MB 离线版）
+    // 文件名参考 Microsoft 官方: MicrosoftEdgeWebView2RuntimeInstallerX64.exe
+    let offline_installer = exe_dir.join("MicrosoftEdgeWebView2RuntimeInstallerX64.exe");
+    let setup_path: std::path::PathBuf;
+    let is_offline: bool;
 
-    // 尝试从嵌入资源释放
-    match std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")) {
-        Ok(_) => startup_log("安装程序已释放"),
-        Err(e) => {
-            startup_log(&format!("释放安装程序失败: {}，尝试读取已有文件", e));
-            if !setup_path.exists() {
-                startup_log("安装程序不存在，弹窗退出");
-                show_webview2_error_and_exit();
-                return;
-            }
+    if offline_installer.exists() {
+        startup_log("检测到离线安装器，使用离线安装（无需联网）");
+        setup_path = offline_installer;
+        is_offline = true;
+    } else {
+        // 回退：释放嵌入的 ~1.6MB 在线 Bootstrapper 到 TEMP
+        startup_log("未检测到离线安装器，使用嵌入 Bootstrapper（需要联网）");
+        is_offline = false;
+        let temp_setup = std::env::temp_dir().join("inspection_webview2_setup.exe");
+        if let Err(e) = std::fs::write(&temp_setup, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")) {
+            startup_log(&format!("释放 Bootstrapper 到 TEMP 失败: {}", e));
+            show_webview2_error_and_exit();
+            return;
         }
+        setup_path = temp_setup;
+        startup_log("Bootstrapper 已释放到 TEMP");
     }
 
     startup_log("开始静默安装 WebView2...");
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
+
+    // 离线独立安装器用 /silent /install，在线 Bootstrapper 只用 /install
+    let args: &[&str] = if is_offline {
+        &["/silent", "/install"]
+    } else {
+        &["/install"]
+    };
+
     let install_ok = match std::process::Command::new(&setup_path)
-        .args(["/silent", "/install"])
+        .args(args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .creation_flags(0x08000000)  // CREATE_NO_WINDOW
@@ -217,7 +244,10 @@ fn ensure_webview2_runtime_with_log() {
         }
     };
 
-    let _ = std::fs::remove_file(&setup_path);
+    // 清理：仅删除 TEMP 里的 bootstrapper，离线安装器是用户手动放的，不删
+    if !is_offline {
+        let _ = std::fs::remove_file(&setup_path);
+    }
 
     if !install_ok || !is_webview2_installed() {
         startup_log("WebView2 安装失败，弹窗退出");
@@ -317,7 +347,15 @@ pub fn run() {
 
     let db_path = app_data_dir.join("inspection.db");
     startup_log("初始化数据库...");
-    let state = AppState::new(db_path.to_str().unwrap());
+    let state = AppState::new(
+        db_path
+            .to_str()
+            .unwrap_or_else(|| {
+                // 路径含非 UTF-8 字符时回退到临时目录
+                tracing::error!("数据库路径无法转换为 UTF-8: {}", db_path.display());
+                panic!("数据库路径包含无效字符，请检查系统用户名是否为纯 ASCII");
+            }),
+    );
     startup_log("数据库初始化完成");
 
     // Create data directories

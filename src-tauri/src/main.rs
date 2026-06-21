@@ -10,7 +10,9 @@ fn main() {
         let _ = std::fs::write(&temp, msg);
     }
 
-    // 安装 panic hook，将 panic 信息写到 startup.log 以便排查闪退
+    // 安装 panic hook：写日志 + 弹错误对话框。
+    // windows_subsystem="windows" + panic="abort" 下无声 crash，用户看不到任何错误。
+    // 必须弹 MessageBox 让用户知道发生了什么。
     std::panic::set_hook(Box::new(|info| {
         let msg = info.payload_as_str().unwrap_or("未知 panic");
         let location = info.location()
@@ -20,16 +22,31 @@ fn main() {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let log_line = format!("[{}] PANIC: {} @ {}\n{}\n", ts, msg, location, backtrace);
 
-        // 写到多个位置确保能找到
-        let temp = std::env::temp_dir().join("inspection-debug.log");
-        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp)
+        // 写入 debug 日志
+        let temp_log = std::env::temp_dir().join("inspection-debug.log");
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp_log)
             .and_then(|mut f| { use std::io::Write; f.write_all(log_line.as_bytes()) });
 
-        // 写到 startup.log（与 lib.rs 相同的路径策略）
+        // 写入 startup.log
         let log_path = inspection_rust_lib::startup_log_path();
         let _ = std::fs::OpenOptions::new()
             .create(true).append(true).open(&log_path)
             .and_then(|mut f| { use std::io::Write; f.write_all(log_line.as_bytes()) });
+
+        // 弹错误对话框（Windows 上无声 crash 用户完全不知道）
+        #[cfg(target_os = "windows")]
+        {
+            extern "system" {
+                fn MessageBoxW(hWnd: *const core::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
+            }
+            let dialog_text = format!(
+                "程序发生致命错误:\n\n{}\n\n位置: {}\n\n详细日志已写入:\n{}\n{}",
+                msg, location, temp_log.display(), log_path.display()
+            );
+            let text_utf16: Vec<u16> = dialog_text.encode_utf16().chain(std::iter::once(0)).collect();
+            let title: Vec<u16> = "AI巡检助手 - 致命错误".encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe { MessageBoxW(std::ptr::null(), text_utf16.as_ptr(), title.as_ptr(), 0x10); }
+        }
     }));
 
     // panic = "abort" 下 catch_unwind 无效，直接调用 run()
