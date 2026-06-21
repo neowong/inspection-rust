@@ -443,7 +443,7 @@ export default function TemplatesPage() {
         <Modal
           open={templateModal}
           title={editingTemplate ? "编辑模板" : "添加模板"}
-          width="max-w-2xl"
+          width="max-w-4xl"
           onClose={() => setTemplateModal(false)}
           footer={
             <div className="flex gap-2">
@@ -453,147 +453,173 @@ export default function TemplatesPage() {
           }
         >
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-                <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""}
-                  onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
-                {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
+            {/* 基本信息 — 默认折叠，填完后收起释放空间给命令选择 */}
+            <details>
+              <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors select-none">
+                基本信息
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
+                    <Input value={templateForm.name} className={shakeFields.has("template_name") ? "animate-shake" : ""}
+                      onChange={(e) => { setTemplateForm({ ...templateForm, name: e.target.value }); setSaveError(null); }} />
+                    {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
+                    <Select value={templateForm.vendor} onChange={(e) => {
+                      setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
+                    }}>
+                      {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号（可选）</label>
+                    <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型（可选）</label>
+                    <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
+                  <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联报告模板（可选）</label>
+                  <Select
+                    value={templateForm.report_template_id ?? ""}
+                    onChange={(e) => setTemplateForm({ ...templateForm, report_template_id: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">跟随默认（按厂商自动匹配）</option>
+                    {reportTemplates.map((rt) => (
+                      <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}{rt.vendor ? ` · ${rt.vendor}` : ""}</option>
+                    ))}
+                  </Select>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-                <Select value={templateForm.vendor} onChange={(e) => {
-                  setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
-                }}>
-                  {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号（可选）</label>
-                <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型（可选）</label>
-                <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
-              <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联报告模板（可选）</label>
-              <Select
-                value={templateForm.report_template_id ?? ""}
-                onChange={(e) => setTemplateForm({ ...templateForm, report_template_id: e.target.value ? Number(e.target.value) : null })}
-              >
-                <option value="">跟随默认（按厂商自动匹配）</option>
-                {reportTemplates.map((rt) => (
-                  <option key={rt.id} value={rt.id}>{rt.name}{rt.is_default ? " (默认)" : ""}{rt.vendor ? ` · ${rt.vendor}` : ""}</option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
-                已选命令 ({templateForm.commands.length}) <span className="text-[10px] text-[hsl(var(--text-tertiary))]">拖拽排序，静态信息不进入报告明细</span>
-              </label>
-              <div ref={cmdListRef} className="max-h-56 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1 mb-3"
-                onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, cmdListRef.current); }}
-                onDrop={stopAutoScroll}
-                onDragEnd={stopAutoScroll}
-              >
-                {templateForm.commands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">未选择命令</p>}
-                {templateForm.commands.map((spec, idx) => {
-                  const cmd = templateCommands.find(c => c.id === spec.command_id);
-                  if (!cmd) return null;
-                  const updateSpec = (patch: Partial<TemplateCommandConfig>) => {
-                    const next = [...templateForm.commands];
-                    next[idx] = { ...spec, ...patch };
-                    setTemplateForm({ ...templateForm, commands: next });
-                  };
-                  return (
-                    <div
-                      key={spec.command_id}
-                      draggable
-                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.3"; }}
-                      onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
-                      onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
-                      onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
-                      onDrop={(e) => {
-                        e.preventDefault(); e.currentTarget.style.borderColor = "";
-                        const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
-                        if (isNaN(fromIdx) || fromIdx === idx) return;
-                        const next = [...templateForm.commands];
-                        const moved = next.splice(fromIdx, 1)[0];
-                        if (moved !== undefined) next.splice(idx, 0, moved);
-                        setTemplateForm({ ...templateForm, commands: next });
-                      }}
-                      className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1.5 cursor-grab active:cursor-grabbing"
-                    >
-                      <div className="flex items-center gap-2">
-                        <GripVertical size={14} className="text-[hsl(var(--text-tertiary))] shrink-0" />
-                        <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-5 text-right">{idx + 1}</span>
-                        <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
-                        {cmd.description && <span className="text-[11px] text-[hsl(var(--text-tertiary))] truncate">— {cmd.description}</span>}
-                        <button type="button"
-                          onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
-                          className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs">×</button>
+            </details>
+
+            {/* 命令选择 — 左右分栏，始终同时可见 */}
+            <div className="grid grid-cols-2 gap-3" style={{ height: "390px" }}>
+              {/* 左：已选命令 */}
+              <div className="flex flex-col min-h-0">
+                <label className="shrink-0 text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
+                  已选命令 ({templateForm.commands.length})
+                </label>
+                <div ref={cmdListRef} className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1"
+                  onDragOver={(e) => { e.preventDefault(); handleDragAutoScroll(e, cmdListRef.current); }}
+                  onDrop={stopAutoScroll}
+                  onDragEnd={stopAutoScroll}
+                >
+                  {templateForm.commands.length === 0 && (
+                    <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">从右侧勾选命令添加到此处</p>
+                  )}
+                  {templateForm.commands.map((spec, idx) => {
+                    const cmd = templateCommands.find(c => c.id === spec.command_id);
+                    if (!cmd) return null;
+                    const updateSpec = (patch: Partial<TemplateCommandConfig>) => {
+                      const next = [...templateForm.commands];
+                      next[idx] = { ...spec, ...patch };
+                      setTemplateForm({ ...templateForm, commands: next });
+                    };
+                    return (
+                      <div
+                        key={spec.command_id}
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(idx)); e.dataTransfer.effectAllowed = "move"; e.currentTarget.style.opacity = "0.3"; }}
+                        onDragEnd={(e) => { e.currentTarget.style.opacity = ""; }}
+                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "hsl(var(--accent))"; }}
+                        onDragLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
+                        onDrop={(e) => {
+                          e.preventDefault(); e.currentTarget.style.borderColor = "";
+                          const fromIdx = parseInt(e.dataTransfer.getData("text/plain"));
+                          if (isNaN(fromIdx) || fromIdx === idx) return;
+                          const next = [...templateForm.commands];
+                          const moved = next.splice(fromIdx, 1)[0];
+                          if (moved !== undefined) next.splice(idx, 0, moved);
+                          setTemplateForm({ ...templateForm, commands: next });
+                        }}
+                        className="bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded px-2 py-1.5 cursor-grab active:cursor-grabbing"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <GripVertical size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />
+                          <span className="text-[10px] text-[hsl(var(--text-tertiary))] w-4 text-right shrink-0">{idx + 1}</span>
+                          <code className="text-[11px] bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
+                          <button type="button"
+                            onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
+                            className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-5 text-[10px]">
+                          <Select className="h-5 w-20 text-[10px]" value={spec.purpose} onChange={(e) => {
+                            const purpose = e.target.value as "inspection" | "static_info";
+                            updateSpec({ purpose, show_in_report: purpose !== "static_info" });
+                          }}>
+                            <option value="inspection">巡检项</option>
+                            <option value="static_info">静态信息</option>
+                          </Select>
+                          <label className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer">
+                            <input type="checkbox" checked={spec.show_in_report} onChange={(e) => updateSpec({ show_in_report: e.target.checked })} className="accent-[hsl(var(--accent))]" />
+                            报告
+                          </label>
+                          {spec.purpose === "static_info" && (
+                            <div className="flex flex-wrap gap-0.5">
+                              {["sysname", "model", "serial_number", "manufacturing_date"].map((field) => (
+                                <label key={field} className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer">
+                                  <input type="checkbox"
+                                    checked={spec.extract_fields?.includes(field) ?? false}
+                                    onChange={(e) => {
+                                      const fields = spec.extract_fields ?? [];
+                                      updateSpec({
+                                        extract_fields: e.target.checked
+                                          ? [...fields, field]
+                                          : fields.filter(f => f !== field),
+                                      });
+                                    }} className="accent-[hsl(var(--accent))]" />
+                                  <span className="whitespace-nowrap">{field}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-7 text-[11px]">
-                        <Select className="h-6 w-24 text-[11px]" value={spec.purpose} onChange={(e) => {
-                          const purpose = e.target.value as "inspection" | "static_info";
-                          updateSpec({ purpose, show_in_report: purpose !== "static_info" });
-                        }}>
-                          <option value="inspection">巡检项</option>
-                          <option value="static_info">静态信息</option>
-                        </Select>
-                        <label className="flex items-center gap-1 text-[hsl(var(--text-secondary))]">
-                          <input type="checkbox" checked={spec.show_in_report} onChange={(e) => updateSpec({ show_in_report: e.target.checked })} className="accent-[hsl(var(--accent))]" />
-                          显示到报告
-                        </label>
-                        {spec.purpose === "static_info" && (
-                          <div className="flex flex-wrap gap-1">
-                            {["sysname", "model", "serial_number", "manufacturing_date"].map((field) => (
-                              <label key={field} className="flex items-center gap-1 text-[hsl(var(--text-secondary))]">
-                                <input type="checkbox" checked={spec.extract_fields.includes(field)} onChange={(e) => {
-                                  const fields = e.target.checked
-                                    ? [...spec.extract_fields, field]
-                                    : spec.extract_fields.filter(f => f !== field);
-                                  updateSpec({ extract_fields: fields });
-                                }} className="accent-[hsl(var(--accent))]" />
-                                {field}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <p className="shrink-0 mt-1 text-[10px] text-[hsl(var(--text-tertiary))] text-right">拖拽排序 · 与报告顺序一致</p>
               </div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">可选命令 ({templateForm.vendor})</label>
-              <div className="max-h-36 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
-                {vendorFilteredCommands.length === 0 && <p className="text-xs text-[hsl(var(--text-tertiary))]">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>}
-                {vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id)).map((cmd) => (
-                  <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
-                    <input type="checkbox" checked={false}
-                      onChange={() => setTemplateForm({
-                        ...templateForm,
-                        commands: [...templateForm.commands, { command_id: cmd.id, purpose: "inspection", show_in_report: true, extract_fields: [] }]
-                      })}
-                      className="accent-[hsl(var(--accent))]" />
-                    <span className="text-xs">
-                      <code className="bg-[hsl(var(--bg-hover))] px-1 rounded">{cmd.command}</code>
-                      {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1">— {cmd.description}</span>}
-                    </span>
-                  </label>
-                ))}
+
+              {/* 右：可选命令 */}
+              <div className="flex flex-col min-h-0">
+                <label className="shrink-0 text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
+                  可选命令
+                </label>
+                <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-0.5">
+                  {vendorFilteredCommands.length === 0 && (
+                    <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>
+                  )}
+                  {vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id)).map((cmd) => (
+                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1.5 py-1">
+                      <input type="checkbox" checked={false}
+                        onChange={() => setTemplateForm({
+                          ...templateForm,
+                          commands: [...templateForm.commands, { command_id: cmd.id, purpose: "inspection", show_in_report: true, extract_fields: [] }]
+                        })}
+                        className="accent-[hsl(var(--accent))] shrink-0" />
+                      <span className="text-xs leading-tight">
+                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-[11px]">{cmd.command}</code>
+                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1 text-[11px]">{cmd.description}</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </Modal>
+          </div></Modal>
       )}
 
       <Modal
