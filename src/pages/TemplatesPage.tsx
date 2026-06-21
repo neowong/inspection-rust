@@ -32,14 +32,13 @@ interface TemplateForm {
   name: string;
   vendor: string;
   model: string;
-  device_type: string;
   description: string;
   commands: TemplateCommandConfig[];
   report_template_id: number | null;
 }
 
 const getEmptyTemplateForm = (): TemplateForm => ({
-  name: "", vendor: "H3C", model: "", device_type: "", description: "", commands: [], report_template_id: null,
+  name: "", vendor: "H3C", model: "", description: "", commands: [], report_template_id: null,
 });
 
 interface CommandForm {
@@ -188,7 +187,7 @@ export default function TemplatesPage() {
     setEditingTemplate(t);
     setTemplateForm({
       name: t.name, vendor: t.vendor, model: t.model || "",
-      device_type: t.device_type || "", description: t.description || "",
+      description: t.description || "",
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
@@ -202,7 +201,6 @@ export default function TemplatesPage() {
       config: JSON.stringify({ commands: templateForm.commands }),
     };
     if (templateForm.model) data.model = templateForm.model;
-    if (templateForm.device_type) data.device_type = templateForm.device_type;
     if (templateForm.description) data.description = templateForm.description;
     data.report_template_id = templateForm.report_template_id;
 
@@ -474,11 +472,7 @@ export default function TemplatesPage() {
                     <Input value={templateForm.model} onChange={(e) => setTemplateForm({ ...templateForm, model: e.target.value })} placeholder="可选" />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">设备类型</label>
-                    <Input value={templateForm.device_type} onChange={(e) => setTemplateForm({ ...templateForm, device_type: e.target.value })} placeholder="可选" />
-                  </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">描述</label>
                     <Input value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="可选" />
