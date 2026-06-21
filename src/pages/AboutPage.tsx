@@ -36,12 +36,18 @@ export default function AboutPage() {
           问题反馈
         </div>
         <p className="mt-2 text-sm text-[hsl(var(--text-secondary))]">
-          遇到 Bug 或有功能建议，欢迎通过邮件反馈：
+          遇到 Bug 或有功能建议，欢迎通过邮件或微信联系：
         </p>
         <p className="mt-2 flex items-center gap-1.5 text-sm text-[hsl(var(--accent))]">
           <Mail size={14} />
           neowong2005@gmail.com
         </p>
+        <div className="mt-4 flex items-start gap-6">
+          <div className="text-center">
+            <img src="/weixin.png" alt="微信二维码" className="h-36 w-36 rounded-lg border border-[hsl(var(--border))] object-contain" />
+            <p className="mt-2 text-xs text-[hsl(var(--text-tertiary))]">扫码添加微信</p>
+          </div>
+        </div>
       </Card>
     </div>
   );
