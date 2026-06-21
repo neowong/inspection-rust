@@ -218,8 +218,27 @@ fn ensure_webview2_runtime_with_log() {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 超早期调试：写到临时目录
+    {
+        let temp = std::env::temp_dir().join("inspection-debug.log");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp)
+            .and_then(|mut f| { use std::io::Write; writeln!(f, "[{}] run() 开始", ts) });
+    }
+
     startup_log("=== 程序启动 ===");
+
+    // 调试：记录到临时文件
+    let debug_log = |msg: &str| {
+        let temp = std::env::temp_dir().join("inspection-debug.log");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp)
+            .and_then(|mut f| { use std::io::Write; writeln!(f, "[{}] {}", ts, msg) });
+    };
+
+    debug_log("开始检查 WebView2...");
     ensure_webview2_runtime_with_log();
+    debug_log("WebView2 检查完成");
     startup_log("WebView2 检查通过，继续启动...");
 
     let exe_dir = std::env::current_exe()
@@ -301,6 +320,7 @@ pub fn run() {
     });
 
     startup_log("注册插件和命令...");
+    debug_log("准备创建 Tauri Builder...");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
