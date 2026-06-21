@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Server, Wifi, WifiOff, FileText, Zap, Package, Clock, CheckCircle2,
-  Monitor, HardDrive, Database, FileCheck,
+  Monitor, ShieldCheck, HardDrive, Database, FileCheck,
 } from "lucide-react";
 import type { Stats } from "../types";
 
@@ -24,8 +24,9 @@ const SUMMARY: StatCard[] = [
 
 const DEVICE_TYPES: StatCard[] = [
   { label: "网络设备", key: "network_device_count", color: "accent", Icon: Monitor, path: "/devices" },
+  { label: "安全设备", key: "security_device_count", color: "warning", Icon: ShieldCheck, path: "/devices" },
   { label: "服务器", key: "server_count", color: "success", Icon: HardDrive, path: "/devices" },
-  { label: "数据库", key: "database_count", color: "warning", Icon: Database, path: "/devices" },
+  { label: "数据库", key: "database_count", color: "accent", Icon: Database, path: "/devices" },
 ];
 
 const DETAILS: StatCard[] = [
@@ -116,7 +117,7 @@ export default function DashboardPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--text-tertiary))] mb-3">
           设备分类
         </h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {DEVICE_TYPES.map((card) => <SmallCard key={card.key} card={card} value={val(card.key)} />)}
         </div>
       </div>

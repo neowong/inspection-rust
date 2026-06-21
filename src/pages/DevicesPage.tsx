@@ -377,7 +377,8 @@ export default function DevicesPage() {
           onChange={(e) => setTypeFilter(e.target.value)}
         >
           <option value="">全部类型</option>
-          <option value="switch,router,firewall,loadbalancer">网络设备</option>
+          <option value="switch,router">网络设备</option>
+          <option value="firewall,loadbalancer">安全设备</option>
           <option value="server">服务器</option>
           <option value="database">数据库</option>
         </Select>

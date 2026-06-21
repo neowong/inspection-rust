@@ -275,7 +275,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
     // 合并为单次查询，减少锁内 prepare/往返开销
     let (device_count, online_count, offline_count, template_count, command_count,
          batch_count, pending_batch_count, completed_batch_count,
-         network_device_count, server_count, database_count, report_count) = db
+         network_device_count, security_device_count, server_count, database_count, report_count) = db
         .query_row(
             "SELECT \
                 (SELECT COUNT(*) FROM devices), \
@@ -286,7 +286,8 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                 (SELECT COUNT(*) FROM inspection_batches), \
                 (SELECT COUNT(*) FROM inspection_batches WHERE status='pending'), \
                 (SELECT COUNT(*) FROM inspection_batches WHERE status='completed'), \
-                (SELECT COUNT(*) FROM devices WHERE device_type IN ('switch','router','firewall','loadbalancer')), \
+                (SELECT COUNT(*) FROM devices WHERE device_type IN ('switch','router')), \
+                (SELECT COUNT(*) FROM devices WHERE device_type IN ('firewall','loadbalancer')), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'server'), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'database'), \
                 (SELECT COUNT(*) FROM inspection_records WHERE report_path IS NOT NULL)",
@@ -305,10 +306,11 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                     r.get::<_, i64>(9)?,
                     r.get::<_, i64>(10)?,
                     r.get::<_, i64>(11)?,
+                    r.get::<_, i64>(12)?,
                 ))
             },
         )
-        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
 
     Ok(serde_json::json!({
         "device_count": device_count,
@@ -320,6 +322,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
         "pending_batch_count": pending_batch_count,
         "completed_batch_count": completed_batch_count,
         "network_device_count": network_device_count,
+        "security_device_count": security_device_count,
         "server_count": server_count,
         "database_count": database_count,
         "report_count": report_count,
