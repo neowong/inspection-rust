@@ -37,53 +37,66 @@ impl AppState {
 
 #[cfg(target_os = "windows")]
 fn ensure_webview2_runtime() {
-    // Check if WebView2 Runtime is already installed
     if is_webview2_installed() {
         return;
     }
+
+    tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
 
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    tracing::info!("WebView2 Runtime 未检测到，开始自动安装...");
-
-    // Extract the bootstrapper from the binary
     let setup_path = exe_dir.join("MicrosoftEdgeWebview2Setup.exe");
-    if let Err(e) = std::fs::write(
-        &setup_path,
-        include_bytes!("../MicrosoftEdgeWebview2Setup.exe"),
-    ) {
-        tracing::warn!("无法写入 WebView2 安装程序: {}", e);
-        return;
+
+    // 尝试从嵌入资源释放安装程序
+    if std::fs::write(&setup_path, include_bytes!("../MicrosoftEdgeWebview2Setup.exe")).is_err() {
+        // 嵌入失败，尝试从安装目录读取（bundle.resources 释放的文件）
+        if !setup_path.exists() {
+            show_webview2_error_and_exit();
+            return;
+        }
     }
 
-    // Run silent install (idempotent — exits fast if already installed)
-    match std::process::Command::new(&setup_path)
+    // 静默安装
+    let install_ok = match std::process::Command::new(&setup_path)
         .args(["/silent", "/install"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
     {
         Ok(mut child) => match child.wait() {
-            Ok(status) if status.success() => {
-                tracing::info!("WebView2 Runtime 安装成功");
-            }
-            Ok(_) => {
-                tracing::warn!("WebView2 Runtime 安装器返回非零退出码，继续启动...");
-            }
-            Err(e) => {
-                tracing::warn!("WebView2 Runtime 安装等待失败: {}，继续启动...", e);
-            }
+            Ok(status) => status.success(),
+            Err(_) => false,
         },
-        Err(e) => {
-            tracing::warn!("无法启动 WebView2 安装程序: {}，请手动从 https://go.microsoft.com/fwlink/p/?LinkId=2124703 下载安装", e);
-        }
+        Err(_) => false,
+    };
+
+    let _ = std::fs::remove_file(&setup_path);
+
+    // 安装后再次检测
+    if !install_ok || !is_webview2_installed() {
+        show_webview2_error_and_exit();
     }
 
-    // Clean up the bootstrapper file
-    let _ = std::fs::remove_file(&setup_path);
+    tracing::info!("WebView2 Runtime 安装成功");
+}
+
+#[cfg(target_os = "windows")]
+fn show_webview2_error_and_exit() {
+    // 直接调用 user32.dll 的 MessageBoxW，不依赖任何额外 crate
+    extern "system" {
+        fn MessageBoxW(hWnd: *const core::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
+    }
+    let msg: Vec<u16> = "本程序需要 Microsoft Edge WebView2 Runtime 才能运行。\n\n\
+        自动安装失败，请手动下载安装：\n\
+        https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n\
+        安装后重新启动本程序。"
+        .encode_utf16().chain(std::iter::once(0)).collect();
+    let title: Vec<u16> = "AI巡检助手".encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe { MessageBoxW(std::ptr::null(), msg.as_ptr(), title.as_ptr(), 0x10); }
+    std::process::exit(1);
 }
 
 #[cfg(target_os = "windows")]
