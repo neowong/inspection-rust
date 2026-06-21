@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Server, Wifi, WifiOff, FileText, Zap, Package, Clock, CheckCircle2,
-  Monitor, ShieldCheck, HardDrive, Database, FileCheck, ArrowRight,
+  Monitor, Wifi, WifiOff, FileText, Zap, Package, Clock, CheckCircle2,
+  Server, Router, ShieldCheck, Database, FileCheck, ArrowRight,
 } from "lucide-react";
 import type { Stats } from "../types";
 
@@ -79,7 +79,7 @@ export default function DashboardPage() {
 
       {/* 核心指标 */}
       <div className="grid grid-cols-4 gap-4">
-        <SummaryCard label="设备总数" value={v("device_count")} icon={Server} color="accent" onClick={() => navigate("/devices")} />
+        <SummaryCard label="设备总数" value={v("device_count")} icon={Monitor} color="accent" onClick={() => navigate("/devices")} />
         <SummaryCard label="在线设备" value={v("online_device_count")} icon={Wifi} color="success" onClick={() => navigate("/devices")} />
         <SummaryCard label="离线设备" value={v("offline_device_count")} icon={WifiOff} color="danger" muted={v("offline_device_count") === "0"} onClick={() => navigate("/devices")} />
         <SummaryCard label="报告总数" value={v("report_count")} icon={FileCheck} color="accent" onClick={() => navigate("/reports")} />
@@ -88,9 +88,9 @@ export default function DashboardPage() {
       {/* 下方两列 */}
       <div className="grid grid-cols-2 gap-4">
         <Section title="设备分类">
-          <StatRow label="网络设备" value={v("network_device_count")} icon={Monitor} color="accent" onClick={() => navigate("/devices")} />
+          <StatRow label="网络设备" value={v("network_device_count")} icon={Router} color="accent" onClick={() => navigate("/devices")} />
           <StatRow label="安全设备" value={v("security_device_count")} icon={ShieldCheck} color="warning" onClick={() => navigate("/devices")} />
-          <StatRow label="服务器" value={v("server_count")} icon={HardDrive} color="success" onClick={() => navigate("/devices")} />
+          <StatRow label="服务器" value={v("server_count")} icon={Server} color="success" onClick={() => navigate("/devices")} />
           <StatRow label="数据库" value={v("database_count")} icon={Database} color="accent" onClick={() => navigate("/devices")} />
         </Section>
 
