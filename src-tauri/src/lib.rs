@@ -497,7 +497,8 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                 (SELECT COUNT(*) FROM devices WHERE device_type IN ('firewall','loadbalancer')), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'server'), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'database'), \
-                (SELECT COUNT(*) FROM inspection_records WHERE report_path IS NOT NULL)",
+                ((SELECT COUNT(*) FROM inspection_records WHERE report_path IS NOT NULL AND report_path != '') \
+               + (SELECT COUNT(*) FROM inspection_batches WHERE combined_report_path IS NOT NULL AND combined_report_path != ''))",
             [],
             |r| {
                 Ok((
