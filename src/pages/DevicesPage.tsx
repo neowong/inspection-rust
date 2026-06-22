@@ -590,8 +590,12 @@ export default function DevicesPage() {
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
                 <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
               </div>
-              {form.device_type === "server" && (
-                <div className="grid grid-cols-2 gap-3">
+              {/* ── 操作系统信息（服务器 & 数据库共用） ── */}
+              {(form.device_type === "server" || form.device_type === "database") && (
+                <>
+                  <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
+                    <p className="text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-2">操作系统信息</p>
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
                     <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
@@ -600,20 +604,27 @@ export default function DevicesPage() {
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
                     <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
                   </div>
-                </div>
+                </>
               )}
+              {/* ── 数据库专属信息 ── */}
               {form.device_type === "database" && (
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
-                  <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
-                    <option value="">未知</option>
-                    <option value="direct">物理机 / 包安装</option>
-                    <option value="docker">Docker 容器</option>
-                    <option value="podman">Podman 容器</option>
-                    <option value="k8s">Kubernetes</option>
-                  </Select>
+                <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
+                  <p className="text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-2">数据库信息</p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
+                      <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                        <option value="">未知</option>
+                        <option value="direct">物理机 / 包安装</option>
+                        <option value="docker">Docker 容器</option>
+                        <option value="podman">Podman 容器</option>
+                        <option value="k8s">Kubernetes</option>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
               )}
+              {/* ── 网络/安全设备信息 ── */}
               {form.device_type !== "server" && form.device_type !== "database" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
