@@ -43,7 +43,7 @@ const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
-  deployment: "", db_version: "", instance_name: "", db_username: "", db_password: "",
+  deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "",
 };
 
 export default function DevicesPage() {
@@ -138,7 +138,7 @@ export default function DevicesPage() {
       sysname: d.sysname || "",
       cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
-      deployment: (d as any).deployment || "",
+      deployment: (d as any).deployment || "direct",
       db_version: (d as any).db_version || "",
       instance_name: (d as any).instance_name || "",
       db_username: (d as any).db_username || "",
