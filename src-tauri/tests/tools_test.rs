@@ -37,21 +37,20 @@ mod tools_tests {
 
     #[test]
     fn test_cidr_parsing_live_scanner() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
         // /30 subnet should produce 2 host IPs
-        let result = rt.block_on(services::live_scanner::scan_subnet("192.168.1.0/30", 100));
+        let result = services::live_scanner::parse_cidr("192.168.1.0/30");
         assert!(result.is_ok());
-        let ips: Vec<_> = result.unwrap().into_iter().map(|r| r.ip).collect();
+        let ips: Vec<String> = result.unwrap().into_iter().map(|ip| ip.to_string()).collect();
         assert_eq!(ips, vec!["192.168.1.1", "192.168.1.2"]);
 
         // /32 should produce 1 IP
-        let result = rt.block_on(services::live_scanner::scan_subnet("10.0.0.1/32", 100));
+        let result = services::live_scanner::parse_cidr("10.0.0.1/32");
         assert!(result.is_ok());
-        let ips: Vec<_> = result.unwrap().into_iter().map(|r| r.ip).collect();
+        let ips: Vec<String> = result.unwrap().into_iter().map(|ip| ip.to_string()).collect();
         assert_eq!(ips, vec!["10.0.0.1"]);
 
         // Invalid CIDR
-        let result = rt.block_on(services::live_scanner::scan_subnet("not-a-cidr", 100));
+        let result = services::live_scanner::parse_cidr("not-a-cidr");
         assert!(result.is_err());
     }
 
