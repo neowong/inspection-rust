@@ -747,6 +747,21 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 25: {}", e))?;
     }
 
+    // ── v26: devices 增加 deployment 字段（数据库部署方式） ──
+    if version < 26 {
+        let has: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'deployment'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN deployment TEXT DEFAULT '';")
+                .map_err(|e| format!("migration 26: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 26;")
+            .map_err(|e| format!("migration 26: {}", e))?;
+    }
+
     Ok(())
 }
 

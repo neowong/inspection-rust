@@ -32,12 +32,14 @@ interface DeviceForm {
   sysname: string;
   cpu_cores: string;
   memory_gb: string;
+  deployment: string;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
+  deployment: "",
 };
 
 export default function DevicesPage() {
@@ -132,6 +134,7 @@ export default function DevicesPage() {
       sysname: d.sysname || "",
       cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
+      deployment: (d as any).deployment || "",
     });
     setModalOpen(true);
   };
@@ -159,6 +162,7 @@ export default function DevicesPage() {
     if (form.sysname) data.sysname = form.sysname;
     if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
     if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
+    if (form.deployment) data.deployment = form.deployment;
 
     setSaving(true);
     setSaveError(null);
@@ -596,6 +600,18 @@ export default function DevicesPage() {
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
                     <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
                   </div>
+                </div>
+              )}
+              {form.device_type === "database" && (
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
+                  <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                    <option value="">未知</option>
+                    <option value="direct">物理机 / 包安装</option>
+                    <option value="docker">Docker 容器</option>
+                    <option value="podman">Podman 容器</option>
+                    <option value="k8s">Kubernetes</option>
+                  </Select>
                 </div>
               )}
               {form.device_type !== "server" && form.device_type !== "database" && (
