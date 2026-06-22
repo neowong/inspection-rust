@@ -568,6 +568,26 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 22: {}", e))?;
     }
 
+    // ── v23: 修正华为模板名称 → 遥遥领先专用模板 ──
+    if version < 23 {
+        // 若目标名已存在（v22 已插入），则删除旧名的；否则直接改名
+        let target_exists: i64 = conn
+            .prepare("SELECT COUNT(*) FROM report_templates WHERE name = '遥遥领先专用模板'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get(0)))
+            .unwrap_or(0);
+        if target_exists > 0 {
+            // 新名已存在 → 删掉旧名记录
+            conn.execute("DELETE FROM report_templates WHERE name = '华为 专用模板'", [])?;
+            conn.execute("DELETE FROM report_templates WHERE name = '华为 遥遥领先专用模板'", [])?;
+        } else {
+            // 新名不存在 → 直接改名
+            conn.execute("UPDATE report_templates SET name = '遥遥领先专用模板' WHERE name = '华为 专用模板'", [])?;
+            conn.execute("UPDATE report_templates SET name = '遥遥领先专用模板' WHERE name = '华为 遥遥领先专用模板'", [])?;
+        }
+        conn.execute_batch("PRAGMA user_version = 23;")
+            .map_err(|e| format!("migration 23: {}", e))?;
+    }
+
     Ok(())
 }
 
