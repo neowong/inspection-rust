@@ -493,7 +493,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         let builtin_reports: &[(&str, &str, &str, &str)] = &[
             ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板"),
             ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板"),
-            ("华为 专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板"),
+            ("华为 遥遥领先专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板"),
             ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板"),
         ];
 
