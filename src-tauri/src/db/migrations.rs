@@ -651,6 +651,93 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 24: {}", e))?;
     }
 
+    // ── v25: 补全所有 Linux 发行版模板的缺失字段 ──
+    if version < 25 {
+        let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux"];
+        let server_fields: Vec<(&str, &str)> = vec![
+            ("os_release", "发行版"),
+            ("cpu_cores",  "CPU 核心"),
+            ("memory_gb",  "内存(GB)"),
+            ("model",      "设备型号"),
+            ("sn",         "序列号"),
+            ("mfg_date",   "出厂日期"),
+            ("sysname",    "主机名"),
+        ];
+
+        for vendor in &linux_vendors {
+            // 找出该厂商下缺少服务器字段的模板
+            let mut stmt = conn
+                .prepare("SELECT id, config_json FROM report_templates WHERE vendor = ?1 AND config_json NOT LIKE '%os_release%'")
+                .map_err(|e| format!("v25 prepare: {}", e))?;
+            let rows: Vec<(i64, String)> = stmt
+                .query_map(rusqlite::params![vendor], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(|e| format!("v25 query: {}", e))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            for (id, cfg_str) in rows {
+                if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
+                    if let Some(fields) = cfg["device_info"]["fields"].as_array_mut() {
+                        let existing_keys: Vec<String> = fields
+                            .iter()
+                            .filter_map(|f| f["key"].as_str().map(String::from))
+                            .collect();
+                        for (key, label) in &server_fields {
+                            if !existing_keys.iter().any(|k| k == key) {
+                                fields.push(serde_json::json!({"key": key, "label": label, "visible": false}));
+                            }
+                        }
+                        let new_str = serde_json::to_string(&cfg).unwrap_or_default();
+                        conn.execute("UPDATE report_templates SET config_json = ?1 WHERE id = ?2",
+                            rusqlite::params![new_str, id])?;
+                        tracing::info!("v25: 模板 id={} vendor={} 补全服务器字段", id, vendor);
+                    }
+                }
+            }
+        }
+
+        // 同样处理数据库模板：补全宿主机物理机字段
+        let db_vendors = ["MySQL","PostgreSQL","Oracle","SQL Server","达梦"];
+        let db_host_fields: Vec<(&str, &str)> = vec![
+            ("model",      "宿主机 型号"),
+            ("sn",         "宿主机 序列号"),
+            ("mfg_date",   "宿主机 出厂日期"),
+            ("sysname",    "宿主机 主机名"),
+        ];
+        for vendor in &db_vendors {
+            let mut stmt = conn
+                .prepare("SELECT id, config_json FROM report_templates WHERE vendor = ?1 AND config_json NOT LIKE '%宿主机 型号%'")
+                .map_err(|e| format!("v25 db prepare: {}", e))?;
+            let rows: Vec<(i64, String)> = stmt
+                .query_map(rusqlite::params![vendor], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(|e| format!("v25 db query: {}", e))?
+                .filter_map(|r| r.ok())
+                .collect();
+            for (id, cfg_str) in rows {
+                if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
+                    if let Some(fields) = cfg["device_info"]["fields"].as_array_mut() {
+                        let existing_keys: Vec<String> = fields
+                            .iter()
+                            .filter_map(|f| f["key"].as_str().map(String::from))
+                            .collect();
+                        for (key, label) in &db_host_fields {
+                            if !existing_keys.iter().any(|k| k == key) {
+                                fields.push(serde_json::json!({"key": key, "label": label, "visible": false}));
+                            }
+                        }
+                        let new_str = serde_json::to_string(&cfg).unwrap_or_default();
+                        conn.execute("UPDATE report_templates SET config_json = ?1 WHERE id = ?2",
+                            rusqlite::params![new_str, id])?;
+                        tracing::info!("v25: 数据库模板 id={} 补全宿主机物理字段", id);
+                    }
+                }
+            }
+        }
+
+        conn.execute_batch("PRAGMA user_version = 25;")
+            .map_err(|e| format!("migration 25: {}", e))?;
+    }
+
     Ok(())
 }
 
