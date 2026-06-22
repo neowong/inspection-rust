@@ -98,15 +98,7 @@ pub struct DeviceUpdate {
 // ============================
 // 设备状态日志 (Device Status Logs)
 // ============================
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeviceStatusLog {
-    pub id: i64,
-    pub device_id: i64,
-    pub old_status: Option<String>,
-    pub new_status: String,
-    pub checked_at: String,
-}
+// 注：device_status_logs 表由 lib.rs 后台轮询写入，从不读出为 struct，故无对应模型。
 
 // ============================
 // 巡检模板 (Inspection Templates)
@@ -390,16 +382,6 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         kernel_version: row.get(25)?,
         created_at: row.get(26)?,
         updated_at: row.get(27)?,
-    })
-}
-
-pub fn status_log_from_row(row: &rusqlite::Row) -> rusqlite::Result<DeviceStatusLog> {
-    Ok(DeviceStatusLog {
-        id: row.get(0)?,
-        device_id: row.get(1)?,
-        old_status: row.get(2)?,
-        new_status: row.get(3)?,
-        checked_at: row.get(4)?,
     })
 }
 

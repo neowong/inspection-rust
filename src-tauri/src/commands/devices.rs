@@ -1154,6 +1154,7 @@ fn detect_db_info_sync(
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
     // ── MySQL / MariaDB 数据库命令 ──
+    // 全部存裸命令，由下方 wrap_cmd 统一包装（避免预包装+跳过的条件不一致 bug）
     let mut db_cmds: Vec<(String, String)> = Vec::new(); // (label, raw_cmd)
 
     if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
@@ -1168,19 +1169,8 @@ fn detect_db_info_sync(
             args
         };
         let auth_str = mysql_auth.join(" ");
-        let mysql_cmd = format!("mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str);
-
-        if is_container {
-            // 容器部署：通过退出码区分"容器不存在"与"客户端未安装"
-            // 退出码 127 = command not found (容器在但无 mysql)
-            // 其他非0 = 容器未运行/不存在
-            let cname = if instance_name.is_empty() { device_name } else { instance_name };
-            db_cmds.push(("db_detail".to_string(), format!(
-                "{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
-                runtime, cname, mysql_cmd.replace('"', "\\\""))));
-        } else {
-            db_cmds.push(("db_detail".to_string(), mysql_cmd));
-        }
+        db_cmds.push(("db_detail".to_string(), format!(
+            "mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str)));
     } else if vendor_lower.contains("postgres") {
         db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         if !db_username.is_empty() {
@@ -1228,13 +1218,7 @@ fn detect_db_info_sync(
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
     for (_, raw_cmd) in &db_cmds {
-        // MySQL 容器命令已在上面预包装（docker exec），其余通过 wrap_cmd 统一处理
-        let is_mysql = vendor_lower.contains("mysql") || vendor_lower.contains("mariadb");
-        if (is_container || is_k8s) && is_mysql {
-            commands.push(raw_cmd.clone());
-        } else {
-            commands.push(wrap_cmd(raw_cmd));
-        }
+        commands.push(wrap_cmd(raw_cmd));
     }
 
     let mut needs_root_map = HashMap::new();
@@ -1304,65 +1288,15 @@ fn detect_db_info_sync(
         }
     }
 
-    // 诊断具体失败原因
-    let mut db_error: Option<String> = None;
-    for (_label, raw_cmd) in &db_cmds {
-        let key = if is_container && (vendor_lower.contains("mysql") || vendor_lower.contains("mariadb")) {
-            raw_cmd.clone() // MySQL 容器命令已完整包装
-        } else {
-            wrap_cmd(raw_cmd)
-        };
-        if let Some(output) = outputs.get(&key) {
-            let trimmed = output.trim();
-            if trimmed.is_empty() { continue; }
-            if trimmed.contains("Access denied") {
-                db_error = Some(format!("数据库密码错误（用户: {}）", db_username));
-                break;
-            }
-            if trimmed.contains("client_not_found") {
-                db_error = Some(format!("容器内未安装 mysql 客户端：请在容器 '{}' 内安装 mysql-client", if instance_name.is_empty() { device_name } else { instance_name }));
-                break;
-            }
-            if trimmed.contains("container_not_found") {
-                db_error = Some(format!("容器 '{}' 未运行或名称错误，请确认容器名正确", if instance_name.is_empty() { device_name } else { instance_name }));
-                break;
-            }
-            if trimmed.contains("command not found") || trimmed.contains("No such file") {
-                db_error = Some("mysql 客户端未安装".to_string());
-                break;
-            }
-            if trimmed.starts_with("ERROR ") {
-                db_error = Some(trimmed.lines().next().unwrap_or(trimmed).to_string());
-                break;
-            }
-        }
-    }
-
-    // 附加警告到结果
-    if let Some(ref warn) = db_error {
-        info.insert("_warn".to_string(), serde_json::Value::String(warn.clone()));
-    } else if !info.contains_key("db_version") && is_container {
-        info.insert("_warn".to_string(), serde_json::Value::String(
-            format!("数据库版本获取失败：请确认容器名 '{}' 正确且密码无误", if instance_name.is_empty() { device_name } else { instance_name })
-        ));
-    } else if !info.contains_key("db_version") {
-        info.insert("_warn".to_string(), serde_json::Value::String(
-            "数据库版本获取失败：请确认客户端已安装且密码正确".to_string()
-        ));
-    }
-
     // ── 数据库信息解析 ──
     for (label, raw_cmd) in &db_cmds {
-        let key = if is_container && (vendor_lower.contains("mysql") || vendor_lower.contains("mariadb")) {
-            raw_cmd.clone()
-        } else {
-            wrap_cmd(raw_cmd)
-        };
+        let key = wrap_cmd(raw_cmd);
         if let Some(output) = outputs.get(&key) {
             let trimmed = output.trim();
             if trimmed.is_empty()
                 || trimmed.contains("container_not_found")
                 || trimmed.contains("k8s_pod_not_found")
+                || trimmed.contains("client_not_found")
                 || trimmed.contains("unknown_db_vendor")
                 || trimmed.contains("command not found")
                 || trimmed.contains("No such file")
@@ -1398,6 +1332,56 @@ fn detect_db_info_sync(
                 _ => {}
             }
         }
+    }
+
+    // ── 诊断失败原因（必须在 db_version 解析之后，才能正确判断是否真的缺失）──
+    let has_db_result = info.contains_key("db_version");
+    let mut db_error: Option<String> = None;
+    if !has_db_result {
+        for (_label, raw_cmd) in &db_cmds {
+            let key = wrap_cmd(raw_cmd);
+            if let Some(output) = outputs.get(&key) {
+                let trimmed = output.trim();
+                if trimmed.is_empty() { continue; }
+                if trimmed.contains("Access denied") {
+                    db_error = Some(format!("数据库密码错误（用户: {}）", db_username));
+                    break;
+                }
+                if trimmed.contains("client_not_found") {
+                    db_error = Some(format!("容器内未安装 mysql 客户端：请在容器 '{}' 内安装 mysql-client", if instance_name.is_empty() { device_name } else { instance_name }));
+                    break;
+                }
+                if trimmed.contains("container_not_found") {
+                    db_error = Some(format!("容器 '{}' 未运行或名称错误，请确认容器名正确", if instance_name.is_empty() { device_name } else { instance_name }));
+                    break;
+                }
+                if trimmed.contains("k8s_pod_not_found") {
+                    db_error = Some(format!("K8s Pod '{}' 未运行或名称错误", if instance_name.is_empty() { device_name } else { instance_name }));
+                    break;
+                }
+                if trimmed.contains("command not found") || trimmed.contains("No such file") {
+                    db_error = Some("mysql 客户端未安装".to_string());
+                    break;
+                }
+                if trimmed.starts_with("ERROR ") {
+                    db_error = Some(trimmed.lines().next().unwrap_or(trimmed).to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    // 附加警告到结果
+    if let Some(ref warn) = db_error {
+        info.insert("_warn".to_string(), serde_json::Value::String(warn.clone()));
+    } else if !has_db_result && (is_container || is_k8s) {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            format!("数据库版本获取失败：请确认容器名 '{}' 正确且密码无误", if instance_name.is_empty() { device_name } else { instance_name })
+        ));
+    } else if !has_db_result {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            "数据库版本获取失败：请确认客户端已安装且密码正确".to_string()
+        ));
     }
 
     if info.is_empty() {

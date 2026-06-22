@@ -478,7 +478,7 @@ function PortScanner() {
   const [scanType, setScanType] = useState<ScanType>("tcp");
   const [ip, setIp] = useState("192.168.1.1");
   const [ports, setPorts] = useState("5000");
-  const [timeout, setTimeout_] = useState(scanType === "udp" ? "3000" : "2000");
+  const [timeout, setTimeout_] = useState("2000");
   const [scanning, setScanning] = useState(false);
   const [tcpResults, setTcpResults] = useState<PortScanResult[] | null>(null);
   const [udpResults, setUdpResults] = useState<UdpPortResult[] | null>(null);

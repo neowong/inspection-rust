@@ -871,7 +871,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
                      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
                  );
-                 INSERT INTO devices_new SELECT * FROM devices;
+                 INSERT INTO devices_new (id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, auth_status, auth_message, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version, created_at, updated_at) SELECT id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, auth_status, auth_message, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version, created_at, updated_at FROM devices;
                  DROP TABLE devices;
                  ALTER TABLE devices_new RENAME TO devices;
                  CREATE INDEX IF NOT EXISTS idx_devices_vendor      ON devices(vendor);

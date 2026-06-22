@@ -16,7 +16,7 @@ import AuthBadge from "../components/AuthBadge";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
-const DB_VENDORS = ["MySQL", "PostgreSQL", "Oracle", "SQL Server", "Redis", "MongoDB", "其它"];
+const DB_VENDORS = ["MySQL", "PostgreSQL", "Oracle", "SQL Server", "达梦", "Redis", "MongoDB", "其它"];
 
 interface DeviceForm {
   name: string;
@@ -144,19 +144,19 @@ export default function DevicesPage() {
       sysname: d.sysname || "",
       cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
-      kernel_version: (d as any).kernel_version || "",
+      kernel_version: d.kernel_version || "",
       serial_number: d.serial_number || "",
       manufacturing_date: d.manufacturing_date || "",
       ssh_username: d.ssh_username || "",
       ssh_password: "",
       ssh_port: d.ssh_port,
       template_id: d.template_id,
-      deployment: (d as any).deployment || "direct",
-      db_version: (d as any).db_version || "",
-      instance_name: (d as any).instance_name || "",
-      db_username: (d as any).db_username || "",
+      deployment: d.deployment || "direct",
+      db_version: d.db_version || "",
+      instance_name: d.instance_name || "",
+      db_username: d.db_username || "",
       db_password: "",
-      db_port: (d as any).db_port || 3306,
+      db_port: d.db_port || 3306,
     });
     setModalOpen(true);
   };
@@ -184,11 +184,11 @@ export default function DevicesPage() {
       ssh_password: "",
       ssh_port: d.ssh_port,
       template_id: d.template_id,
-      deployment: (d as any).deployment || "direct",
-      instance_name: (d as any).instance_name || "",
-      db_username: (d as any).db_username || "",
+      deployment: d.deployment || "direct",
+      instance_name: d.instance_name || "",
+      db_username: d.db_username || "",
       db_password: "",
-      db_port: (d as any).db_port || 3306,
+      db_port: d.db_port || 3306,
     });
     setModalOpen(true);
   };

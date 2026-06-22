@@ -19,7 +19,6 @@ pub struct ReportCoverContext {
     pub project_name: String,
     pub inspection_date: String,
     pub inspector: String,
-    pub show_device_name: bool,
 }
 
 // ----------------------------------------------------------------
@@ -292,7 +291,7 @@ fn replace_simple_vars(template: &str, vars: &HashMap<&str, String>) -> String {
 fn build_cover(
     mut docx: Docx,
     config: &ReportTemplateConfig,
-    device: Option<&Device>,
+    _device: Option<&Device>,
     cover: &ReportCoverContext,
 ) -> Docx {
     let color = config
@@ -319,21 +318,6 @@ fn build_cover(
                 .fonts(zh_fonts()),
         ),
     );
-
-    if cover.show_device_name {
-        if let Some(device) = device {
-            docx = docx.add_paragraph(Paragraph::new());
-            docx = docx.add_paragraph(
-                Paragraph::new().align(AlignmentType::Center).add_run(
-                    Run::new()
-                        .add_text(format!("设备：{}", device.name))
-                        .size(28)
-                        .color("595959")
-                        .fonts(zh_fonts()),
-                ),
-            );
-        }
-    }
 
     for _ in 0..7 {
         docx = docx.add_paragraph(Paragraph::new());
@@ -434,7 +418,6 @@ fn single_device_cover_context(device: &Device, record: &InspectionRecord) -> Re
         project_name: device.name.clone(),
         inspection_date: inspection_date(record),
         inspector: "运维人员".to_string(),
-        show_device_name: false,
     }
 }
 
@@ -795,8 +778,7 @@ fn build_command_table(
 
     let mut rows = vec![header_row(header_cells)];
 
-    // command_outputs 已由 inspect_one_device 的 visible_outputs 按 show_in_report 过滤，
-    // static_info 命令（show_in_report=false）不会进入此处，无需再用命令文本猜测过滤。
+    // command_outputs 包含该设备模板里的全部巡检命令输出（静态信息采集已独立于模板运行）
     let outputs: Vec<(String, String)> = parse_json_map(&record.command_outputs)
         .into_iter()
         .collect();
@@ -1155,20 +1137,14 @@ fn combine_judgment(status: &str, finding: &str, suggestion: &str) -> String {
 
 /// 推断设备 CLI 提示符：优先使用设备表保存的真实 sysname。
 /// 取不到时才退回 device.name / device.ip。
-fn device_prompt(device: &Device, record: &InspectionRecord) -> String {
-    let record_sysname = parse_static_info(&record.static_info).and_then(|m| {
-        m.get("sysname")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-    });
-    let hostname = record_sysname
-        .or_else(|| {
-            device
-                .sysname
-                .as_ref()
-                .filter(|s| !s.trim().is_empty())
-                .cloned()
-        })
+fn device_prompt(device: &Device, _record: &InspectionRecord) -> String {
+    // 静态信息已改由 devices 表的 detect_static_info_if_missing 写入，record.static_info 恒为 "{}"，
+    // 故 sysname 直接取 device.sysname（巡检快照）。
+    let hostname = device
+        .sysname
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .cloned()
         .unwrap_or_else(|| {
             if !device.name.is_empty() {
                 device.name.clone()
@@ -1198,14 +1174,6 @@ fn device_prompt(device: &Device, record: &InspectionRecord) -> String {
         }
         _ => format!("<{}>", hostname),
     }
-}
-
-fn parse_static_info(json: &Option<String>) -> Option<serde_json::Map<String, serde_json::Value>> {
-    let s = json.as_deref()?;
-    serde_json::from_str::<serde_json::Value>(s)
-        .ok()?
-        .as_object()
-        .cloned()
 }
 
 /// 在 docx-rs 生成的 settings.xml 中注入 <w:updateFields w:val="true"/>，

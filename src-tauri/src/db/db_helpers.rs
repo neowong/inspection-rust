@@ -40,11 +40,6 @@ impl DynamicUpdate {
         self.idx += 1;
     }
 
-    /// 返回当前参数索引（用于构建 WHERE 子句）
-    pub fn next_idx(&self) -> i32 {
-        self.idx
-    }
-
     /// 返回 (SET 子句列表, 参数列表)
     pub fn finish(self) -> (Vec<String>, Vec<Box<dyn ToSql>>) {
         (self.set_parts, self.params)

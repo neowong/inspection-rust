@@ -44,19 +44,12 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [statusMsg, setStatusMsg] = useState("就绪");
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
 
   const activeKey = useMemo(
     () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? null,
     [location.pathname]
   );
-
-  useEffect(() => {
-    const handler = (e: Event) => setStatusMsg((e as CustomEvent).detail);
-    window.addEventListener("statusbar-message", handler);
-    return () => window.removeEventListener("statusbar-message", handler);
-  }, []);
 
   // 临时提示标签：8 秒后自动消失，level 决定颜色
   useEffect(() => {
@@ -169,7 +162,7 @@ export default function AppShell() {
       >
         <span className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full shadow-sm" style={{ backgroundColor: "hsl(var(--success))" }} />
-          {statusMsg}
+          就绪
         </span>
         {hint && (
           <span

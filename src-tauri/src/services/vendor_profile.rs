@@ -12,19 +12,9 @@ pub enum ExecMode {
     Exec,
 }
 
-/// sudo 提权模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SudoMode {
-    /// 不需要提权
-    None,
-    /// 通过 stdin 写入 sudo 密码（sudo -S）
-    PipePassword,
-}
-
 /// 厂商行为配置
 pub struct VendorProfile {
     pub exec_mode: ExecMode,
-    pub sudo_mode: SudoMode,
 }
 
 /// 根据厂商名称获取对应的 VendorProfile
@@ -36,12 +26,10 @@ pub fn get_profile(vendor: &str) -> VendorProfile {
         "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux" => {
             VendorProfile {
                 exec_mode: ExecMode::Exec,
-                sudo_mode: SudoMode::PipePassword,
             }
         }
         _ => VendorProfile {
             exec_mode: ExecMode::Shell,
-            sudo_mode: SudoMode::None,
         },
     }
 }

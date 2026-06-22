@@ -267,10 +267,8 @@ fn finalize_batch_status(conn: &rusqlite::Connection, batch_id: i64) -> Result<(
         "failed"
     } else if stopped > 0 && failed == 0 && completed == 0 {
         "stopped"
-    } else if stopped > 0 && failed == 0 {
-        // 有 completed 和 stopped → 部分完成
-        "partially_completed"
     } else {
+        // 有 completed 或 failed 混合 → 部分完成
         "partially_completed"
     };
 

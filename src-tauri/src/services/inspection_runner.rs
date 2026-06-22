@@ -182,7 +182,7 @@ pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
                 return Err(default_err);
             }
             // TCP 连接失败不触发旧算法回退——端口不通换算法没用，只会再等 10s
-            if default_err.contains("TCP连接失败") || default_err.contains("connection timed out") {
+            if default_err.contains("TCP连接失败") {
                 tracing::warn!(
                     "SSH TCP 连接失败 [{}:{}]: {}，跳过旧算法回退",
                     source.host, source.port, default_err

@@ -48,7 +48,6 @@ fn load_cover_context(
     batch_id: i64,
     fallback_project: &str,
     inspection_date: String,
-    show_device_name: bool,
 ) -> ReportCoverContext {
     let batch_info = conn
         .query_row(
@@ -78,7 +77,6 @@ fn load_cover_context(
         project_name,
         inspection_date,
         inspector,
-        show_device_name,
     }
 }
 
@@ -615,7 +613,6 @@ pub fn generate_docx_report(
             record.batch_id,
             &device.name,
             report_date(&record),
-            false,
         );
         (record, device, cmd_descs, config, cover)
     }; // 锁释放
@@ -735,7 +732,7 @@ pub fn generate_batch_docx_combined(
             .iter()
             .map(|(_, r)| resolve_template_config(&conn, r, template_id))
             .collect();
-        let cover = load_cover_context(&conn, batch_id, "项目", report_date(&items[0].1), false);
+        let cover = load_cover_context(&conn, batch_id, "项目", report_date(&items[0].1));
         (items, cmd_descs, configs, cover)
     }; // 锁释放
 
