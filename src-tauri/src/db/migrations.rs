@@ -799,6 +799,49 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 28: {}", e))?;
     }
 
+    // ── v29: 去掉 devices.ip 的 UNIQUE 约束，改为按 device_type 唯一（应用层检查）──
+    if version < 29 {
+        // 重建表：ip 列去掉 UNIQUE，name 保留 UNIQUE
+        conn.execute_batch(
+            "ALTER TABLE devices RENAME TO devices_old;
+             CREATE TABLE devices (
+                 id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name                  TEXT NOT NULL UNIQUE,
+                 ip                    TEXT NOT NULL,
+                 device_type           TEXT NOT NULL,
+                 vendor                TEXT NOT NULL,
+                 model                 TEXT,
+                 ssh_username          TEXT,
+                 ssh_password_encrypted TEXT,
+                 ssh_port              INTEGER NOT NULL DEFAULT 22,
+                 template_id           INTEGER REFERENCES inspection_templates(id),
+                 status                TEXT NOT NULL DEFAULT 'unknown'
+                                     CHECK(status IN ('online','offline','unknown')),
+                 last_checked_at       TEXT,
+                 created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                 updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                 serial_number         TEXT,
+                 manufacturing_date    TEXT,
+                 sysname               TEXT,
+                 cpu_cores             INTEGER,
+                 memory_gb             REAL,
+                 auth_status           TEXT DEFAULT 'unknown',
+                 auth_message          TEXT,
+                 deployment            TEXT DEFAULT '',
+                 db_version            TEXT DEFAULT '',
+                 instance_name         TEXT DEFAULT '',
+                 db_username           TEXT DEFAULT '',
+                 db_password_encrypted TEXT DEFAULT '',
+                 db_port               INTEGER DEFAULT 3306
+             );
+             INSERT INTO devices SELECT * FROM devices_old;
+             DROP TABLE devices_old;"
+        ).map_err(|e| format!("migration 29: {}", e))?;
+
+        conn.execute_batch("PRAGMA user_version = 29;")
+            .map_err(|e| format!("migration 29: {}", e))?;
+    }
+
     Ok(())
 }
 
