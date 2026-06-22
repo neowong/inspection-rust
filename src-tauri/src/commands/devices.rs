@@ -536,6 +536,7 @@ pub async fn check_all_devices_status(
 
 /// 自动检测设备型号（通过 SSH 登录执行厂商命令）
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn detect_device_model(
     ip: String,
     ssh_port: u16,
@@ -586,8 +587,11 @@ pub async fn detect_device_model_by_id(
     device_id: i64,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    // 读取设备后打包的检测上下文（ip, ssh_port, ssh_user, ssh_pwd, vendor, deployment, device_name,
+    // db_user, db_pwd, instance_name, db_port）
+    type DetectContext = (String, u16, String, String, String, String, String, String, String, String, i64);
     // 1. 读取设备 + 解密密码
-    let read_result: Result<(String, u16, String, String, String, String, String, String, String, String, i64), String> = {
+    let read_result: Result<DetectContext, String> = {
         let conn = state.db.lock();
         let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
         let device =
@@ -642,11 +646,9 @@ pub async fn detect_device_model_by_id(
     // 2. 如果同 IP 已有服务器设备且有 OS 信息，直接复制（避免重复 SSH + sudo 问题）
     let os_info_from_sibling = {
         let conn = state.db.lock();
-        let sql = format!(
-            "SELECT model, sysname, cpu_cores, memory_gb, kernel_version FROM devices \
-             WHERE ip = ?1 AND device_type != 'database' AND (model IS NOT NULL OR sysname IS NOT NULL) LIMIT 1"
-        );
-        let r = conn.query_row(&sql, rusqlite::params![ip], |row| {
+        let sql = "SELECT model, sysname, cpu_cores, memory_gb, kernel_version FROM devices \
+             WHERE ip = ?1 AND device_type != 'database' AND (model IS NOT NULL OR sysname IS NOT NULL) LIMIT 1";
+        let r = conn.query_row(sql, rusqlite::params![ip], |row| {
             Ok((
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Option<String>>(1)?,
@@ -1108,6 +1110,7 @@ fn detect_linux_info_sync(
 }
 
 /// 数据库设备静态信息检测：先检测 OS 信息，再检测数据库版本/实例名
+#[allow(clippy::too_many_arguments)]
 async fn detect_db_info(
     ip: String,
     ssh_port: u16,
@@ -1128,6 +1131,7 @@ async fn detect_db_info(
     .map_err(|e| format!("检测任务失败: {}", e))?
 }
 
+#[allow(clippy::too_many_arguments)]
 fn detect_db_info_sync(
     ip: &str,
     ssh_port: u16,
