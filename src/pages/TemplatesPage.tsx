@@ -1419,15 +1419,10 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
     const sysname = "aHope";
     // Linux 服务器：[user@host ~]# 或 $
     if (
-      v === "linux" ||
-      v === "ubuntu" ||
-      v === "centos" ||
-      v === "rocky" ||
-      v === "debian" ||
-      v === "rhel" ||
-      v === "suse" ||
-      v === "fedora" ||
-      v === "almalinux"
+      v === "linux" || v === "ubuntu" || v === "centos" || v === "rocky" ||
+      v === "debian" || v === "rhel" || v === "suse" || v === "fedora" ||
+      v === "almalinux" ||
+      v === "mysql" || v === "postgresql" || v === "oracle" || v.includes("sql") || v.includes("达梦")
     ) {
       return `[root@${sysname} ~]# `;
     }
