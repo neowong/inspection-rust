@@ -448,9 +448,15 @@ pub async fn check_device_status(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let db = state.db.clone();
-    tokio::task::spawn_blocking(move || check_device_status_inner(&db, device_id))
+    let result = tokio::task::spawn_blocking(move || check_device_status_inner(&db, device_id))
         .await
-        .map_err(|e| format!("检测任务失败: {}", e))?
+        .map_err(|e| {
+            let msg = format!("检测任务失败: {}", e);
+            tracing::error!("[check_device_status] {}", msg);
+            msg
+        })?;
+    tracing::info!("[check_device_status] device_id={} 完成", device_id);
+    result
 }
 
 /// 检查所有设备连通状态（并发）
@@ -538,6 +544,10 @@ pub async fn detect_device_model(
     vendor: String,
     deployment: String,
     device_name: String,
+    db_username: String,
+    db_password: String,
+    instance_name: String,
+    db_port: i64,
 ) -> Result<String, String> {
     use crate::services::vendor_profile::{self, ExecMode};
 
@@ -552,7 +562,7 @@ pub async fn detect_device_model(
         .iter().any(|o| vendor.to_lowercase().contains(o));
 
     let result = if is_db {
-        detect_db_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone(), deployment.clone(), device_name.clone()).await
+        detect_db_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone(), deployment.clone(), device_name.clone(), db_username.clone(), db_password.clone(), instance_name.clone(), db_port).await
     } else {
         match profile.exec_mode {
             ExecMode::Exec => {
@@ -577,7 +587,7 @@ pub async fn detect_device_model_by_id(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     // 1. 读取设备 + 解密密码
-    let read_result: Result<(String, u16, String, String, String, String, String), String> = {
+    let read_result: Result<(String, u16, String, String, String, String, String, String, String, String, i64), String> = {
         let conn = state.db.lock();
         let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
         let device =
@@ -605,6 +615,14 @@ pub async fn detect_device_model_by_id(
         };
         let deployment = device.deployment.unwrap_or_default();
         let device_name = device.name.clone();
+        let db_username = device.db_username.unwrap_or_default();
+        let db_password_raw = device.db_password_encrypted
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .and_then(|p| CryptoService::decrypt(p).ok())
+            .unwrap_or_default();
+        let instance_name = device.instance_name.unwrap_or_default();
+        let db_port = device.db_port.unwrap_or(3306);
         Ok((
             device.ip,
             port,
@@ -613,9 +631,13 @@ pub async fn detect_device_model_by_id(
             device.vendor,
             deployment,
             device_name,
+            db_username,
+            db_password_raw,
+            instance_name,
+            db_port,
         ))
     };
-    let (ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name) = read_result?;
+    let (ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name, db_username, db_password, instance_name, db_port) = read_result?;
 
     // 2. 如果同 IP 已有服务器设备且有 OS 信息，直接复制（避免重复 SSH + sudo 问题）
     let os_info_from_sibling = {
@@ -645,7 +667,7 @@ pub async fn detect_device_model_by_id(
 
     // 3. 调用底层检测（OS 信息 + DB 版本）
     let detect_result =
-        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment.clone(), device_name.clone()).await;
+        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment.clone(), device_name.clone(), db_username, db_password, instance_name, db_port).await;
     tracing::info!("[detect_db] detect_device_model 结果: {:?}", detect_result.as_ref().err().map(|e| e.as_str()).unwrap_or("Ok"));
 
     // 失败：分类并写入 auth_status
@@ -738,6 +760,9 @@ pub async fn detect_device_model_by_id(
             if let Some(s) = obj.get("instance_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 updater.push_raw("instance_name", s.to_string());
             }
+            if let Some(p) = obj.get("db_port").and_then(|v| v.as_i64()).filter(|&p| p > 0) {
+                updater.push_raw("db_port", p);
+            }
             if let Some(s) = obj.get("kernel_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 updater.push_raw("kernel_version", s.to_string());
             }
@@ -815,34 +840,59 @@ pub fn detect_static_info_if_missing(
     // 普通设备：已有型号/主机名 → 跳过
     // 数据库设备：OS 信息和 DB 版本都需要有才跳过
     if is_db {
-        if has_os_info && has_db_info { return; }
+        if has_os_info && has_db_info {
+            tracing::info!("[bg-detect] 设备 #{} ({}) 已有完整信息，跳过", device_id, device_info.name);
+            return;
+        }
     } else {
-        if has_os_info { return; }
+        if has_os_info {
+            tracing::info!("[bg-detect] 设备 #{} ({}) 已有 OS 信息，跳过", device_id, device_info.name);
+            return;
+        }
     }
 
     let port = match port_u16(device_info.ssh_port) {
         Some(p) => p,
-        None => return,
+        None => {
+            tracing::warn!("[bg-detect] 设备 #{} ({}) SSH 端口非法: {}，跳过", device_id, device_info.name, device_info.ssh_port);
+            return;
+        }
     };
     let password = match device_info.ssh_password_encrypted.as_deref() {
         Some(p) if !p.is_empty() => match CryptoService::decrypt(p) {
             Ok(s) => s,
-            Err(_) => return,
+            Err(e) => {
+                tracing::warn!("[bg-detect] 设备 #{} ({}) SSH 密码解密失败: {}，跳过", device_id, device_info.name, e);
+                return;
+            }
         },
-        _ => return,
+        _ => {
+            tracing::warn!("[bg-detect] 设备 #{} ({}) 未保存 SSH 密码，跳过", device_id, device_info.name);
+            return;
+        }
     };
     let ip = device_info.ip.clone();
     let vendor = device_info.vendor.clone();
     let username = device_info.ssh_username.clone().unwrap_or_default();
     let deployment = device_info.deployment.clone().unwrap_or_default();
     let device_name = device_info.name.clone();
+    let db_username = device_info.db_username.clone().unwrap_or_default();
+    let db_password = device_info.db_password_encrypted
+        .as_deref()
+        .filter(|p| !p.is_empty())
+        .and_then(|p| CryptoService::decrypt(p).ok())
+        .unwrap_or_default();
+    let instance_name = device_info.instance_name.clone().unwrap_or_default();
+    let db_port = device_info.db_port.unwrap_or(3306);
     drop(device_info);
 
     // 2. SSH 检测（锁外）
+    tracing::info!("[bg-detect] 设备 #{} ({}) 开始检测, vendor={}, deployment={}, db_port={}",
+        device_id, device_name, vendor, deployment, db_port);
     let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
         .iter().any(|o| vendor.to_lowercase().contains(o));
     let result = if is_db {
-        detect_db_info_sync(&ip, port, &username, &password, &vendor, &deployment, &device_name)
+        detect_db_info_sync(&ip, port, &username, &password, &vendor, &deployment, &device_name, &db_username, &db_password, &instance_name, db_port)
     } else {
         let profile = vendor_profile::get_profile(&vendor);
         match profile.exec_mode {
@@ -1009,7 +1059,8 @@ fn detect_linux_info_sync(
 
     if let Some(output) = outputs.get("hostnamectl") {
         if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
-            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
+            info.insert("sysname".to_string(), serde_json::Value::String(hostname.clone()));
+            info.insert("hostname".to_string(), serde_json::Value::String(hostname));
         }
         if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
             info.insert("model".to_string(), serde_json::Value::String(os));
@@ -1065,9 +1116,13 @@ async fn detect_db_info(
     vendor: String,
     deployment: String,
     device_name: String,
+    db_username: String,
+    db_password: String,
+    instance_name: String,
+    db_port: i64,
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        detect_db_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor, &deployment, &device_name)
+        detect_db_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor, &deployment, &device_name, &db_username, &db_password, &instance_name, db_port)
     })
     .await
     .map_err(|e| format!("检测任务失败: {}", e))?
@@ -1080,55 +1135,115 @@ fn detect_db_info_sync(
     ssh_password: &str,
     vendor: &str,
     deployment: &str,
-    device_name: &str,
+    _device_name: &str,
+    db_username: &str,
+    db_password: &str,
+    instance_name: &str,
+    db_port: i64,
 ) -> Result<String, String> {
     use crate::services::linux_runner;
     use crate::services::inspection_runner::SSHSessionSource;
     use std::collections::HashMap;
 
-    tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
+    tracing::info!("[detect_db] 开始: {}@{}:{}, vendor={}, deployment={}, db_user={}, instance={}",
+        ssh_username, ip, ssh_port, vendor, deployment, db_username, instance_name);
 
     let vendor_lower = vendor.to_lowercase();
     let is_container = deployment == "docker" || deployment == "podman";
+    let is_k8s = deployment == "k8s";
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
-    // 数据库版本检测命令（原始，不含容器包装）
-    let db_version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
-        "mysql --version"
+    // ── MySQL / MariaDB 数据库命令 ──
+    let mut db_cmds: Vec<(String, String)> = Vec::new(); // (label, raw_cmd)
+
+    if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
+        let mysql_auth: Vec<String> = {
+            let mut args: Vec<String> = Vec::new();
+            if !db_username.is_empty() {
+                args.push(format!("-u{}", db_username));
+            }
+            if !db_password.is_empty() {
+                args.push(format!("-p{}", db_password));
+            }
+            args
+        };
+        let auth_str = mysql_auth.join(" ");
+        let mysql_cmd = format!("mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str);
+
+        if is_container {
+            // 三层容器发现 + 宿主机直连 fallback：
+            // 1) publish 端口过滤  2) name=mysql 兜底  3) 全量扫描 mysql 镜像
+            // 都失败则 fallback 到宿主机直接执行 mysql
+            let esc = |s: &str| s.replace('"', "\\\"");
+            db_cmds.push(("db_detail".to_string(), format!(
+                "C=$({rt} ps --filter publish={port}/tcp -q 2>/dev/null | head -1); \
+                 [ -z \"$C\" ] && C=$({rt} ps --filter name=mysql -q 2>/dev/null | head -1); \
+                 [ -z \"$C\" ] && C=$({rt} ps -q 2>/dev/null | while read cid; do {rt} inspect --format '{{{{.Name}}}}' $cid 2>/dev/null; done | grep -i mysql | head -1 | awk '{{print $1}}'); \
+                 if [ -n \"$C\" ]; then {rt} exec $C sh -c \"{cmd}\" 2>&1; \
+                 else {fallback} 2>&1; fi",
+                rt = runtime, port = db_port,
+                cmd = esc(&mysql_cmd), fallback = esc(&mysql_cmd))))
+        } else {
+            db_cmds.push(("db_detail".to_string(), mysql_cmd));
+        }
     } else if vendor_lower.contains("postgres") {
-        "psql --version"
+        db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
+        if !db_username.is_empty() {
+            let pg_env = if !db_password.is_empty() {
+                format!("PGPASSWORD='{}'", db_password)
+            } else { String::new() };
+            db_cmds.push(("db_detail".to_string(), format!("{} psql -U {} -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, db_username, db_port)));
+        }
     } else if vendor_lower.contains("oracle") {
-        "sqlplus -v 2>/dev/null || echo oracle"
+        db_cmds.push(("db_version".to_string(), "sqlplus -v".to_string()));
     } else if vendor_lower.contains("sql") || vendor_lower.contains("mssql") {
-        "sqlcmd -Q 'SELECT @@VERSION' -W 2>/dev/null || echo mssql"
+        db_cmds.push(("db_version".to_string(), "sqlcmd -Q 'SELECT @@VERSION' -W".to_string()));
     } else if vendor_lower.contains("达梦") {
-        "/opt/dmdbms/bin/disql -v 2>/dev/null || echo dm"
+        db_cmds.push(("db_version".to_string(), "/opt/dmdbms/bin/disql -v".to_string()));
     } else if vendor_lower.contains("redis") {
-        "redis-server --version 2>/dev/null || redis-cli --version"
+        db_cmds.push(("db_version".to_string(), "redis-cli --version".to_string()));
     } else if vendor_lower.contains("mongo") {
-        "mongod --version 2>/dev/null || mongosh --version"
+        db_cmds.push(("db_version".to_string(), "mongosh --version".to_string()));
     } else {
-        "echo unknown"
+        db_cmds.push(("db_version".to_string(), "echo unknown_db_vendor".to_string()));
+    }
+
+    let wrap_cmd = |raw: &str| -> String {
+        if is_container {
+            // 用 sh -c 确保 docker exec 内命令的引号参数被正确解析
+            let escaped = raw.replace('"', "\\\"");
+            format!(
+                "C=$({} ps --filter publish={}/tcp -q 2>/dev/null | head -1); [ -n \"$C\" ] && {} exec $C sh -c \"{}\" 2>&1 || echo container_not_found",
+                runtime, db_port, runtime, escaped
+            )
+        } else if is_k8s {
+            let escaped = raw.replace('"', "\\\"");
+            format!("kubectl exec deploy/mysql -- sh -c \"{}\" 2>&1 || echo k8s_pod_not_found", escaped)
+        } else {
+            format!("{} 2>&1", raw)
+        }
     };
 
-    // 容器部署时，DB 命令用 sh -c + docker/podman exec 包装（exec channel 不解析 $()）
-    let version_cmd_full = if is_container {
-        format!("sh -c \"{} exec \\$({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || echo container_not_running\"",
-            runtime, runtime, device_name.to_lowercase(), db_version_cmd.replace('\'', "'\\''"))
-    } else {
-        db_version_cmd.to_string()
-    };
-
-    // 一次 SSH 批次执行 OS 命令 + DB 版本命令（避免并发多连接触发 sshd MaxStartups 限流）
-    let commands: Vec<String> = vec![
+    // 一次 SSH 批次：OS 命令 + DB 命令
+    let mut commands: Vec<String> = vec![
         "hostnamectl".to_string(),
         "cat /etc/os-release".to_string(),
         "uname -r".to_string(),
         "nproc".to_string(),
         "lscpu".to_string(),
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
-        version_cmd_full.clone(),
     ];
+    for (_, raw_cmd) in &db_cmds {
+        // MySQL 容器命令已在上面嵌入完整的三层发现+包装，直接追加
+        // 其他 DB 命令通过 wrap_cmd 统一添加 2>&1 / 容器包装
+        let is_mysql = vendor_lower.contains("mysql") || vendor_lower.contains("mariadb");
+        if is_container && is_mysql {
+            commands.push(raw_cmd.clone());
+        } else {
+            commands.push(wrap_cmd(raw_cmd));
+        }
+    }
+
     let mut needs_root_map = HashMap::new();
     needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
 
@@ -1154,10 +1269,11 @@ fn detect_db_info_sync(
 
     let mut info = serde_json::Map::new();
 
-    // OS 信息（复用 detect_linux_info 的解析逻辑）
+    // ── OS 信息解析 ──
     if let Some(output) = outputs.get("hostnamectl") {
         if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
-            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
+            info.insert("sysname".to_string(), serde_json::Value::String(hostname.clone()));
+            info.insert("hostname".to_string(), serde_json::Value::String(hostname));
         }
         if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
             info.insert("model".to_string(), serde_json::Value::String(os));
@@ -1195,28 +1311,119 @@ fn detect_db_info_sync(
         }
     }
 
-    // 数据库版本
-    if let Some(output) = outputs.get(&version_cmd_full) {
-        let trimmed = output.trim().to_string();
-        if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle"
-            && trimmed != "mssql" && trimmed != "dm" && trimmed != "container_not_running"
-            && !trimmed.starts_with("[容器命令失败]")
-        {
-            info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
+    // 诊断具体失败原因
+    let mut db_error: Option<String> = None;
+    for (_label, raw_cmd) in &db_cmds {
+        let key = if is_container && (vendor_lower.contains("mysql") || vendor_lower.contains("mariadb")) {
+            raw_cmd.clone() // MySQL 容器命令已完整包装
+        } else {
+            wrap_cmd(raw_cmd)
+        };
+        if let Some(output) = outputs.get(&key) {
+            let trimmed = output.trim();
+            if trimmed.is_empty() { continue; }
+            if trimmed.contains("Access denied") {
+                db_error = Some(format!("数据库密码错误（用户: {}）", db_username));
+                break;
+            }
+            if trimmed.contains("container_not_found") {
+                // 容器发现全失败 + 直连也失败
+                db_error = Some(format!("容器未发现且宿主机无 mysql：请确认 db_port({}) 是 Docker 宿主机映射端口", db_port));
+                break;
+            }
+            if trimmed.contains("command not found") || trimmed.contains("No such file") {
+                db_error = Some("mysql 客户端未安装".to_string());
+                break;
+            }
+            if trimmed.starts_with("ERROR ") {
+                db_error = Some(trimmed.lines().next().unwrap_or(trimmed).to_string());
+                break;
+            }
         }
     }
 
-    // OS 信息和 DB 版本都为空 → 检测失败
+    // 附加警告到结果
+    if let Some(ref warn) = db_error {
+        info.insert("_warn".to_string(), serde_json::Value::String(warn.clone()));
+    } else if !info.contains_key("db_version") && is_container {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            format!("数据库版本获取失败：请确认 db_port({}) 是宿主机映射端口，且密码正确", db_port)
+        ));
+    } else if !info.contains_key("db_version") {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            "数据库版本获取失败：请确认客户端已安装且密码正确".to_string()
+        ));
+    }
+
+    // ── 数据库信息解析 ──
+    for (label, raw_cmd) in &db_cmds {
+        let key = if is_container && (vendor_lower.contains("mysql") || vendor_lower.contains("mariadb")) {
+            raw_cmd.clone()
+        } else {
+            wrap_cmd(raw_cmd)
+        };
+        if let Some(output) = outputs.get(&key) {
+            let trimmed = output.trim();
+            if trimmed.is_empty()
+                || trimmed.contains("container_not_found")
+                || trimmed.contains("k8s_pod_not_found")
+                || trimmed.contains("unknown_db_vendor")
+                || trimmed.contains("command not found")
+                || trimmed.contains("No such file")
+                || trimmed.starts_with("ERROR ")
+            {
+                continue;
+            }
+
+            match label.as_str() {
+                "db_version" => {
+                    let ver = trimmed.lines().next().unwrap_or(trimmed).to_string();
+                    info.insert("db_version".to_string(), serde_json::Value::String(ver));
+                }
+                "db_detail" => {
+                    // MySQL -N -B 输出：一行 tab 分隔，无表头无边框
+                    // 非 MySQL 的其它数据库可能有表头或 warning，跳过短行
+                    for line in trimmed.lines() {
+                        let parts: Vec<&str> = line.split('\t').collect();
+                        if parts.len() < 4 { continue; }
+                        if parts[0].trim().eq_ignore_ascii_case("version") { continue; }
+                        if !parts[0].trim().is_empty() {
+                            info.insert("db_version".to_string(), serde_json::Value::String(parts[0].trim().to_string()));
+                        }
+                        if !parts[1].trim().is_empty() {
+                            info.insert("instance_name".to_string(), serde_json::Value::String(parts[1].trim().to_string()));
+                        }
+                        if let Ok(p) = parts[2].trim().parse::<i64>() {
+                            info.insert("db_port".to_string(), serde_json::Value::Number(serde_json::Number::from(p)));
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 诊断：OS 信息有了但 DB 信息缺失 → 附加警告
+    let has_db_result = info.contains_key("db_version");
+    if !has_db_result && is_container {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            format!("数据库版本获取失败：请确认 db_port({}) 与实际 Docker 宿主机映射端口一致，且数据库密码正确", db_port)
+        ));
+    } else if !has_db_result && !is_container {
+        info.insert("_warn".to_string(), serde_json::Value::String(
+            "数据库版本获取失败：请确认 mysql 客户端已安装且数据库密码正确".to_string()
+        ));
+    }
+
     if info.is_empty() {
         return Err("数据库设备 OS 信息和 DB 版本检测均失败".to_string());
     }
-
     let result = serde_json::Value::Object(info).to_string();
     tracing::info!("[detect_db] 返回结果: {}", result);
     Ok(result)
 }
 
-/// 网络设备静态信息检测（shell 会话）— async 版本（供 Tauri command 调用）
 async fn detect_network_device_info(
     ip: String,
     ssh_port: u16,

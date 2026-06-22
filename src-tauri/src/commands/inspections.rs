@@ -19,8 +19,6 @@ use crate::AppState;
 #[derive(Debug, Clone)]
 struct TemplateCommandSpec {
     command: String,
-    show_in_report: bool,
-    extract_fields: Vec<String>,
     needs_root: bool,
 }
 
@@ -107,34 +105,14 @@ fn read_device_inspection_data(
     };
 
     let mut commands: Vec<TemplateCommandSpec> = Vec::new();
-    for (cmd_id, spec) in &spec_entries {
+    for (cmd_id, _spec) in &spec_entries {
         let (command, needs_root) = cmd_texts
             .get(cmd_id)
             .cloned()
             .ok_or_else(|| format!("命令 ID {} 不存在", cmd_id))?;
 
-        let purpose = spec
-            .get("purpose")
-            .and_then(|v| v.as_str())
-            .unwrap_or("inspection");
-        let show_in_report = spec
-            .get("show_in_report")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(purpose != "static_info");
-        let extract_fields = spec
-            .get("extract_fields")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_else(Vec::new);
-
         commands.push(TemplateCommandSpec {
             command,
-            show_in_report,
-            extract_fields,
             needs_root,
         });
     }
@@ -315,278 +293,6 @@ fn finalize_batch_status(conn: &rusqlite::Connection, batch_id: i64) -> Result<(
     Ok(())
 }
 
-fn build_static_info(
-    all_outputs: &indexmap::IndexMap<String, String>,
-    specs: &[TemplateCommandSpec],
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut info = serde_json::Map::new();
-    for spec in specs {
-        if spec.extract_fields.is_empty() {
-            continue;
-        }
-        let Some(output) = all_outputs.get(&spec.command) else {
-            continue;
-        };
-        for field in &spec.extract_fields {
-            if info.contains_key(field) {
-                continue;
-            }
-            let val = match field.as_str() {
-                "sysname" => extract_sysname(output)
-                    .or_else(|| extract_hostnamectl_field(output, "Static hostname")),
-                "serial_number" | "sn" => extract_by_patterns(
-                    output,
-                    &["DEVICE_SERIAL_NUMBER", "SERIAL_NUMBER", "Serial Number", "Serial-Number"],
-                ),
-                "manufacturing_date" | "mfg_date" => {
-                    extract_by_patterns(output, &["MANUFACTURING_DATE", "Manufacturing Date"])
-                }
-                "model" => extract_model(output),
-                "cpu_cores" => extract_cpu_cores(output),
-                "memory_gb" => extract_memory_gb(output),
-                _ => None,
-            };
-            if let Some(v) = val.filter(|s| !s.trim().is_empty()) {
-                let key = match field.as_str() {
-                    "sn" => "serial_number",
-                    "mfg_date" => "manufacturing_date",
-                    other => other,
-                };
-                info.insert(key.to_string(), serde_json::Value::String(v));
-            }
-        }
-    }
-    info
-}
-
-fn extract_sysname(output: &str) -> Option<String> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.to_lowercase().starts_with("sysname ") {
-            let name = trimmed.split_whitespace().nth(1).unwrap_or("").trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-        }
-        if trimmed.to_lowercase().starts_with("hostname ") {
-            let name = trimmed.split_whitespace().nth(1).unwrap_or("").trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-        }
-        if let Some(v) = extract_by_patterns(trimmed, &["Hostname", "Host name"])
-            .filter(|s| !s.trim().is_empty())
-        {
-            return Some(v);
-        }
-    }
-    None
-}
-
-/// 从 hostnamectl 输出中提取字段值
-fn extract_hostnamectl_field(output: &str, field_name: &str) -> Option<String> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(field_name) {
-            let value = rest.trim_start().strip_prefix(':').unwrap_or(rest).trim();
-            if !value.is_empty() {
-                return Some(value.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn extract_model(output: &str) -> Option<String> {
-    extract_by_patterns(
-        output,
-        &[
-            "DEVICE_NAME",
-            "PRODUCT_NAME",
-            "Product Name",
-            "Version",
-            "VERSION",
-            "Platform Type",
-            "Model",
-            "Operating System",
-            "Manufacturer",
-            "PRETTY_NAME",
-        ],
-    )
-    .map(|value| {
-        value
-            .split_whitespace()
-            .next()
-            .unwrap_or(value.as_str())
-            .trim_matches(',')
-            .to_string()
-    })
-}
-
-/// 从 lscpu 输出提取 CPU 核心数
-fn extract_cpu_cores(output: &str) -> Option<String> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        // lscpu format: "CPU(s):                4"
-        if let Some(rest) = trimmed.strip_prefix("CPU(s):") {
-            let val = rest.split_whitespace().next()?;
-            if let Ok(n) = val.parse::<i64>() {
-                return Some(n.to_string());
-            }
-        }
-    }
-    None
-}
-
-/// 从 free -h 输出提取内存大小（GB）
-fn extract_memory_gb(output: &str) -> Option<String> {
-    // 优先：dmidecode -t memory | grep -i Size 输出
-    // 格式: "Size: 8192 MB" 或 "Size: No Module Installed"
-    let mut total_mb: u64 = 0;
-    let mut found_dmidecode = false;
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("Size:") {
-            let val = rest.trim();
-            if val.contains("No Module") || val.is_empty() {
-                continue;
-            }
-            // 解析 "8192 MB" 或 "16384 MB"
-            let parts: Vec<&str> = val.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let Ok(size) = parts[0].parse::<u64>() {
-                    let unit = parts[1].to_uppercase();
-                    if unit.starts_with("MB") {
-                        total_mb += size;
-                        found_dmidecode = true;
-                    } else if unit.starts_with("GB") {
-                        total_mb += size * 1024;
-                        found_dmidecode = true;
-                    }
-                }
-            }
-        }
-    }
-    if found_dmidecode && total_mb > 0 {
-        let gb = total_mb as f64 / 1024.0;
-        return Some(format!("{:.1}Gi", gb));
-    }
-
-    // 回退：free -h 输出
-    // 格式: "Mem:           7.7Gi       2.1Gi       1.2Gi       ..."
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("Mem:") {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 2 {
-                return Some(parts[1].to_string());
-            }
-        }
-    }
-    None
-}
-
-fn extract_by_patterns(output: &str, keys: &[&str]) -> Option<String> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        for key in keys {
-            if let Some(rest) = trimmed.strip_prefix(key) {
-                let rest_trimmed = rest.trim_start();
-                let value = rest_trimmed
-                    .strip_prefix(':')
-                    .or_else(|| rest_trimmed.strip_prefix('='))
-                    .unwrap_or(rest_trimmed)
-                    .trim()
-                    .trim_matches('"');
-                if !value.is_empty() && !value.contains("----") {
-                    return Some(value.to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn visible_outputs(
-    all_outputs: &indexmap::IndexMap<String, String>,
-    specs: &[TemplateCommandSpec],
-) -> indexmap::IndexMap<String, String> {
-    let mut visible = indexmap::IndexMap::new();
-    for spec in specs {
-        if !spec.show_in_report {
-            continue;
-        }
-        if let Some(output) = all_outputs.get(&spec.command) {
-            visible.insert(spec.command.clone(), output.clone());
-        }
-    }
-    visible
-}
-
-/// 解析内存字符串（如 "7.7Gi", "512Mi", "1.5Ti"）为 GB
-fn parse_memory_to_gb(s: &str) -> Option<f64> {
-    let s = s.trim();
-    let (num_str, unit) = s.split_at(
-        s.find(|c: char| !c.is_ascii_digit() && c != '.')
-            .unwrap_or(s.len()),
-    );
-    let num: f64 = num_str.parse().ok()?;
-    match unit.to_lowercase().as_str() {
-        "gi" | "g" => Some(num),
-        "mi" | "m" => Some(num / 1024.0),
-        "ti" | "t" => Some(num * 1024.0),
-        "ki" | "k" => Some(num / (1024.0 * 1024.0)),
-        _ => Some(num), // assume GB if no unit
-    }
-}
-
-fn sync_device_static_info(
-    conn: &rusqlite::Connection,
-    device_id: i64,
-    static_info: &serde_json::Map<String, serde_json::Value>,
-) {
-    let get = |key: &str| {
-        static_info
-            .get(key)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-    };
-    let sysname = get("sysname");
-    let model = get("model");
-    let serial_number = get("serial_number");
-    let manufacturing_date = get("manufacturing_date");
-    let cpu_cores = get("cpu_cores").and_then(|s| s.parse::<i64>().ok());
-    let memory_gb = get("memory_gb").and_then(parse_memory_to_gb);
-    let db_version = get("db_version");
-    let instance_name = get("instance_name");
-    let os_release = get("os_release");
-    if sysname.is_none()
-        && model.is_none()
-        && serial_number.is_none()
-        && manufacturing_date.is_none()
-        && cpu_cores.is_none()
-        && memory_gb.is_none()
-        && db_version.is_none()
-        && instance_name.is_none()
-        && os_release.is_none()
-    {
-        return;
-    }
-    let _ = conn.execute(
-        "UPDATE devices SET \
-         sysname = COALESCE(?1, sysname), \
-         model = COALESCE(?2, ?9, model), \
-         serial_number = COALESCE(?3, serial_number), \
-         manufacturing_date = COALESCE(?4, manufacturing_date), \
-         cpu_cores = COALESCE(?5, cpu_cores), \
-         memory_gb = COALESCE(?6, memory_gb), \
-         db_version = COALESCE(?7, db_version), \
-         instance_name = COALESCE(?8, instance_name), \
-         updated_at = ?10 WHERE id = ?11",
-        rusqlite::params![sysname, model, serial_number, manufacturing_date, cpu_cores, memory_gb, db_version, instance_name, os_release, now_str(), device_id],
-    );
-}
-
 /// 执行单台设备的 SSH 巡检（锁外调用，包含耗时的 SSH 操作）
 ///
 /// 根据厂商 Profile 决定执行模式：
@@ -618,14 +324,15 @@ fn execute_device_ssh(
     match profile.exec_mode {
         crate::services::vendor_profile::ExecMode::Exec => {
             let cmd_strings: Vec<String> = if deployment == "docker" || deployment == "podman" {
-                // 容器部署：每条命令用 sh -c + docker/podman exec 包装
-                // exec channel 不走 shell，$(...) 不解析，必须用 sh -c 包装
+                // 容器部署：通过 publish 端口发现容器名，再 exec 进去执行
                 let runtime = if deployment == "docker" { "docker" } else { "podman" };
-                let container_filter = device.name.to_lowercase();
+                let db_port = device.db_port.unwrap_or(3306);
                 commands.iter().map(|s| {
-                    let escaped = s.command.replace('\\', "\\\\").replace('\'', "'\\''");
-                    format!("sh -c \"{rt} exec $({rt} ps -q --filter name={cf}) sh -c '{esc}' 2>/dev/null || echo [容器命令失败]\"",
-                        rt = runtime, cf = container_filter, esc = escaped)
+                    let escaped = s.command.replace('"', "\\\"");
+                    format!(
+                        "C=$({rt} ps --filter publish={port}/tcp -q 2>/dev/null | head -1); [ -n \"$C\" ] && {rt} exec $C sh -c \"{cmd}\" 2>&1 || echo [容器命令失败]",
+                        rt = runtime, port = db_port, cmd = escaped
+                    )
                 }).collect()
             } else {
                 commands.iter().map(|s| s.command.clone()).collect()
@@ -673,8 +380,15 @@ pub fn list_batches(
     let mut params: Vec<Box<dyn ToSql>> = Vec::new();
 
     if let Some(ref s) = status {
-        sql.push_str(" AND status = ?");
-        params.push(Box::new(s.clone()));
+        // 支持逗号分隔的多值过滤，如 "running,pending"
+        let statuses: Vec<&str> = s.split(',').map(|x| x.trim()).filter(|x| !x.is_empty()).collect();
+        if !statuses.is_empty() {
+            let placeholders: Vec<String> = statuses.iter().enumerate().map(|(i, _)| format!("?{}", params.len() + i + 1)).collect();
+            sql.push_str(&format!(" AND status IN ({})", placeholders.join(",")));
+            for st in statuses {
+                params.push(Box::new(st.to_string()));
+            }
+        }
     }
 
     sql.push_str(" ORDER BY created_at DESC LIMIT 50");
@@ -1169,28 +883,22 @@ async fn inspect_one_device(
         let conn = db.lock();
         match &ssh_result {
             Ok(outputs) => {
-                let static_info = build_static_info(outputs, &commands);
-                let report_outputs = visible_outputs(outputs, &commands);
-                let outputs_json = serde_json::to_string(&report_outputs)
+                let outputs_json = serde_json::to_string(outputs)
                     .map_err(|e| (device_id, format!("序列化命令输出失败: {}", e)))?;
-                let static_info_json = serde_json::to_string(&static_info)
-                    .map_err(|e| (device_id, format!("序列化静态信息失败: {}", e)))?;
                 update_record_result(
                     &conn,
                     record_id,
                     "completed",
                     Some(&outputs_json),
-                    Some(&static_info_json),
+                    Some("{}"),
                     None,
                 )
                 .map_err(|e| (device_id, e))?;
-                sync_device_static_info(&conn, device_id, &static_info);
                 tracing::info!(
-                    "批次 #{} 设备 #{} OK, 获得 {} 条命令输出（报告显示 {} 条）",
+                    "批次 #{} 设备 #{} OK, 获得 {} 条命令输出",
                     batch_id,
                     device_id,
-                    outputs.len(),
-                    report_outputs.len()
+                    outputs.len()
                 );
             }
             Err(err) => {
@@ -1440,21 +1148,16 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         let conn = db.lock();
         match ssh_result {
             Ok(outputs) => {
-                let static_info = build_static_info(&outputs, &commands);
-                let report_outputs = visible_outputs(&outputs, &commands);
-                let outputs_json = serde_json::to_string(&report_outputs)
+                let outputs_json = serde_json::to_string(&outputs)
                     .map_err(|e| format!("序列化命令输出失败: {}", e))?;
-                let static_info_json = serde_json::to_string(&static_info)
-                    .map_err(|e| format!("序列化静态信息失败: {}", e))?;
                 update_record_result(
                     &conn,
                     record_id,
                     "completed",
                     Some(&outputs_json),
-                    Some(&static_info_json),
+                    Some("{}"),
                     None,
                 )?;
-                sync_device_static_info(&conn, device.id, &static_info);
             }
             Err(err) => {
                 update_record_result(&conn, record_id, "failed", None, None, Some(&err))?;

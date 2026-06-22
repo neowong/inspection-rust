@@ -581,7 +581,7 @@ fn build_device_info(
             "sn" => device.serial_number.clone().unwrap_or_default(),
             "mfg_date" => device.manufacturing_date.clone().unwrap_or_default(),
             "inspect_time" => inspect_time.clone(),
-            "sysname" => device.sysname.clone().unwrap_or_default(),
+            "sysname" | "hostname" => device.sysname.clone().unwrap_or_default(),
             // 发行版：服务器用 model 字段（detect 把 OS PRETTY_NAME 写入 model）；
             // 网络设备无该字段，留空
             "os_release" => device.model.clone().unwrap_or_default(),

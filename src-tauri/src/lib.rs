@@ -377,9 +377,34 @@ pub fn run() {
 
     // Background task: auto-detect device status every 5 minutes (blocking TCP, parallel via std::thread::scope)
     let bg_db = state.db.clone();
+    let bg_db2 = state.db.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_secs(5 * 60));
         poll_device_statuses(&bg_db);
+    });
+    // 启动后立即触发一次数据库设备的静态信息检测（首次录入后一次性补齐）
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3)); // 等 DB 初始化完成
+        let device_ids: Vec<i64> = {
+            if let Some(conn) = bg_db2.try_lock() {
+                let stmt = conn
+                    .prepare("SELECT id FROM devices WHERE device_type = 'database'")
+                    .ok();
+                stmt.and_then(|mut s| {
+                    s.query_map([], |row| row.get::<_, i64>(0))
+                        .ok()
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default()
+            } else {
+                vec![]
+            }
+        };
+        tracing::info!("[startup] 发现 {} 台数据库设备，开始静态信息检测", device_ids.len());
+        for id in device_ids {
+            commands::devices::detect_static_info_if_missing(id, &bg_db2);
+        }
+        tracing::info!("[startup] 数据库设备静态信息检测完成");
     });
     debug_log("后台检测线程已启动");
 

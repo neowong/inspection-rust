@@ -178,3 +178,10 @@ panic = "abort"        # 移除展开表
 - **Pause/stop/retry cancellation**: `pause_batch`/`stop_batch` set the `batch_cancels` AtomicBool flag so running SSH tasks stop at the next command boundary; `finalize_batch_status` preserves a `paused` batch (won't auto-overwrite to completed/stopped). `retry_device` registers a cancel flag under the batch_id and finalizes the batch when it owns the batch; `restart_batch` cancels in-flight tasks and clears stale flags before resetting.
 - Fernet key (`MASTER_PASSWORD`) hardcoded in `crypto.rs` — encrypted data compatible with Python predecessor
 - Release binary is standalone (frontend embedded, no devUrl)
+- **数据库 Docker 容器发现**: 三层策略 — ① `docker ps --filter publish=<db_port>/tcp`（按宿主机映射端口）② `--filter name=mysql`（按容器名）③ 全量扫描 `docker inspect` + `grep mysql`（按镜像）→ 都失败则宿主机直连 fallback。`db_port` 必须填宿主机映射端口，不能填容器内端口
+- **IP 唯一性按设备类型**: DB 层无 UNIQUE 约束（v31 迁移移除），应用层 `check_unique()` 按 `device_type` 检查。同 IP 可以加 Linux 设备和数据库设备
+- **仪表盘筛选导航**: 使用 URL 参数 `?type=switch,router` / `?status=online` / `?tab=commands`，目标页面读取参数同步筛选器，筛选器变更回写 URL
+- **模板命令简化**: `purpose` / `show_in_report` / `extract_fields` 已从模板命令配置中移除，所有命令都是巡检项。静态信息采集独立于模板运行
+- **SSH TCP 超时不回退**: `connect_session()` 检测到 TCP 连接失败直接返回错误，不再浪费 10s 试旧算法
+- **linux_runner TCP 预检**: `run_commands_exec()` 入口处 3s TCP 探测，不通直接返回，避免 N 个 worker 同时超时
+- **检测结果 `_warn` 字段**: `detect_db_info_sync` 返回 JSON 含 `_warn` 键，前端解析后以 warn 级别提示具体原因（密码错/端口不对/客户端未安装）

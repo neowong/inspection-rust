@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS devices (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     name                  TEXT NOT NULL UNIQUE,                          -- 设备名称
-    ip                    TEXT NOT NULL UNIQUE,                          -- 管理 IP 地址
+    ip                    TEXT NOT NULL,                                 -- 管理 IP 地址（允许同 IP 不同设备类型，应用层 check_unique 保证按类型唯一）
     device_type           TEXT NOT NULL,                                 -- 设备类型 (switch/router/firewall/loadbalancer)
     vendor                TEXT NOT NULL,                                 -- 厂商 (H3C/华为/思科/锐捷)
     model                 TEXT,                                          -- 型号

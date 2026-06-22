@@ -173,11 +173,19 @@ pub fn connect_session(source: &SSHSessionSource) -> Result<Session, String> {
     match connect_session_with_mode(source, false) {
         Ok(session) => Ok(session),
         Err(default_err) => {
-            // 认证失败（用户名/密码错）不应触发旧算法回退——账号错回退也只会再失败一次
+            // 认证失败不触发旧算法回退——账号错回退也不可能成功
             if default_err.contains("SSH密码认证失败") || default_err.contains("SSH认证未通过") {
                 tracing::error!(
                     "SSH 认证失败 [{}@{}:{}]: {}",
                     source.username, source.host, source.port, default_err
+                );
+                return Err(default_err);
+            }
+            // TCP 连接失败不触发旧算法回退——端口不通换算法没用，只会再等 10s
+            if default_err.contains("TCP连接失败") || default_err.contains("connection timed out") {
+                tracing::warn!(
+                    "SSH TCP 连接失败 [{}:{}]: {}，跳过旧算法回退",
+                    source.host, source.port, default_err
                 );
                 return Err(default_err);
             }

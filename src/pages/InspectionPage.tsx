@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { InspectionBatch, Device, InspectionRecord } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
@@ -42,10 +43,13 @@ export default function InspectionPage() {
 
   const { shakeFields, triggerShake } = useShakeValidation();
 
+  const [searchParams] = useSearchParams();
+  const statusFilter = searchParams.get("status") || "";
+
   const selectedIdRef = useRef<number | null>(null);
 
   const loadBatches = useCallback(() => {
-    invoke<any[]>("list_batches", { status: undefined })
+    invoke<any[]>("list_batches", { status: statusFilter || undefined })
       .then((all) => {
         setBatches(all);
         // Sync selected batch from fresh data via ref (avoids stale closure)
@@ -55,7 +59,7 @@ export default function InspectionPage() {
           if (updated) setSelectedBatch(updated);
         }
       }).catch(console.error);
-  }, []);
+  }, [statusFilter]);
 
   const loadDevices = useCallback(() => {
     invoke<Device[]>("list_devices", {})

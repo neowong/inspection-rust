@@ -88,18 +88,18 @@ export default function DashboardPage() {
       {/* 下方两列 */}
       <div className="grid grid-cols-2 gap-4">
         <Section title="设备分类">
-          <StatRow label="网络设备" value={v("network_device_count")} icon={Router} color="accent" onClick={() => navigate("/devices")} />
-          <StatRow label="安全设备" value={v("security_device_count")} icon={ShieldCheck} color="warning" onClick={() => navigate("/devices")} />
-          <StatRow label="服务器" value={v("server_count")} icon={Server} color="success" onClick={() => navigate("/devices")} />
-          <StatRow label="数据库" value={v("database_count")} icon={Database} color="accent" onClick={() => navigate("/devices")} />
+          <StatRow label="网络设备" value={v("network_device_count")} icon={Router} color="accent" onClick={() => navigate("/devices?type=switch,router")} />
+          <StatRow label="安全设备" value={v("security_device_count")} icon={ShieldCheck} color="warning" onClick={() => navigate("/devices?type=firewall,loadbalancer")} />
+          <StatRow label="服务器" value={v("server_count")} icon={Server} color="success" onClick={() => navigate("/devices?type=server")} />
+          <StatRow label="数据库" value={v("database_count")} icon={Database} color="accent" onClick={() => navigate("/devices?type=database")} />
         </Section>
 
         <Section title="巡检任务">
           <StatRow label="巡检模板" value={v("template_count")} icon={FileText} color="accent" onClick={() => navigate("/templates")} />
-          <StatRow label="命令库" value={v("command_count")} icon={Zap} color="accent" onClick={() => navigate("/templates")} />
+          <StatRow label="命令库" value={v("command_count")} icon={Zap} color="accent" onClick={() => navigate("/templates?tab=commands")} />
           <StatRow label="巡检任务" value={v("batch_count")} icon={Package} color="accent" onClick={() => navigate("/inspection")} />
-          <StatRow label="进行中" value={v("pending_batch_count")} icon={Clock} color="warning" onClick={() => navigate("/inspection")} />
-          <StatRow label="已完成" value={v("completed_batch_count")} icon={CheckCircle2} color="success" onClick={() => navigate("/inspection")} />
+          <StatRow label="进行中" value={v("pending_batch_count")} icon={Clock} color="warning" onClick={() => navigate("/inspection?status=running,pending")} />
+          <StatRow label="已完成" value={v("completed_batch_count")} icon={CheckCircle2} color="success" onClick={() => navigate("/inspection?status=completed,partially_completed")} />
         </Section>
       </div>
     </div>

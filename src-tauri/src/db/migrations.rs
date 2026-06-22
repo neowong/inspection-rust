@@ -474,12 +474,13 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             ];
             if is_linux(vendor) {
                 fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
+                fields.push(serde_json::json!({"key":"kernel_version","label":"内核版本","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
                 fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":false}));
                 fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":false}));
                 fields.push(serde_json::json!({"key":"mfg_date","label":"出厂日期","visible":false}));
-                fields.push(serde_json::json!({"key":"sysname","label":"主机名","visible":false}));
+                fields.push(serde_json::json!({"key":"hostname","label":"主机名","visible":false}));
             } else if is_db(vendor) {
                 fields.push(serde_json::json!({"key":"db_version","label":"数据库版本","visible":true}));
                 fields.push(serde_json::json!({"key":"instance_name","label":"实例名","visible":true}));
@@ -490,6 +491,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 fields.push(serde_json::json!({"key":"sn","label":"宿主机 序列号","visible":false}));
                 fields.push(serde_json::json!({"key":"mfg_date","label":"宿主机 出厂日期","visible":false}));
                 fields.push(serde_json::json!({"key":"sysname","label":"宿主机 主机名","visible":false}));
+                fields.push(serde_json::json!({"key":"kernel_version","label":"宿主机 内核版本","visible":false}));
             } else {
                 fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":true}));
                 fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":true}));
@@ -671,7 +673,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             ("model",      "设备型号"),
             ("sn",         "序列号"),
             ("mfg_date",   "出厂日期"),
-            ("sysname",    "主机名"),
+            ("hostname",   "主机名"),
         ];
 
         for vendor in &linux_vendors {
@@ -800,70 +802,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 28: {}", e))?;
     }
 
-    // ── v29: 去掉 devices.ip 的 UNIQUE 约束，改为按 device_type 唯一（应用层检查）──
+    // ── v29: 跳过（ip UNIQUE 约束保留，按 device_type 唯一由应用层 check_unique 保证）──
     if version < 29 {
-        let has_old: bool = conn
-            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='devices_old'")
-            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
-            .map(|c| c > 0)
-            .unwrap_or(false);
-
-        // 上一次失败残留：devices 为空且 devices_old 有数据 → 先恢复旧表
-        if has_old {
-            let dev_count: i64 = conn
-                .query_row("SELECT COUNT(*) FROM devices", [], |row| row.get(0))
-                .unwrap_or(0);
-            if dev_count == 0 {
-                conn.execute_batch("DROP TABLE devices; ALTER TABLE devices_old RENAME TO devices;")
-                    .map_err(|e| format!("migration 29 restore: {}", e))?;
-            } else {
-                conn.execute_batch("DROP TABLE IF EXISTS devices_old;")
-                    .map_err(|e| format!("migration 29 cleanup: {}", e))?;
-            }
-        }
-
-        // 重建表：去掉 ip UNIQUE，name 保留 UNIQUE
-        let tx = conn.transaction().map_err(|e| format!("migration 29 tx: {}", e))?;
-        tx.execute_batch("ALTER TABLE devices RENAME TO devices_old;")
-            .map_err(|e| format!("migration 29 rename: {}", e))?;
-        tx.execute_batch(
-            "CREATE TABLE devices (
-                 id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-                 name                  TEXT NOT NULL UNIQUE,
-                 ip                    TEXT NOT NULL,
-                 device_type           TEXT NOT NULL,
-                 vendor                TEXT NOT NULL,
-                 model                 TEXT,
-                 ssh_username          TEXT,
-                 ssh_password_encrypted TEXT,
-                 ssh_port              INTEGER NOT NULL DEFAULT 22,
-                 template_id           INTEGER REFERENCES inspection_templates(id),
-                 status                TEXT NOT NULL DEFAULT 'unknown'
-                                     CHECK(status IN ('online','offline','unknown')),
-                 last_checked_at       TEXT,
-                 created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-                 updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
-                 serial_number         TEXT,
-                 manufacturing_date    TEXT,
-                 sysname               TEXT,
-                 cpu_cores             INTEGER,
-                 memory_gb             REAL,
-                 auth_status           TEXT DEFAULT 'unknown',
-                 auth_message          TEXT,
-                 deployment            TEXT DEFAULT '',
-                 db_version            TEXT DEFAULT '',
-                 instance_name         TEXT DEFAULT '',
-                 db_username           TEXT DEFAULT '',
-                 db_password_encrypted TEXT DEFAULT '',
-                 db_port               INTEGER DEFAULT 3306
-             );"
-        ).map_err(|e| format!("migration 29 create: {}", e))?;
-        tx.execute_batch("INSERT INTO devices SELECT * FROM devices_old;")
-            .map_err(|e| format!("migration 29 insert: {}", e))?;
-        tx.execute_batch("DROP TABLE devices_old;")
-            .map_err(|e| format!("migration 29 drop: {}", e))?;
-        tx.commit().map_err(|e| format!("migration 29 commit: {}", e))?;
-
         conn.execute_batch("PRAGMA user_version = 29;")
             .map_err(|e| format!("migration 29: {}", e))?;
     }
@@ -883,19 +823,65 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 30: {}", e))?;
     }
 
-    // ── v31: 兜底清理 v29 残留 + 确保 kernel_version 列存在 ──
+    // ── v31: 移除 devices.ip 的 UNIQUE 约束（允许同 IP 不同设备类型）──
     if version < 31 {
-        conn.execute_batch("DROP TABLE IF EXISTS devices_old;")
-            .map_err(|e| format!("migration 31 cleanup: {}", e))?;
-        let has_kernel: bool = conn
-            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'kernel_version'")
-            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
-            .map(|c| c > 0)
-            .unwrap_or(false);
-        if !has_kernel {
-            conn.execute_batch("ALTER TABLE devices ADD COLUMN kernel_version TEXT DEFAULT '';")
-                .map_err(|e| format!("migration 31 kernel: {}", e))?;
+        // 检查当前 ip 列是否仍有 UNIQUE 约束（v29 跳过后需要此修复）
+        let create_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+
+        let has_ip_unique = create_sql.contains("ip TEXT NOT NULL UNIQUE");
+
+        if has_ip_unique {
+            // 事务内重建，避免 devices_old 残留问题
+            conn.execute_batch(
+                "BEGIN TRANSACTION;
+                 CREATE TABLE devices_new (
+                     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                     name                  TEXT NOT NULL UNIQUE,
+                     ip                    TEXT NOT NULL,
+                     device_type           TEXT NOT NULL,
+                     vendor                TEXT NOT NULL,
+                     model                 TEXT,
+                     ssh_username          TEXT,
+                     ssh_password_encrypted TEXT,
+                     ssh_port              INTEGER NOT NULL DEFAULT 22,
+                     template_id           INTEGER REFERENCES inspection_templates(id),
+                     status                TEXT NOT NULL DEFAULT 'unknown'
+                                           CHECK(status IN ('online','offline','unknown')),
+                     last_checked_at       TEXT,
+                     serial_number         TEXT,
+                     manufacturing_date    TEXT,
+                     sysname               TEXT,
+                     cpu_cores             INTEGER,
+                     memory_gb             REAL,
+                     auth_status           TEXT,
+                     auth_message          TEXT,
+                     deployment            TEXT DEFAULT '',
+                     db_version            TEXT DEFAULT '',
+                     instance_name         TEXT DEFAULT '',
+                     db_username           TEXT DEFAULT '',
+                     db_password_encrypted TEXT DEFAULT '',
+                     db_port               INTEGER DEFAULT 3306,
+                     kernel_version        TEXT DEFAULT '',
+                     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+                 );
+                 INSERT INTO devices_new SELECT * FROM devices;
+                 DROP TABLE devices;
+                 ALTER TABLE devices_new RENAME TO devices;
+                 CREATE INDEX IF NOT EXISTS idx_devices_vendor      ON devices(vendor);
+                 CREATE INDEX IF NOT EXISTS idx_devices_status      ON devices(status);
+                 CREATE INDEX IF NOT EXISTS idx_devices_template_id ON devices(template_id);
+                 COMMIT;",
+            )
+            .map_err(|e| format!("migration 31: {}", e))?;
         }
+
         conn.execute_batch("PRAGMA user_version = 31;")
             .map_err(|e| format!("migration 31: {}", e))?;
     }

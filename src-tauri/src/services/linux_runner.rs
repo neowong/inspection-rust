@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -48,6 +49,17 @@ pub fn run_commands_exec(
 
     if total == 0 {
         return Ok(indexmap::IndexMap::new());
+    }
+
+    // 0. TCP 预检：单次快速探测（避免 N 个 worker 同时超时等待）
+    {
+        let addr = format!("{}:{}", source.host, source.port)
+            .to_socket_addrs()
+            .map_err(|e| format!("地址解析失败: {}", e))?
+            .next()
+            .ok_or_else(|| "无法解析主机地址".to_string())?;
+        TcpStream::connect_timeout(&addr, Duration::from_secs(3))
+            .map_err(|e| format!("TCP 端口不可达 ({}): {}", source.port, e))?;
     }
 
     // 1. 把命令列表轮询分片：cmd[i] 分给 worker (i % N)

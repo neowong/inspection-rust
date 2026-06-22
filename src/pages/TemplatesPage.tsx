@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock } from "lucide-react";
 import type {
@@ -71,7 +72,9 @@ const EMPTY_REPORT_FORM = (): ReportForm => ({
 // ============================================================
 
 export default function TemplatesPage() {
-  const [tab, setTab] = useState<TabKey>("templates");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabKey) || "templates";
+  const [tab, setTab] = useState<TabKey>(initialTab);
 
   // Template state
   const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
@@ -189,6 +192,18 @@ export default function TemplatesPage() {
     setEditingTemplate(t);
     setTemplateForm({
       name: t.name, vendor: t.vendor, model: t.model || "",
+      description: t.description || "",
+      commands: t.config?.commands || [],
+      report_template_id: t.report_template_id ?? null,
+    });
+    setTemplateModal(true);
+  };
+  const duplicateTemplate = (t: InspectionTemplate) => {
+    setEditingTemplate(null);   // 走创建流程
+    setTemplateForm({
+      name: `${t.name} (副本)`,
+      vendor: t.vendor,
+      model: t.model || "",
       description: t.description || "",
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
@@ -320,7 +335,7 @@ export default function TemplatesPage() {
           {TABS.map((t) => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => { setTab(t.key); setSearchParams({ tab: t.key }, { replace: true }); }}
               className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
                 tab === t.key
                   ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
@@ -355,9 +370,10 @@ export default function TemplatesPage() {
               }},
               { key: "description", header: "描述", wrap: true, render: (r) => r.description || "-" },
               { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
-              { key: "actions", header: "操作", width: "140px", noTruncate: true, render: (r) => (
+              { key: "actions", header: "操作", width: "210px", noTruncate: true, render: (r) => (
                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => duplicateTemplate(r)}>复制</Button>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
                 </div>
               )},
@@ -512,11 +528,6 @@ export default function TemplatesPage() {
                   {templateForm.commands.map((spec, idx) => {
                     const cmd = templateCommands.find(c => c.id === spec.command_id);
                     if (!cmd) return null;
-                    const updateSpec = (patch: Partial<TemplateCommandConfig>) => {
-                      const next = [...templateForm.commands];
-                      next[idx] = { ...spec, ...patch };
-                      setTemplateForm({ ...templateForm, commands: next });
-                    };
                     return (
                       <div
                         key={spec.command_id}
@@ -544,38 +555,6 @@ export default function TemplatesPage() {
                             onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
                             className="ml-auto shrink-0 text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--danger))] text-xs leading-none">×</button>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1 pl-5 text-[11px]">
-                          <Select className="text-xs py-0.5 shrink-0 w-[88px]" value={spec.purpose} onChange={(e) => {
-                            const purpose = e.target.value as "inspection" | "static_info";
-                            updateSpec({ purpose, show_in_report: purpose !== "static_info" });
-                          }}>
-                            <option value="inspection">巡检项</option>
-                            <option value="static_info">静态信息</option>
-                          </Select>
-                          <label className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer shrink-0">
-                            <input type="checkbox" checked={spec.show_in_report} onChange={(e) => updateSpec({ show_in_report: e.target.checked })} className="accent-[hsl(var(--accent))]" />
-                            报告
-                          </label>
-                          {spec.purpose === "static_info" && (
-                            <>
-                              {(["sysname","model","serial_number","manufacturing_date","os_release","cpu_cores","memory_gb","db_version","instance_name"] as const).map((field) => (
-                                <label key={field} className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer">
-                                  <input type="checkbox"
-                                    checked={spec.extract_fields?.includes(field) ?? false}
-                                    onChange={(e) => {
-                                      const fields = spec.extract_fields ?? [];
-                                      updateSpec({
-                                        extract_fields: e.target.checked
-                                          ? [...fields, field]
-                                          : fields.filter(f => f !== field),
-                                      });
-                                    }} className="accent-[hsl(var(--accent))]" />
-                                  <span className="whitespace-nowrap">{field}</span>
-                                </label>
-                              ))}
-                            </>
-                          )}
-                        </div>
                       </div>
                     );
                   })}
@@ -597,7 +576,7 @@ export default function TemplatesPage() {
                       <input type="checkbox" checked={false}
                         onChange={() => setTemplateForm({
                           ...templateForm,
-                          commands: [...templateForm.commands, { command_id: cmd.id, purpose: "inspection", show_in_report: true, extract_fields: [] }]
+                          commands: [...templateForm.commands, { command_id: cmd.id }]
                         })}
                         className="accent-[hsl(var(--accent))] shrink-0" />
                       <span className="text-xs leading-tight">
@@ -1027,7 +1006,7 @@ const FIELD_SERVER: DeviceField[] = [
   { key: "model", label: "设备型号", visible: false },
   { key: "sn", label: "序列号", visible: false },
   { key: "mfg_date", label: "出厂日期", visible: false },
-  { key: "sysname", label: "主机名", visible: false },
+  { key: "hostname", label: "主机名", visible: false },
 ];
 const FIELD_DATABASE: DeviceField[] = [
   { key: "db_version", label: "数据库版本", visible: true },
@@ -1396,6 +1375,7 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
       case "mfg_date": return dev.mfg_date;
       case "inspect_time": return dev.inspect_time;
       case "sysname": return dev.sysname;
+      case "hostname": return dev.sysname;
       case "os_release": return dev.os_release;
       case "cpu_cores": return dev.cpu_cores;
       case "memory_gb": return `${dev.memory_gb} GB`;

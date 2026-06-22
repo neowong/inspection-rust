@@ -25,9 +25,6 @@ export interface Device {
 
 export interface TemplateCommandConfig {
   command_id: number;
-  show_in_report: boolean;
-  purpose: "inspection" | "static_info";
-  extract_fields: string[];
 }
 
 export interface InspectionTemplate {
@@ -167,6 +164,7 @@ export interface DeviceField {
     | "mfg_date"
     | "inspect_time"
     | "sysname"
+    | "hostname"
     | "os_release"
     | "cpu_cores"
     | "memory_gb"

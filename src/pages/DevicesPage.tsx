@@ -27,6 +27,7 @@ interface DeviceForm {
   sysname: string;
   cpu_cores: string;
   memory_gb: string;
+  kernel_version: string;
   serial_number: string;
   manufacturing_date: string;
   ssh_username: string;
@@ -43,7 +44,7 @@ interface DeviceForm {
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C",
-  model: "", sysname: "", cpu_cores: "", memory_gb: "", serial_number: "", manufacturing_date: "",
+  model: "", sysname: "", cpu_cores: "", memory_gb: "", kernel_version: "", serial_number: "", manufacturing_date: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "", db_port: 3306,
 };
@@ -52,8 +53,8 @@ export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
   const [searchText, setSearchText] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
+  const [typeFilter, setTypeFilter] = useState(searchParams.get("type") || "");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -109,10 +110,12 @@ export default function DevicesPage() {
   }, []);
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
-  // URL ?status= 变化时同步筛选（dashboard 跳转）
+  // URL ?status= / ?type= 变化时同步筛选（dashboard 跳转）
   useEffect(() => {
     const s = searchParams.get("status") || "";
+    const t = searchParams.get("type") || "";
     if (s !== statusFilter) setStatusFilter(s);
+    if (t !== typeFilter) setTypeFilter(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
@@ -141,6 +144,7 @@ export default function DevicesPage() {
       sysname: d.sysname || "",
       cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
+      kernel_version: (d as any).kernel_version || "",
       serial_number: d.serial_number || "",
       manufacturing_date: d.manufacturing_date || "",
       ssh_username: d.ssh_username || "",
@@ -149,6 +153,38 @@ export default function DevicesPage() {
       template_id: d.template_id,
       deployment: (d as any).deployment || "direct",
       db_version: (d as any).db_version || "",
+      instance_name: (d as any).instance_name || "",
+      db_username: (d as any).db_username || "",
+      db_password: "",
+      db_port: (d as any).db_port || 3306,
+    });
+    setModalOpen(true);
+  };
+
+  /** 复制设备：保留必要配置，清空静态信息（需重新检测）和 IP（避免同类型冲突） */
+  const duplicateDevice = (d: Device) => {
+    setEditing(null);
+    setPasswordSet(false);
+    setForm({
+      name: `${d.name} (副本)`,
+      ip: "",                   // 清空 IP，避免同类型冲突
+      device_type: d.device_type || "router",
+      vendor: d.vendor,
+      // 静态信息清空，新设备需重新检测
+      model: "",
+      sysname: "",
+      cpu_cores: "",
+      memory_gb: "",
+      kernel_version: "",
+      serial_number: "",
+      manufacturing_date: "",
+      db_version: "",
+      // 必要配置保留
+      ssh_username: d.ssh_username || "",
+      ssh_password: "",
+      ssh_port: d.ssh_port,
+      template_id: d.template_id,
+      deployment: (d as any).deployment || "direct",
       instance_name: (d as any).instance_name || "",
       db_username: (d as any).db_username || "",
       db_password: "",
@@ -177,6 +213,7 @@ export default function DevicesPage() {
     if (form.sysname) data.sysname = form.sysname;
     if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
     if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
+    if (form.kernel_version) data.kernel_version = form.kernel_version;
     if (form.db_version) data.db_version = form.db_version;
     if (form.instance_name) data.instance_name = form.instance_name;
     if (form.ssh_username) data.ssh_username = form.ssh_username;
@@ -227,6 +264,14 @@ export default function DevicesPage() {
               .then((json) => {
                 console.log("[detect] 检测结果:", json);
                 loadDevices();
+                // 解析 _warn 字段，有警告用 warn 级别提示
+                try {
+                  const parsed = JSON.parse(json);
+                  if (parsed._warn) {
+                    showStatusHint(`${devName}: ${parsed._warn}`, "warn", 8000);
+                    return;
+                  }
+                } catch (_) { /* ignore parse error */ }
                 showStatusHint(`${devName}: 静态信息检测完成`, "success");
               })
               .catch((e) => {
@@ -235,8 +280,9 @@ export default function DevicesPage() {
               });
           })
           .catch((e) => {
-            console.error("[check_device_status] 失败:", e);
-            showStatusHint(`${devName}: 在线状态检测失败`, "error");
+            const errMsg = typeof e === "string" ? e : JSON.stringify(e);
+            console.error("[check_device_status] 失败:", errMsg);
+            showStatusHint(`${devName}: 在线状态检测异常: ${errMsg}`, "error");
           });
       })
       .catch((e) => {
@@ -301,13 +347,19 @@ export default function DevicesPage() {
         }
         showStatusHint(`${d.name}: 在线，正在采集静态信息...`, "info", 30000);
         return invoke<string>("detect_device_model_by_id", { deviceId: d.id })
-          .then(() => {
+          .then((json) => {
             loadDevices();
+            try {
+              const parsed = JSON.parse(json);
+              if (parsed._warn) {
+                showStatusHint(`${d.name}: ${parsed._warn}`, "warn", 8000);
+                return;
+              }
+            } catch (_) {}
             showStatusHint(`${d.name}: 检测完成（在线 + 静态信息已更新）`, "success");
           })
           .catch((e) => {
             console.error("[check] 静态信息采集失败:", e);
-            // 在线但静态信息采集失败——设备本身是在线的，只是 SSH 命令执行有问题
             showStatusHint(`${d.name}: 在线，但静态信息采集失败（${detectErrorHint("", e).split(":").slice(1).join(":").trim() || "SSH 执行异常"}）`, "warn");
           });
       })
@@ -404,6 +456,7 @@ export default function DevicesPage() {
   const ctxItems: ContextMenuItem[] = selectedDevice
     ? [
         { label: "编辑", action: () => openEdit(selectedDevice) },
+        { label: "复制", action: () => duplicateDevice(selectedDevice) },
         { label: "", separator: true },
         { label: "检测状态", action: () => handleCheckDevice(selectedDevice) },
         { label: "", separator: true },
@@ -424,7 +477,13 @@ export default function DevicesPage() {
           size="sm"
           className="w-28"
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            // 同步 URL，保留已有的 status 参数
+            const next = new URLSearchParams(searchParams);
+            if (e.target.value) next.set("type", e.target.value); else next.delete("type");
+            setSearchParams(next, { replace: true });
+          }}
         >
           <option value="">全部类型</option>
           <option value="switch,router">网络设备</option>
@@ -438,9 +497,10 @@ export default function DevicesPage() {
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value);
-            // 同步 URL，dashboard 跳转过来时也能改回全部
-            if (e.target.value) setSearchParams({ status: e.target.value });
-            else setSearchParams({});
+            // 同步 URL，保留已有的 type 参数
+            const next = new URLSearchParams(searchParams);
+            if (e.target.value) next.set("status", e.target.value); else next.delete("status");
+            setSearchParams(next, { replace: true });
           }}
         >
           <option value="">全部状态</option>
@@ -511,7 +571,7 @@ export default function DevicesPage() {
           {
             key: "actions",
             header: "操作",
-            width: "210px",
+            width: "280px",
             noTruncate: true,
             render: (r) => (
               <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
@@ -525,6 +585,9 @@ export default function DevicesPage() {
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                   编辑
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => duplicateDevice(r)}>
+                  复制
                 </Button>
                 <Button
                   size="sm"
@@ -626,14 +689,18 @@ export default function DevicesPage() {
                 </div>
               </div>
               {(form.device_type === "server" || form.device_type === "database") ? (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">发行版本号</label>
                     <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="自动检测" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
-                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内核版本</label>
+                    <Input value={form.kernel_version} onChange={(e) => setForm({ ...form, kernel_version: e.target.value })} placeholder="自动检测" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
