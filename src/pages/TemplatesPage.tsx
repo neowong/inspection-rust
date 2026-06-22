@@ -1279,9 +1279,23 @@ function applyVars(s: string, device: SampleDevice): string {
     .replace(/\{\{total\}\}/g, "3");
 }
 
+/** 将厂商名归一化到样本数据键 */
+function sampleKey(vendor: string): string {
+  if (!vendor) return "H3C";
+  if (SAMPLE_DEVICE[vendor]) return vendor;          // H3C/华为/思科/锐捷/飞塔/MySQL/PostgreSQL/Oracle — 精确匹配
+  const norm = vendor.toLowerCase();
+  if (["ubuntu","centos","rocky","debian","rhel","suse","fedora","almalinux"].some(o => norm.includes(o))) return "Linux";
+  if (["mysql","mariadb"].some(o => norm.includes(o))) return "MySQL";
+  if (norm.includes("postgres")) return "PostgreSQL";
+  if (norm.includes("oracle")) return "Oracle";
+  if (norm.includes("sql") || norm.includes("mssql")) return "MySQL";
+  return "H3C"; // 兜底
+}
+
 function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor: string }) {
-  const dev = (SAMPLE_DEVICE[vendor] || SAMPLE_DEVICE["H3C"]) as SampleDevice;
-  const rows = (SAMPLE_ROWS[vendor] || SAMPLE_ROWS["H3C"]) as SampleRow[];
+  const sk = sampleKey(vendor);
+  const dev = SAMPLE_DEVICE[sk] as SampleDevice;
+  const rows = SAMPLE_ROWS[sk] as SampleRow[];
   const accent = config.cover.primary_color;
   const title = applyVars(config.cover.title, dev);
   const headerText = applyVars(config.header, dev);
