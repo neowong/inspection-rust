@@ -1,12 +1,10 @@
 name: CI
 
-# 门禁：每次 push / PR 跑类型检查、编译、clippy、测试（含 fresh-install 迁移测试）。
-# 目的——消除开发/生产不一致：生产构建（release.yml 打 tag）依赖的代码路径
-# 必须在合并前就被验证，不能靠"开发机有旧库"掩盖全新安装等问题。
+# 门禁：手动触发或 PR 时跑。push 不自动触发（避免手机频繁通知）。
+# 需要验证时去 Actions → CI → Run workflow 手动跑。
 
 on:
-  push:
-    branches: [neo]
+  workflow_dispatch:
   pull_request:
 
 jobs:

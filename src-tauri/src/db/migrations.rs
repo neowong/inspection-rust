@@ -784,6 +784,21 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 27: {}", e))?;
     }
 
+    // ── v28: devices 增加 db_port 字段 ──
+    if version < 28 {
+        let has: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'db_port'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN db_port INTEGER DEFAULT 3306;")
+                .map_err(|e| format!("migration 28: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 28;")
+            .map_err(|e| format!("migration 28: {}", e))?;
+    }
+
     Ok(())
 }
 

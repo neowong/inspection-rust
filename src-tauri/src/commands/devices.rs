@@ -173,7 +173,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -196,6 +196,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.instance_name,
             data.db_username,
             encrypted_db_password,
+            data.db_port.unwrap_or(3306),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -261,6 +262,7 @@ pub fn update_device(
     updater.push_opt("db_version", &data.db_version);
     updater.push_opt("instance_name", &data.instance_name);
     updater.push_opt("db_username", &data.db_username);
+    updater.push_opt("db_port", &data.db_port);
     if let Some(ref pass) = data.db_password_encrypted {
         if !pass.is_empty() {
             let enc = CryptoService::encrypt(pass)?;

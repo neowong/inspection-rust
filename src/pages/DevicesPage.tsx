@@ -37,13 +37,14 @@ interface DeviceForm {
   instance_name: string;
   db_username: string;
   db_password: string;
+  db_port: number;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
-  deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "",
+  deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "", db_port: 3306,
 };
 
 export default function DevicesPage() {
@@ -143,6 +144,7 @@ export default function DevicesPage() {
       instance_name: (d as any).instance_name || "",
       db_username: (d as any).db_username || "",
       db_password: "",
+      db_port: (d as any).db_port || 3306,
     });
     setModalOpen(true);
   };
@@ -175,6 +177,7 @@ export default function DevicesPage() {
     if (form.instance_name) data.instance_name = form.instance_name;
     if (form.db_username) data.db_username = form.db_username;
     if (form.db_password) data.db_password_encrypted = form.db_password;
+    data.db_port = form.db_port;
 
     setSaving(true);
     setSaveError(null);
@@ -646,15 +649,21 @@ export default function DevicesPage() {
 
               <div className={form.device_type === "database" ? "grid grid-cols-2 gap-3" : ""}>
                 {form.device_type === "database" && (
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
-                    <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
-                      <option value="direct">包安装</option>
-                      <option value="docker">Docker 容器</option>
-                      <option value="podman">Podman 容器</option>
-                      <option value="k8s">Kubernetes</option>
-                    </Select>
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
+                      <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                        <option value="direct">包安装</option>
+                        <option value="docker">Docker 容器</option>
+                        <option value="podman">Podman 容器</option>
+                        <option value="k8s">Kubernetes</option>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">DB 端口</label>
+                      <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 3306 })} />
+                    </div>
+                  </>
                 )}
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
