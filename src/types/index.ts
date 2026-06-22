@@ -169,7 +169,9 @@ export interface DeviceField {
     | "sysname"
     | "os_release"
     | "cpu_cores"
-    | "memory_gb";
+    | "memory_gb"
+    | "db_version"
+    | "instance_name";
   label: string;
   visible: boolean;
 }
@@ -212,8 +214,10 @@ export const DEFAULT_REPORT_CONFIG: ReportTemplateConfig = {
       { key: "cpu_cores",    label: "CPU 核心数", visible: false },
       { key: "memory_gb",    label: "内存容量", visible: false },
       { key: "sn",           label: "序列号",   visible: false },
-      { key: "mfg_date",     label: "出厂日期", visible: false },
-      { key: "inspect_time", label: "巡检时间", visible: true },
+      { key: "mfg_date",     label: "出厂日期",  visible: false },
+      { key: "db_version",   label: "数据库版本", visible: false },
+      { key: "instance_name",label: "实例名",     visible: false },
+      { key: "inspect_time", label: "巡检时间",   visible: true },
     ],
   },
   command_table: {

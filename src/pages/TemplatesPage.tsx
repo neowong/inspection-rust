@@ -841,6 +841,54 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
   ],
 };
 
+// ── 厂商专属字段分组 ──
+const FIELD_COMMON: DeviceField[] = [
+  { key: "name", label: "设备名称", visible: true },
+  { key: "ip", label: "管理地址", visible: true },
+  { key: "vendor", label: "设备厂商", visible: true },
+  { key: "inspect_time", label: "巡检时间", visible: true },
+];
+const FIELD_NETWORK: DeviceField[] = [
+  { key: "model", label: "设备型号", visible: true },
+  { key: "sn", label: "序列号", visible: true },
+  { key: "mfg_date", label: "出厂日期", visible: true },
+  { key: "sysname", label: "主机名", visible: true },
+];
+const FIELD_SERVER: DeviceField[] = [
+  { key: "os_release", label: "发行版", visible: true },
+  { key: "cpu_cores", label: "CPU 核心", visible: true },
+  { key: "memory_gb", label: "内存(GB)", visible: true },
+];
+const FIELD_DATABASE: DeviceField[] = [
+  { key: "db_version", label: "数据库版本", visible: true },
+  { key: "instance_name", label: "实例名", visible: true },
+];
+// 数据库宿主信息：数据库运行在服务器上，宿主机静态信息也需纳入报告
+const FIELD_DB_HOST: DeviceField[] = [
+  { key: "os_release", label: "宿主机 OS", visible: true },
+  { key: "cpu_cores", label: "宿主机 CPU 核心", visible: true },
+  { key: "memory_gb", label: "宿主机 内存(GB)", visible: true },
+];
+
+/** 按厂商标记返回该厂商可用的完整字段集 */
+function vendorFields(vendor: string): DeviceField[] {
+  if (!vendor) return [...FIELD_COMMON, ...FIELD_NETWORK];
+  const norm = vendor.toLowerCase();
+  if (["h3c", "华为", "思科", "锐捷"].some(v => norm.includes(v.toLowerCase()))) {
+    return [...FIELD_COMMON, ...FIELD_NETWORK];
+  }
+  if (["飞塔", "fortigate", "fortinet"].some(v => norm.includes(v.toLowerCase()))) {
+    return [...FIELD_COMMON, ...FIELD_NETWORK];
+  }
+  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos")) {
+    return [...FIELD_COMMON, ...FIELD_SERVER];
+  }
+  if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres")) {
+    return [...FIELD_COMMON, ...FIELD_DATABASE, ...FIELD_DB_HOST];
+  }
+  return [...FIELD_COMMON, ...FIELD_NETWORK];
+}
+
 const STATUS_DEF: Record<string, { label: string; bg: string; color: string }> = {
   ok:       { label: "正常", bg: "#E2F0D9", color: "#385723" },
   info:     { label: "提示", bg: "#DEEBF7", color: "#1F4E79" },
@@ -879,7 +927,17 @@ function ReportTemplateEditor({
             </div>
             <div>
               <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={form.vendor} onChange={(e) => update({ vendor: e.target.value })}>
+              <Select value={form.vendor} onChange={(e) => {
+                  const v = e.target.value;
+                  const defaults = vendorFields(v);
+                  // 保留已有字段的 label 编辑，用默认集合并补全缺失字段
+                  const existingKeys = new Set(form.config.device_info.fields.map(f => f.key));
+                  const merged = [
+                    ...form.config.device_info.fields.filter(f => defaults.some(d => d.key === f.key)),
+                    ...defaults.filter(d => !existingKeys.has(d.key)),
+                  ];
+                  update({ vendor: v, config: { ...form.config, device_info: { ...form.config.device_info, fields: merged } } });
+                }}>
                 <option value="">通用</option>
                 {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
               </Select>
@@ -958,6 +1016,27 @@ function ReportTemplateEditor({
                   )}
                   itemKey={(f) => f.key}
                 />
+                {/* 添加字段：仅列出当前厂商可用且未加入的字段 */}
+                {(() => {
+                  const available = vendorFields(form.vendor);
+                  const existingKeys = new Set(form.config.device_info.fields.map(f => f.key));
+                  const missing = available.filter(f => !existingKeys.has(f.key));
+                  if (missing.length === 0) return null;
+                  return (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      <span className="text-[10px] text-[hsl(var(--text-tertiary))]">添加：</span>
+                      {missing.map(f => (
+                        <button key={f.key} type="button"
+                          onClick={() => {
+                            const fields = [...form.config.device_info.fields, { ...f }];
+                            updateConfig({ device_info: { ...form.config.device_info, fields } });
+                          }}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
+                        >+ {f.label}</button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </>
           )}
@@ -1164,6 +1243,8 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
       case "os_release": return dev.os_release;
       case "cpu_cores": return dev.cpu_cores;
       case "memory_gb": return `${dev.memory_gb} GB`;
+      case "db_version": return "MySQL 8.0.36";
+      case "instance_name": return "prod-db-01";
       default: return "";
     }
   };
