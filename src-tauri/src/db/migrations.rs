@@ -455,7 +455,22 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
     // ── v22: 内置报告模板 + H3C 接入交换机巡检模板 ──
     if version < 22 {
         // ---- 报告模板 ----
-        let default_config = |title: &str, color: &str| -> serde_json::Value {
+        let make_config = |title: &str, color: &str, is_linux: bool| -> serde_json::Value {
+            let mut fields = vec![
+                serde_json::json!({"key":"name","label":"设备名称","visible":true}),
+                serde_json::json!({"key":"ip","label":"管理地址","visible":true}),
+                serde_json::json!({"key":"vendor","label":"设备厂商","visible":true}),
+                serde_json::json!({"key":"inspect_time","label":"巡检时间","visible":true}),
+            ];
+            if is_linux {
+                fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
+                fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
+                fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
+            } else {
+                fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":true}));
+                fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":true}));
+                fields.push(serde_json::json!({"key":"mfg_date","label":"出厂日期","visible":true}));
+            }
             serde_json::json!({
                 "cover": {
                     "title": title,
@@ -465,15 +480,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 },
                 "device_info": {
                     "enabled": true, "layout": "two_column",
-                    "fields": [
-                        {"key":"name","label":"设备名称","visible":true},
-                        {"key":"ip","label":"管理地址","visible":true},
-                        {"key":"vendor","label":"设备厂商","visible":true},
-                        {"key":"model","label":"设备型号","visible":true},
-                        {"key":"sn","label":"序列号","visible":true},
-                        {"key":"mfg_date","label":"出厂日期","visible":true},
-                        {"key":"inspect_time","label":"巡检时间","visible":true}
-                    ]
+                    "fields": fields
                 },
                 "command_table": {
                     "columns": [
@@ -490,20 +497,20 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             })
         };
 
-        let builtin_reports: &[(&str, &str, &str, &str)] = &[
-            ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板"),
-            ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板"),
-            ("遥遥领先专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板"),
-            ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板"),
+        let builtin_reports: &[(&str, &str, &str, &str, bool)] = &[
+            ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板", true),
+            ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板", true),
+            ("遥遥领先专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板", false),
+            ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板", false),
         ];
 
-        for (name, vendor, color, desc) in builtin_reports {
+        for (name, vendor, color, desc, is_linux) in builtin_reports {
             let exists: i64 = conn
                 .prepare("SELECT COUNT(*) FROM report_templates WHERE name = ?1")
                 .and_then(|mut stmt| stmt.query_row(rusqlite::params![name], |row| row.get(0)))
                 .unwrap_or(0);
             if exists == 0 {
-                let cfg = default_config(name, color);
+                let cfg = make_config(name, color, *is_linux);
                 conn.execute(
                     "INSERT INTO report_templates (name, vendor, is_default, description, config_json) VALUES (?1, ?2, 0, ?3, ?4)",
                     rusqlite::params![name, vendor, desc, serde_json::to_string(&cfg).unwrap_or_default()],
@@ -586,6 +593,43 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         }
         conn.execute_batch("PRAGMA user_version = 23;")
             .map_err(|e| format!("migration 23: {}", e))?;
+    }
+
+    // ── v24: Linux 报告模板补全设备信息字段（os_release/cpu_cores/memory_gb） ──
+    if version < 24 {
+        let linux_fields = serde_json::json!([
+            {"key":"name","label":"设备名称","visible":true},
+            {"key":"ip","label":"管理地址","visible":true},
+            {"key":"vendor","label":"设备厂商","visible":true},
+            {"key":"inspect_time","label":"巡检时间","visible":true},
+            {"key":"os_release","label":"发行版","visible":true},
+            {"key":"cpu_cores","label":"CPU 核心","visible":true},
+            {"key":"memory_gb","label":"内存(GB)","visible":true},
+        ]);
+        // 更新已有 Linux 模板时，若已有自定义字段则保留（只补 v22 遗留的）
+        for name in &["Ubuntu 服务器模板", "CentOS 服务器模板"] {
+            let current: Option<String> = conn
+                .query_row(
+                    "SELECT config_json FROM report_templates WHERE name = ?1 AND config_json NOT LIKE '%os_release%'",
+                    rusqlite::params![name],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(cfg_str) = current {
+                if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
+                    cfg["device_info"]["fields"] = linux_fields.clone();
+                    let new_str = serde_json::to_string(&cfg).unwrap_or_default();
+                    conn.execute(
+                        "UPDATE report_templates SET config_json = ?1 WHERE name = ?2",
+                        rusqlite::params![new_str, name],
+                    )?;
+                    tracing::info!("migration 24: 模板 '{}' 已补全 Linux 信息字段", name);
+                }
+            }
+        }
+
+        conn.execute_batch("PRAGMA user_version = 24;")
+            .map_err(|e| format!("migration 24: {}", e))?;
     }
 
     Ok(())
