@@ -557,25 +557,33 @@ fn sync_device_static_info(
     let manufacturing_date = get("manufacturing_date");
     let cpu_cores = get("cpu_cores").and_then(|s| s.parse::<i64>().ok());
     let memory_gb = get("memory_gb").and_then(parse_memory_to_gb);
+    let db_version = get("db_version");
+    let instance_name = get("instance_name");
+    let os_release = get("os_release");
     if sysname.is_none()
         && model.is_none()
         && serial_number.is_none()
         && manufacturing_date.is_none()
         && cpu_cores.is_none()
         && memory_gb.is_none()
+        && db_version.is_none()
+        && instance_name.is_none()
+        && os_release.is_none()
     {
         return;
     }
     let _ = conn.execute(
         "UPDATE devices SET \
          sysname = COALESCE(?1, sysname), \
-         model = COALESCE(?2, model), \
+         model = COALESCE(?2, ?9, model), \
          serial_number = COALESCE(?3, serial_number), \
          manufacturing_date = COALESCE(?4, manufacturing_date), \
          cpu_cores = COALESCE(?5, cpu_cores), \
          memory_gb = COALESCE(?6, memory_gb), \
-         updated_at = ?7 WHERE id = ?8",
-        rusqlite::params![sysname, model, serial_number, manufacturing_date, cpu_cores, memory_gb, now_str(), device_id],
+         db_version = COALESCE(?7, db_version), \
+         instance_name = COALESCE(?8, instance_name), \
+         updated_at = ?10 WHERE id = ?11",
+        rusqlite::params![sysname, model, serial_number, manufacturing_date, cpu_cores, memory_gb, db_version, instance_name, os_release, now_str(), device_id],
     );
 }
 

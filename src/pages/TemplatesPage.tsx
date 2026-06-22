@@ -558,7 +558,7 @@ export default function TemplatesPage() {
                           </label>
                           {spec.purpose === "static_info" && (
                             <>
-                              {["sysname", "model", "serial_number", "manufacturing_date"].map((field) => (
+                              {(["sysname","model","serial_number","manufacturing_date","os_release","cpu_cores","memory_gb","db_version","instance_name"] as const).map((field) => (
                                 <label key={field} className="flex items-center gap-0.5 text-[hsl(var(--text-secondary))] cursor-pointer">
                                   <input type="checkbox"
                                     checked={spec.extract_fields?.includes(field) ?? false}
