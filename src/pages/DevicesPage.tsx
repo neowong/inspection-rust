@@ -649,8 +649,7 @@ export default function DevicesPage() {
                   <div>
                     <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
                     <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
-                      <option value="">未知</option>
-                      <option value="direct">物理机 / 包安装</option>
+                      <option value="direct">包安装</option>
                       <option value="docker">Docker 容器</option>
                       <option value="podman">Podman 容器</option>
                       <option value="k8s">Kubernetes</option>
