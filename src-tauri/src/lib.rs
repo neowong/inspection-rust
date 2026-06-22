@@ -451,6 +451,7 @@ pub fn run() {
             commands::reports::generate_batch_docx_zip,
             commands::reports::generate_batch_docx_combined,
             commands::reports::delete_record_report,
+            commands::reports::open_reports_dir,
             commands::reports::analyze_record_logs,
             commands::reports::parse_log_text,
             // Tools

@@ -620,11 +620,6 @@ pub fn generate_docx_report(
         (record, device, cmd_descs, config, cover)
     }; // 锁释放
 
-    // 清理旧报告文件（避免重复生成累积）
-    if let Some(ref old_path) = record.report_path {
-        let _ = std::fs::remove_file(old_path);
-    }
-
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("report_{}_{}.docx", record_id, timestamp);
@@ -1090,4 +1085,22 @@ pub fn parse_log_text(text: String, vendor: String) -> Result<serde_json::Value,
         "info": analysis.info, "debug": analysis.debug, "entries": analysis.entries,
         "summary": analysis.summary,
     }))
+}
+
+/// 用系统文件管理器打开报告目录，方便用户查看历史报告
+#[tauri::command]
+pub fn open_reports_dir() -> Result<(), String> {
+    let dir = crate::APP_DATA_DIR
+        .get()
+        .ok_or("数据目录未初始化")?
+        .join("data")
+        .join("reports");
+    std::fs::create_dir_all(&dir).ok();
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("explorer").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "linux")]
+    { std::process::Command::new("xdg-open").arg(&dir).spawn().ok(); }
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg(&dir).spawn().ok(); }
+    Ok(())
 }

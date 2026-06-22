@@ -299,6 +299,10 @@ export default function ReportManagementPage() {
                   onClick={handleDownloadCombined}>
                   下载综合报告
                 </Button>
+                <Button size="sm" variant="ghost"
+                  onClick={() => invoke("open_reports_dir").catch(console.error)}>
+                  报告目录
+                </Button>
               </div>
 
               {/* Records table */}
