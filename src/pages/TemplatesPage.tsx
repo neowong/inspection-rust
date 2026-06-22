@@ -562,29 +562,22 @@ export default function TemplatesPage() {
                 <p className="shrink-0 mt-1 text-[10px] text-[hsl(var(--text-tertiary))] text-right">列表顺序即为报告中的展示顺序</p>
               </div>
 
-              {/* 右：可选命令 */}
+              {/* 右：可选命令（按类别分组） */}
               <div className="flex flex-col min-h-0">
                 <label className="shrink-0 text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
                   可选命令
                 </label>
-                <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md p-2 space-y-1">
+                <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md">
                   {vendorFilteredCommands.length === 0 && (
                     <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>
                   )}
-                  {vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id)).map((cmd) => (
-                    <label key={cmd.id} className="flex items-center gap-2 cursor-pointer hover:bg-[hsl(var(--bg-hover))] rounded px-1 py-0.5">
-                      <input type="checkbox" checked={false}
-                        onChange={() => setTemplateForm({
-                          ...templateForm,
-                          commands: [...templateForm.commands, { command_id: cmd.id }]
-                        })}
-                        className="accent-[hsl(var(--accent))] shrink-0" />
-                      <span className="text-xs leading-tight">
-                        <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-xs">{cmd.command}</code>
-                        {cmd.description && <span className="text-[hsl(var(--text-tertiary))] ml-1 text-xs">{cmd.description}</span>}
-                      </span>
-                    </label>
-                  ))}
+                  <AvailableCommands
+                    commands={vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id))}
+                    onAdd={(cmd) => setTemplateForm({
+                      ...templateForm,
+                      commands: [...templateForm.commands, { command_id: cmd.id }]
+                    })}
+                  />
                 </div>
               </div>
             </div>
@@ -1686,6 +1679,68 @@ function CommandList({
                       </button>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 可选命令面板——按类别分组折叠，点击添加 */
+function AvailableCommands({
+  commands, onAdd,
+}: {
+  commands: CommandPool[];
+  onAdd: (cmd: CommandPool) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (cat: string) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
+    return next;
+  });
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, CommandPool[]>();
+    for (const cmd of commands) {
+      const cat = cmd.category || "general";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(cmd);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
+      const ib = CATEGORIES.indexOf(b as typeof CATEGORIES[number]);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+  }, [commands]);
+
+  if (commands.length === 0) return null;
+
+  return (
+    <div className="p-1 space-y-0.5">
+      {grouped.map(([cat, cmds]) => {
+        const open = !collapsed.has(cat);
+        return (
+          <div key={cat}>
+            <button onClick={() => toggle(cat)}
+              className="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[hsl(var(--bg-hover))] transition-colors text-left">
+              {open ? <ChevronDown size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" /> : <ChevronRight size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />}
+              <span className="text-[11px] font-medium text-[hsl(var(--text-secondary))]">{CATEGORY_LABELS[cat] || cat}</span>
+              <span className="text-[10px] text-[hsl(var(--text-tertiary))] ml-auto">{cmds.length}</span>
+            </button>
+            {open && (
+              <div className="ml-3 space-y-0.5">
+                {cmds.map((cmd) => (
+                  <button key={cmd.id}
+                    onClick={() => onAdd(cmd)}
+                    className="w-full flex items-center gap-1.5 px-2 py-0.5 rounded text-left hover:bg-[hsl(var(--accent)_/_0.08)] transition-colors group">
+                    <span className="text-[10px] text-[hsl(var(--accent))] opacity-0 group-hover:opacity-100 shrink-0 w-3">+</span>
+                    <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
+                    {cmd.description && <span className="text-[11px] text-[hsl(var(--text-tertiary))] truncate">{cmd.description}</span>}
+                  </button>
                 ))}
               </div>
             )}
