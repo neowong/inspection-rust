@@ -1028,7 +1028,7 @@ function vendorFields(vendor: string): DeviceField[] {
   if (["飞塔", "fortigate", "fortinet"].some(v => norm.includes(v.toLowerCase()))) {
     return [...FIELD_COMMON, ...FIELD_NETWORK];
   }
-  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos") || norm.includes("rocky") || norm.includes("debian") || norm.includes("rhel") || norm.includes("suse") || norm.includes("fedora") || norm.includes("alma")) {
+  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos") || norm.includes("rocky") || norm.includes("debian") || norm.includes("rhel") || norm.includes("suse") || norm.includes("fedora") || norm.includes("alma") || norm.includes("龙蜥") || norm.includes("anolis") || norm.includes("欧拉") || norm.includes("euler") || norm.includes("麒麟") || norm.includes("kylin")) {
     return [...FIELD_COMMON, ...FIELD_SERVER];
   }
   if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres") || norm.includes("sql") || norm.includes("达梦")) {
@@ -1374,7 +1374,7 @@ function sampleKey(vendor: string): string {
   if (SAMPLE_DEVICE[vendor]) return vendor;
   const norm = vendor.toLowerCase();
   // 未精确匹配的 Linux 变体回退到 "Linux"
-  if (["rhel","suse","fedora","almalinux","linux"].some(o => norm.includes(o))) return "Linux";
+  if (["rhel","suse","fedora","almalinux","linux","龙蜥","anolis","欧拉","euler","麒麟","kylin"].some(o => norm.includes(o))) return "Linux";
   if (["mysql","mariadb"].some(o => norm.includes(o))) return "MySQL";
   if (norm.includes("postgres")) return "PostgreSQL";
   if (norm.includes("oracle")) return "Oracle";
@@ -1421,7 +1421,8 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
     if (
       v === "linux" || v === "ubuntu" || v === "centos" || v === "rocky" ||
       v === "debian" || v === "rhel" || v === "suse" || v === "fedora" ||
-      v === "almalinux" ||
+      v === "almalinux" || v === "龙蜥" || v === "anolis" ||
+      v === "欧拉" || v === "openeuler" || v === "麒麟" || v === "kylin" ||
       v === "mysql" || v === "postgresql" || v === "oracle" || v.includes("sql") || v.includes("达梦")
     ) {
       return `[root@${sysname} ~]# `;

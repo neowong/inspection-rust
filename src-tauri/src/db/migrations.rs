@@ -463,7 +463,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 serde_json::json!({"key":"inspect_time","label":"巡检时间","visible":true}),
             ];
             let v = vendor.to_lowercase();
-            if v.contains("linux") || v.contains("ubuntu") || v.contains("centos") || v.contains("rocky") || v.contains("debian") {
+            if v.contains("linux") || v.contains("ubuntu") || v.contains("centos") || v.contains("rocky") || v.contains("debian") || v.contains("龙蜥") || v.contains("欧拉") || v.contains("麒麟") {
                 fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
@@ -653,7 +653,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
 
     // ── v25: 补全所有 Linux 发行版模板的缺失字段 ──
     if version < 25 {
-        let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux"];
+        let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux","龙蜥","欧拉","麒麟"];
         let server_fields: Vec<(&str, &str)> = vec![
             ("os_release", "发行版"),
             ("cpu_cores",  "CPU 核心"),
