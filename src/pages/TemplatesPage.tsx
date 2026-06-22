@@ -1028,7 +1028,7 @@ function vendorFields(vendor: string): DeviceField[] {
   if (["飞塔", "fortigate", "fortinet"].some(v => norm.includes(v.toLowerCase()))) {
     return [...FIELD_COMMON, ...FIELD_NETWORK];
   }
-  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos")) {
+  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos") || norm.includes("rocky") || norm.includes("debian") || norm.includes("rhel") || norm.includes("suse") || norm.includes("fedora") || norm.includes("alma")) {
     return [...FIELD_COMMON, ...FIELD_SERVER];
   }
   if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres") || norm.includes("sql") || norm.includes("达梦")) {
