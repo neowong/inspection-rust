@@ -615,22 +615,52 @@ pub async fn detect_device_model_by_id(
     };
     let (ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name) = read_result?;
 
-    // 2. 调用底层检测
+    // 2. 如果同 IP 已有服务器设备且有 OS 信息，直接复制（避免重复 SSH + sudo 问题）
+    let os_info_from_sibling = {
+        let conn = state.db.lock();
+        let sql = format!(
+            "SELECT model, sysname, cpu_cores, memory_gb FROM devices \
+             WHERE ip = ?1 AND device_type != 'database' AND (model IS NOT NULL OR sysname IS NOT NULL) LIMIT 1"
+        );
+        conn.query_row(&sql, rusqlite::params![ip], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<f64>>(3)?,
+            ))
+        }).ok()
+    };
+
+    // 3. 调用底层检测（OS 信息 + DB 版本）
     let detect_result =
         detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name).await;
 
     // 失败：分类并写入 auth_status
+    // 即使 SSH 检测失败，同 IP 服务器的 OS 信息仍可复用
     let json = match detect_result {
         Ok(j) => j,
         Err(e) => {
-            let (auth_status, brief) = classify_detect_error(&e);
-            let now = now_str();
-            let conn = state.db.lock();
-            let _ = conn.execute(
-                "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
-                rusqlite::params![auth_status, brief, now, device_id],
-            );
-            return Err(e);
+            if os_info_from_sibling.is_some() {
+                // SSH 失败但有兄弟设备信息，继续写入 OS 信息
+                tracing::warn!("[detect_db] SSH 检测失败，使用同 IP 服务器的 OS 信息: {}", e);
+                let (model, sysname, cpu_cores, memory_gb) = os_info_from_sibling.unwrap();
+                let mut map = serde_json::Map::new();
+                if let Some(m) = model { map.insert("model".into(), serde_json::Value::String(m)); }
+                if let Some(s) = sysname { map.insert("sysname".into(), serde_json::Value::String(s)); }
+                if let Some(c) = cpu_cores { map.insert("cpu_cores".into(), serde_json::Value::String(c.to_string())); }
+                if let Some(m) = memory_gb { map.insert("memory_gb".into(), serde_json::Value::String(m.to_string())); }
+                serde_json::Value::Object(map).to_string()
+            } else {
+                let (auth_status, brief) = classify_detect_error(&e);
+                let now = now_str();
+                let conn = state.db.lock();
+                let _ = conn.execute(
+                    "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
+                    rusqlite::params![auth_status, brief, now, device_id],
+                );
+                return Err(e);
+            }
         }
     };
 
@@ -1004,10 +1034,18 @@ fn detect_db_info_sync(
 
     tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
 
-    // 1. 复用 Linux 检测获取 OS 信息（hostnamectl/os-release/nproc/lscpu/dmidecode 内存）
-    let os_json = detect_linux_info_sync(ip, ssh_port, ssh_username, ssh_password)?;
-    let mut info: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(&os_json).unwrap_or_default();
+    // 1. OS 信息：优先从同 IP 的服务器设备复制（避免重复 SSH + sudo dmidecode 权限问题）
+    // 如果没有现成的服务器设备，则走 SSH 检测
+    let mut info: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    let os_json = detect_linux_info_sync(ip, ssh_port, ssh_username, ssh_password);
+    if let Ok(json) = os_json {
+        if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json) {
+            info = map;
+        }
+    } else {
+        tracing::warn!("[detect_db] OS 信息 SSH 检测失败，尝试只检测 DB 版本: {:?}", os_json.err());
+    }
 
     // 2. 单独检测数据库版本
     let vendor_lower = vendor.to_lowercase();
