@@ -637,14 +637,14 @@ pub async fn detect_device_model_by_id(
         detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name).await;
 
     // 失败：分类并写入 auth_status
-    // 即使 SSH 检测失败，同 IP 服务器的 OS 信息仍可复用
+    // 无论 SSH 成功与否，都用同 IP 服务器的 OS 信息补全缺失字段
+    // （dmidecode 内存检测可能因 sudo 权限失败，兄弟设备的信息是可靠补充）
     let json = match detect_result {
         Ok(j) => j,
         Err(e) => {
             if os_info_from_sibling.is_some() {
-                // SSH 失败但有兄弟设备信息，继续写入 OS 信息
                 tracing::warn!("[detect_db] SSH 检测失败，使用同 IP 服务器的 OS 信息: {}", e);
-                let (model, sysname, cpu_cores, memory_gb) = os_info_from_sibling.unwrap();
+                let (model, sysname, cpu_cores, memory_gb) = os_info_from_sibling.clone().unwrap();
                 let mut map = serde_json::Map::new();
                 if let Some(m) = model { map.insert("model".into(), serde_json::Value::String(m)); }
                 if let Some(s) = sysname { map.insert("sysname".into(), serde_json::Value::String(s)); }
@@ -662,6 +662,26 @@ pub async fn detect_device_model_by_id(
                 return Err(e);
             }
         }
+    };
+
+    // SSH 成功时，用兄弟设备信息补全缺失字段（特别是 memory）
+    let json = if let Some((ref s_model, ref s_sysname, s_cpu, s_mem)) = os_info_from_sibling {
+        let mut map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        if !map.contains_key("memory_gb") {
+            if let Some(m) = s_mem { map.insert("memory_gb".into(), serde_json::Value::String(m.to_string())); }
+        }
+        if !map.contains_key("cpu_cores") {
+            if let Some(c) = s_cpu { map.insert("cpu_cores".into(), serde_json::Value::String(c.to_string())); }
+        }
+        if !map.contains_key("model") {
+            if let Some(m) = s_model.clone() { map.insert("model".into(), serde_json::Value::String(m)); }
+        }
+        if !map.contains_key("sysname") {
+            if let Some(s) = s_sysname.clone() { map.insert("sysname".into(), serde_json::Value::String(s)); }
+        }
+        serde_json::Value::Object(map).to_string()
+    } else {
+        json
     };
 
     // 3. 把检测到的字段写回数据库（同时把 auth_status 标记为 ok）
