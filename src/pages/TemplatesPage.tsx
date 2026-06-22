@@ -52,15 +52,17 @@ const getEmptyCommandForm = (): CommandForm => ({
   vendor: "H3C", command: "", description: "", category: "general",
 });
 
+type RptCategory = "network" | "linux" | "database";
+
 interface ReportForm {
   name: string;
-  vendor: string;
+  category: RptCategory;
   description: string;
   config: ReportTemplateConfig;
 }
 
 const EMPTY_REPORT_FORM = (): ReportForm => ({
-  name: "", vendor: "", description: "",
+  name: "", category: "network", description: "",
   config: JSON.parse(JSON.stringify(DEFAULT_REPORT_CONFIG)),
 });
 
@@ -263,7 +265,7 @@ export default function TemplatesPage() {
     }
     setReportForm({
       name: rt.name,
-      vendor: rt.vendor || "",
+      category: vendorCategory(rt.vendor || ""),
       description: rt.description || "",
       config,
     });
@@ -289,7 +291,7 @@ export default function TemplatesPage() {
     setReportSaving(true); setReportSaveError(null);
     const data: Record<string, unknown> = {
       name: reportForm.name,
-      vendor: reportForm.vendor || null,
+      vendor: null,
       description: reportForm.description,
       config_json: JSON.stringify(reportForm.config),
     };
@@ -1003,24 +1005,8 @@ function categoryFields(cat: DeviceCategory): DeviceField[] {
   }
 }
 
-function vendorFields(vendor: string): DeviceField[] {
-  return categoryFields(vendorCategory(vendor));
-}
 
 /** 将厂商名归一化到样本数据键 */
-function sampleKey(vendor: string): string {
-  if (!vendor) return "H3C";
-  const cat = vendorCategory(vendor);
-  if (cat === "database") {
-    if (SAMPLE_DEVICE[vendor]) return vendor;  // MySQL/PostgreSQL/Oracle 有独立样本
-    return "MySQL";  // 其他数据库回退
-  }
-  if (cat === "linux") {
-    if (SAMPLE_DEVICE[vendor]) return vendor;  // Ubuntu/CentOS/Rocky/Debian/Linux 有独立样本
-    return "Linux";  // 龙蜥/欧拉/麒麟等回退
-  }
-  return SAMPLE_DEVICE[vendor] ? vendor : "H3C";
-}
 const FIELD_COMMON: DeviceField[] = [
   { key: "name", label: "设备名称", visible: true },
   { key: "ip", label: "管理地址", visible: true },
@@ -1094,20 +1080,20 @@ function ReportTemplateEditor({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={form.vendor} onChange={(e) => {
-                  const v = e.target.value;
-                  const defaults = vendorFields(v);
-                  // 保留已有字段的 label 编辑，用默认集合并补全缺失字段
+              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">设备类别</label>
+              <Select value={form.category} onChange={(e) => {
+                  const cat = e.target.value as RptCategory;
+                  const defaults = categoryFields(cat);
                   const existingKeys = new Set(form.config.device_info.fields.map(f => f.key));
                   const merged = [
                     ...form.config.device_info.fields.filter(f => defaults.some(d => d.key === f.key)),
                     ...defaults.filter(d => !existingKeys.has(d.key)),
                   ];
-                  update({ vendor: v, config: { ...form.config, device_info: { ...form.config.device_info, fields: merged } } });
+                  update({ category: cat, config: { ...form.config, device_info: { ...form.config.device_info, fields: merged } } });
                 }}>
-                <option value="">通用</option>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+                <option value="network">网络设备</option>
+                <option value="linux">Linux 服务器</option>
+                <option value="database">数据库</option>
               </Select>
             </div>
           </div>
@@ -1186,7 +1172,7 @@ function ReportTemplateEditor({
                 />
                 {/* 添加字段：仅列出当前厂商可用且未加入的字段 */}
                 {(() => {
-                  const available = vendorFields(form.vendor);
+                  const available = categoryFields(form.category);
                   const existingKeys = new Set(form.config.device_info.fields.map(f => f.key));
                   const missing = available.filter(f => !existingKeys.has(f.key));
                   if (missing.length === 0) return null;
@@ -1299,7 +1285,7 @@ function ReportTemplateEditor({
         </div>
         <div className="flex-1 overflow-auto bg-[hsl(var(--bg-app))] border border-t-0 border-[hsl(var(--border))] rounded-b-md p-4">
           <div className="min-w-full flex justify-center">
-            <DocxPreview config={form.config} vendor={form.vendor} />
+            <DocxPreview config={form.config} category={form.category} />
           </div>
         </div>
       </div>
@@ -1387,10 +1373,10 @@ function applyVars(s: string, device: SampleDevice): string {
     .replace(/\{\{total\}\}/g, "3");
 }
 
-function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor: string }) {
-  const sk = sampleKey(vendor);
-  const dev = SAMPLE_DEVICE[sk] as SampleDevice;
-  const rows = SAMPLE_ROWS[sk] as SampleRow[];
+function DocxPreview({ config, category }: { config: ReportTemplateConfig; category: RptCategory }) {
+  const sk = category === "linux" ? "Linux" : category === "database" ? "MySQL" : "H3C";
+  const dev = (SAMPLE_DEVICE[sk] || SAMPLE_DEVICE["H3C"]) as SampleDevice;
+  const rows = (SAMPLE_ROWS[sk] || SAMPLE_ROWS["H3C"]) as SampleRow[];
   const accent = config.cover.primary_color;
   const title = applyVars(config.cover.title, dev);
   const headerText = applyVars(config.header, dev);
@@ -1420,11 +1406,9 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
 
   // CLI 提示符：真实 sysname 来自设备配置；预览中用 aHope 模拟，不使用设备名称
   const promptOf = (): string => {
-    const cat = vendorCategory(dev.vendor);
     const sysname = "aHope";
-    if (cat === "linux" || cat === "database") return `[root@${sysname} ~]# `;
-    if (dev.vendor === "飞塔" || dev.vendor.toLowerCase().includes("forti")) return `${sysname}-FW # `;
-    if (dev.vendor === "思科" || dev.vendor === "锐捷" || dev.vendor.toLowerCase().includes("cisco") || dev.vendor.toLowerCase().includes("ruijie")) return `${sysname}>`;
+    if (category === "linux" || category === "database") return `[root@${sysname} ~]# `;
+    if (category === "network") return `<${sysname}>`;
     return `<${sysname}>`;
   };
 
