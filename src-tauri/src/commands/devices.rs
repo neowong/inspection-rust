@@ -408,17 +408,7 @@ fn check_device_status_inner(
     let ssh_addr = SocketAddr::new(ip_addr, ssh_port);
 
     let new_status = match TcpStream::connect_timeout(&ssh_addr, Duration::from_secs(5)) {
-        Ok(_stream) => {
-            // SSH 可达，数据库设备额外探测 DB 端口
-            if device.device_type == "database" {
-                let db_port = device.db_port.unwrap_or(3306) as u16;
-                let db_addr = SocketAddr::new(ip_addr, db_port);
-                if TcpStream::connect_timeout(&db_addr, Duration::from_secs(3)).is_err() {
-                    tracing::warn!("数据库设备 {} SSH 在线但 DB 端口 {} 不可达", device.name, db_port);
-                }
-            }
-            "online"
-        }
+        Ok(_stream) => "online",
         Err(_) => "offline",
     };
 
@@ -737,16 +727,18 @@ pub fn detect_static_info_if_missing(
         }
     };
 
-    // 已有型号或主机名 → 跳过
-    // 数据库设备还需检查 db_version
-    let has_basic = device_info.model.as_ref().filter(|s| !s.is_empty()).is_some()
-        || device_info.sysname.as_ref().filter(|s| !s.is_empty()).is_some();
     let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
         .iter().any(|o| device_info.vendor.to_lowercase().contains(o));
+    let has_os_info = device_info.model.as_ref().filter(|s| !s.is_empty()).is_some()
+        || device_info.sysname.as_ref().filter(|s| !s.is_empty()).is_some();
     let has_db_info = device_info.db_version.as_ref().filter(|s| !s.is_empty()).is_some();
 
-    if has_basic && (!is_db || has_db_info) {
-        return;
+    // 普通设备：已有型号/主机名 → 跳过
+    // 数据库设备：OS 信息和 DB 版本都需要有才跳过
+    if is_db {
+        if has_os_info && has_db_info { return; }
+    } else {
+        if has_os_info { return; }
     }
 
     let port = match port_u16(device_info.ssh_port) {
