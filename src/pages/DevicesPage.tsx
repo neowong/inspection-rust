@@ -568,20 +568,38 @@ export default function DevicesPage() {
                   {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" || form.device_type === "database" ? "发行版本号" : "型号"}</label>
-                  <Input
-                    value={form.model}
-                    onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="自动检测"
-                    className={shakeFields.has("model") ? "animate-shake" : ""}
-                  />
+                  <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="自动检测" className={shakeFields.has("model") ? "animate-shake" : ""} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
                   <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
                 </div>
+                {(form.device_type === "server" || form.device_type === "database") ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
+                      <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
+                      <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
+                      <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
+                      <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
+                    </div>
+                  </>
+                )}
               </div>
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>
@@ -590,49 +608,13 @@ export default function DevicesPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
-                  <Input
-                    type="password"
-                    value={passwordSet ? "••••••••" : form.ssh_password}
-                    className={shakeFields.has("ssh_password") ? "animate-shake" : ""}
-                    onFocus={() => { if (passwordSet) { setPasswordSet(false); setForm({ ...form, ssh_password: "" }); } }}
-                    onChange={(e) => setForm({ ...form, ssh_password: e.target.value })}
-                    placeholder={editing ? "点击修改密码" : "输入密码"}
-                  />
+                  <Input type="password" value={passwordSet ? "••••••••" : form.ssh_password} className={shakeFields.has("ssh_password") ? "animate-shake" : ""} onFocus={() => { if (passwordSet) { setPasswordSet(false); setForm({ ...form, ssh_password: "" }); } }} onChange={(e) => setForm({ ...form, ssh_password: e.target.value })} placeholder={editing ? "点击修改密码" : "输入密码"} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
                   <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
                 </div>
               </div>
-              {/* ── 服务器 — CPU/内存 ── */}
-              {form.device_type === "server" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
-                    <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
-                    <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
-                  </div>
-                </div>
-              )}
-              {/* ── 数据库：操作系统信息 ── */}
-              {form.device_type === "database" && (
-                <>
-                  <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
-                    <p className="text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-2">操作系统信息</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
-                    <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
-                    <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
-                  </div>
-                </>
-              )}
               {/* ── 数据库专属信息 ── */}
               {form.device_type === "database" && (
                 <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
@@ -671,19 +653,7 @@ export default function DevicesPage() {
                   </div>
                 </div>
               )}
-              {/* ── 网络/安全设备信息 ── */}
-              {form.device_type !== "server" && form.device_type !== "database" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
-                    <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
-                    <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
-                  </div>
-                </div>
-              )}
+
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
                 <Select
