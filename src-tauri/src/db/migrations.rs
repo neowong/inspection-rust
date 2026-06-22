@@ -762,6 +762,28 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 26: {}", e))?;
     }
 
+    // ── v27: devices 增加数据库专属字段 ──
+    if version < 27 {
+        for (col, ty) in &[
+            ("db_version", "TEXT DEFAULT ''"),
+            ("instance_name", "TEXT DEFAULT ''"),
+            ("db_username", "TEXT DEFAULT ''"),
+            ("db_password_encrypted", "TEXT DEFAULT ''"),
+        ] {
+            let has: bool = conn
+                .prepare(&format!("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = '{}'", col))
+                .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !has {
+                conn.execute_batch(&format!("ALTER TABLE devices ADD COLUMN {} {};", col, ty))
+                    .map_err(|e| format!("migration 27: {}", e))?;
+            }
+        }
+        conn.execute_batch("PRAGMA user_version = 27;")
+            .map_err(|e| format!("migration 27: {}", e))?;
+    }
+
     Ok(())
 }
 

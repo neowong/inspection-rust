@@ -28,6 +28,11 @@ pub struct Device {
     pub auth_status: Option<String>,
     pub auth_message: Option<String>,
     pub deployment: Option<String>,
+    pub db_version: Option<String>,
+    pub instance_name: Option<String>,
+    pub db_username: Option<String>,
+    #[serde(skip_serializing)]
+    pub db_password_encrypted: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -52,6 +57,10 @@ pub struct DeviceCreate {
     pub cpu_cores: Option<i64>,
     pub memory_gb: Option<f64>,
     pub deployment: Option<String>,
+    pub db_version: Option<String>,
+    pub instance_name: Option<String>,
+    pub db_username: Option<String>,
+    pub db_password_encrypted: Option<String>,
 }
 
 /// 更新设备 - 前端请求 DTO（全部可选）
@@ -74,6 +83,10 @@ pub struct DeviceUpdate {
     pub cpu_cores: Option<i64>,
     pub memory_gb: Option<f64>,
     pub deployment: Option<String>,
+    pub db_version: Option<String>,
+    pub instance_name: Option<String>,
+    pub db_username: Option<String>,
+    pub db_password_encrypted: Option<String>,
 }
 
 // ============================
@@ -312,7 +325,7 @@ pub fn now_str() -> String {
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
      ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, \
-     cpu_cores, memory_gb, auth_status, auth_message, deployment, created_at, updated_at";
+     cpu_cores, memory_gb, auth_status, auth_message, deployment, db_version, instance_name, db_username, db_password_encrypted, created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
     "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
@@ -363,8 +376,12 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         auth_status: row.get(17)?,
         auth_message: row.get(18)?,
         deployment: row.get(19)?,
-        created_at: row.get(20)?,
-        updated_at: row.get(21)?,
+        db_version: row.get(20)?,
+        instance_name: row.get(21)?,
+        db_username: row.get(22)?,
+        db_password_encrypted: row.get(23)?,
+        created_at: row.get(24)?,
+        updated_at: row.get(25)?,
     })
 }
 

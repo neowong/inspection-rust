@@ -162,13 +162,18 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
         Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
         _ => None,
     };
+    // 3b. 加密数据库密码（如果提供）
+    let encrypted_db_password = match data.db_password_encrypted {
+        Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
+        _ => None,
+    };
 
     let ssh_port = validate_port(data.ssh_port.unwrap_or(22))?;
     let status = data.status.as_deref().unwrap_or("unknown");
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -187,6 +192,10 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.cpu_cores,
             data.memory_gb,
             data.deployment,
+            data.db_version,
+            data.instance_name,
+            data.db_username,
+            encrypted_db_password,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -249,6 +258,15 @@ pub fn update_device(
     updater.push_opt("cpu_cores", &data.cpu_cores);
     updater.push_opt("memory_gb", &data.memory_gb);
     updater.push_opt("deployment", &data.deployment);
+    updater.push_opt("db_version", &data.db_version);
+    updater.push_opt("instance_name", &data.instance_name);
+    updater.push_opt("db_username", &data.db_username);
+    if let Some(ref pass) = data.db_password_encrypted {
+        if !pass.is_empty() {
+            let enc = CryptoService::encrypt(pass)?;
+            updater.push_raw("db_password_encrypted", enc);
+        }
+    }
 
     // 处理密码加密
     if let Some(ref pass) = data.ssh_password_encrypted {

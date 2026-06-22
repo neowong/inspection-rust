@@ -33,13 +33,17 @@ interface DeviceForm {
   cpu_cores: string;
   memory_gb: string;
   deployment: string;
+  db_version: string;
+  instance_name: string;
+  db_username: string;
+  db_password: string;
 }
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
   serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
-  deployment: "",
+  deployment: "", db_version: "", instance_name: "", db_username: "", db_password: "",
 };
 
 export default function DevicesPage() {
@@ -135,6 +139,10 @@ export default function DevicesPage() {
       cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
       memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
       deployment: (d as any).deployment || "",
+      db_version: (d as any).db_version || "",
+      instance_name: (d as any).instance_name || "",
+      db_username: (d as any).db_username || "",
+      db_password: "",
     });
     setModalOpen(true);
   };
@@ -163,6 +171,10 @@ export default function DevicesPage() {
     if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
     if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
     if (form.deployment) data.deployment = form.deployment;
+    if (form.db_version) data.db_version = form.db_version;
+    if (form.instance_name) data.instance_name = form.instance_name;
+    if (form.db_username) data.db_username = form.db_username;
+    if (form.db_password) data.db_password_encrypted = form.db_password;
 
     setSaving(true);
     setSaveError(null);
@@ -626,6 +638,26 @@ export default function DevicesPage() {
                 <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
                   <p className="text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-2">数据库信息</p>
                   <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
+                        <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="如 MySQL 8.0" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">实例名</label>
+                        <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder="如 prod-db-01" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库用户名</label>
+                        <Input value={form.db_username} onChange={(e) => setForm({ ...form, db_username: e.target.value })} placeholder="如 root" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库密码</label>
+                        <Input type="password" value={form.db_password} onChange={(e) => setForm({ ...form, db_password: e.target.value })} placeholder="留空不修改" />
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
                       <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
