@@ -452,6 +452,122 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 21: {}", e))?;
     }
 
+    // ── v22: 内置报告模板 + H3C 接入交换机巡检模板 ──
+    if version < 22 {
+        // ---- 报告模板 ----
+        let default_config = |title: &str, color: &str| -> serde_json::Value {
+            serde_json::json!({
+                "cover": {
+                    "title": title,
+                    "subtitle": "运维巡检中心",
+                    "logo_path": "",
+                    "primary_color": color
+                },
+                "device_info": {
+                    "enabled": true, "layout": "two_column",
+                    "fields": [
+                        {"key":"name","label":"设备名称","visible":true},
+                        {"key":"ip","label":"管理地址","visible":true},
+                        {"key":"vendor","label":"设备厂商","visible":true},
+                        {"key":"model","label":"设备型号","visible":true},
+                        {"key":"sn","label":"序列号","visible":true},
+                        {"key":"mfg_date","label":"出厂日期","visible":true},
+                        {"key":"inspect_time","label":"巡检时间","visible":true}
+                    ]
+                },
+                "command_table": {
+                    "columns": [
+                        {"key":"seq","label":"序号","width":6,"visible":true},
+                        {"key":"item","label":"巡检项目","width":16,"visible":true},
+                        {"key":"output","label":"巡检内容","width":58,"visible":true},
+                        {"key":"ai_judgment","label":"评判结论","width":20,"visible":true}
+                    ],
+                    "output_max_lines": 15
+                },
+                "summary": {"enabled": true, "title": "巡检总结", "show_problem_table": true},
+                "header": format!("{}巡检报告", title),
+                "footer": "第 {{page}} 页 / 共 {{total}} 页"
+            })
+        };
+
+        let builtin_reports: &[(&str, &str, &str, &str)] = &[
+            ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板"),
+            ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板"),
+            ("华为 专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板"),
+            ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板"),
+        ];
+
+        for (name, vendor, color, desc) in builtin_reports {
+            let exists: i64 = conn
+                .prepare("SELECT COUNT(*) FROM report_templates WHERE name = ?1")
+                .and_then(|mut stmt| stmt.query_row(rusqlite::params![name], |row| row.get(0)))
+                .unwrap_or(0);
+            if exists == 0 {
+                let cfg = default_config(name, color);
+                conn.execute(
+                    "INSERT INTO report_templates (name, vendor, is_default, description, config_json) VALUES (?1, ?2, 0, ?3, ?4)",
+                    rusqlite::params![name, vendor, desc, serde_json::to_string(&cfg).unwrap_or_default()],
+                )?;
+                tracing::info!("migration 22: 内置报告模板 '{}' 已添加", name);
+            }
+        }
+
+        // ---- H3C 接入交换机巡检模板 ----
+        {
+            let name = "H3C 接入交换机";
+            let exists: i64 = conn
+                .prepare("SELECT COUNT(*) FROM inspection_templates WHERE name = ?1")
+                .and_then(|mut stmt| stmt.query_row(rusqlite::params![name], |row| row.get(0)))
+                .unwrap_or(0);
+            if exists == 0 {
+                // 收集 H3C 接入交换机常用命令的 ID
+                let cmd_names: &[&str] = &[
+                    "display version",
+                    "display device",
+                    "display cpu-usage",
+                    "display memory",
+                    "display fan",
+                    "display power",
+                    "display environment",
+                    "display interface brief",
+                    "display logbuffer",
+                    "display current-configuration",
+                    "display vlan brief",
+                    "display stp brief",
+                    "display mac-address",
+                    "display arp",
+                    "display ip routing-table",
+                ];
+                let mut cmd_configs: Vec<serde_json::Value> = Vec::new();
+                for cmd in cmd_names {
+                    if let Ok(id) = conn.query_row(
+                        "SELECT id FROM command_pool WHERE vendor='H3C' AND command=?1",
+                        rusqlite::params![cmd],
+                        |r| r.get::<_, i64>(0),
+                    ) {
+                        cmd_configs.push(serde_json::json!({
+                            "command_id": id,
+                            "purpose": "inspection",
+                            "show_in_report": true,
+                            "extract_fields": []
+                        }));
+                    }
+                }
+                if !cmd_configs.is_empty() {
+                    let config = serde_json::json!({ "commands": cmd_configs });
+                    conn.execute(
+                        "INSERT INTO inspection_templates (name, vendor, config, description) VALUES (?1, 'H3C', ?2, 'H3C 接入交换机标准巡检模板，覆盖设备状态/接口/二层/三层关键信息')",
+                        rusqlite::params![name, serde_json::to_string(&config).unwrap_or_default()],
+                    )?;
+                    tracing::info!("migration 22: 内置巡检模板 '{}' ({} 条命令) 已添加", name, cmd_configs.len());
+                }
+            }
+        }
+
+        conn.execute_batch("PRAGMA user_version = 22;")
+            .map_err(|e| format!("migration 22: {}", e))?;
+    }
+
     Ok(())
 }
 
