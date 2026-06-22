@@ -756,8 +756,8 @@ const SAMPLE_DEVICE: Record<string, { name: string; ip: string; vendor: string; 
   },
   "飞塔": {
     name: "FG-EDGE-01", ip: "192.168.100.1", vendor: "飞塔",
-    model: "FortiGate-100F", sn: "FGT100FTK23001234", mfg_date: "2025-01-10",
-    inspect_time: "2026-06-13 08:45:00", sysname: "FG-Edge",
+    model: "FortiGate-80F", sn: "FGT80FTK23001234", mfg_date: "2025-01-10",
+    inspect_time: "2026-06-13 08:45:00", sysname: "aHope-FW",
     os_release: "", cpu_cores: "", memory_gb: "",
   },
   "Linux": {
@@ -834,7 +834,7 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
   ],
   "飞塔": [
     { item: "查看系统状态", cmd: "get system status",
-      output: "Version: FortiGate-100F v7.4.5,build2702\nFirmware Signature: certified\nVirus-DB: 92.01234\nSerial-Number: FGT100FTK23001234",
+      output: "Version: FortiGate-80F v7.0.17,build0682,250113 (GA.M)\nSecurity Level: High\nFirmware Signature: certified\nVirus-DB: 1.00000(2018-04-09 18:07)\nExtended DB: 1.00000(2018-04-09 18:07)\nAV AI/ML Model: 0.00000(2001-01-01 00:00)",
       status: "ok", finding: "", suggestion: "" },
     { item: "查看 CPU 状态", cmd: "get system performance status",
       output: "CPU states: 8% user 4% system 0% nice 88% idle\nMemory states: 3954 MB total / 2101 MB used (53%)",
@@ -1330,6 +1330,10 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
     if (v.includes("cisco") || v.includes("思科") || v.includes("ruijie") || v.includes("锐捷")) {
       return `${sysname}>`;
     }
+    if (v.includes("forti") || v.includes("飞塔")) {
+      return `${sysname}-FW # `;
+    }
+    // H3C/华为 默认尖括号
     return `<${sysname}>`;
   };
 
