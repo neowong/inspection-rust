@@ -578,7 +578,7 @@ export default function DevicesPage() {
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
-                  <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder="admin" />
+                  <Input value={form.ssh_username} className={shakeFields.has("ssh_username") ? "animate-shake" : ""} onChange={(e) => setForm({ ...form, ssh_username: e.target.value })} placeholder={form.device_type === "server" || form.device_type === "database" ? "root" : "admin"} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 密码 <span className="text-[hsl(var(--danger))]">*</span></label>
@@ -671,10 +671,6 @@ export default function DevicesPage() {
                         <option value="podman">Podman 容器</option>
                         <option value="k8s">Kubernetes</option>
                       </Select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">DB 端口</label>
-                      <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 3306 })} />
                     </div>
                   </>
                 )}
