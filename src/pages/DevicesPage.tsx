@@ -266,18 +266,8 @@ export default function DevicesPage() {
             }
             showStatusHint(`正在后台检测 ${devName} 的静态信息...`, "info", 30000);
             return invoke<string>("detect_device_model_by_id", { deviceId: devId })
-              .then((json) => {
-                console.log("[detect] 检测结果:", json);
+              .then((_json) => {
                 loadDevices();
-                // 解析 _warn 字段，有警告用 warn 级别提示
-                try {
-                  const parsed = JSON.parse(json);
-                  if (parsed._warn) {
-                    showStatusHint(`${devName}: ${parsed._warn}`, "warn", 8000);
-                    return;
-                  }
-                } catch (_) { /* ignore parse error */ }
-                showStatusHint(`${devName}: 静态信息检测完成`, "success");
               })
               .catch((e) => {
                 console.error("[detect] 检测失败:", e);
@@ -352,20 +342,12 @@ export default function DevicesPage() {
         }
         showStatusHint(`${d.name}: 在线，正在采集静态信息...`, "info", 30000);
         return invoke<string>("detect_device_model_by_id", { deviceId: d.id })
-          .then((json) => {
+          .then((_json) => {
             loadDevices();
-            try {
-              const parsed = JSON.parse(json);
-              if (parsed._warn) {
-                showStatusHint(`${d.name}: ${parsed._warn}`, "warn", 8000);
-                return;
-              }
-            } catch (_) {}
-            showStatusHint(`${d.name}: 检测完成（在线 + 静态信息已更新）`, "success");
           })
           .catch((e) => {
             console.error("[check] 静态信息采集失败:", e);
-            showStatusHint(`${d.name}: 在线，但静态信息采集失败（${detectErrorHint("", e).split(":").slice(1).join(":").trim() || "SSH 执行异常"}）`, "warn");
+            showStatusHint(`${d.name}: 检测失败 — ${detectErrorHint("", e).split(":").slice(1).join(":").trim() || "SSH 异常"}`, "error");
           });
       })
       .catch((e) => {
