@@ -332,7 +332,7 @@ fn execute_device_ssh(
                 commands.iter().map(|s| {
                     let escaped = s.command.replace('"', "\\\"");
                     format!(
-                        "{rt} exec {cn} sh -c \"{cmd}\" 2>&1 || echo [容器命令失败]",
+                        "{rt} exec {cn} sh -c \"{cmd}\" 2>&1; E=$?; [ $E -eq 127 ] && echo [客户端未安装] || [ $E -ne 0 ] && echo [容器命令失败]",
                         rt = runtime, cn = cname, cmd = escaped
                     )
                 }).collect()

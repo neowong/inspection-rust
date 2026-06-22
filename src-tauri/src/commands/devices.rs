@@ -1171,10 +1171,12 @@ fn detect_db_info_sync(
         let mysql_cmd = format!("mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str);
 
         if is_container {
-            // 容器部署：直接用用户录入的容器名（instance_name），没有则用 device_name 兜底
+            // 容器部署：通过退出码区分"容器不存在"与"客户端未安装"
+            // 退出码 127 = command not found (容器在但无 mysql)
+            // 其他非0 = 容器未运行/不存在
             let cname = if instance_name.is_empty() { device_name } else { instance_name };
             db_cmds.push(("db_detail".to_string(), format!(
-                "{} exec {} sh -c \"{}\" 2>&1 || echo container_not_found",
+                "{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
                 runtime, cname, mysql_cmd.replace('"', "\\\""))));
         } else {
             db_cmds.push(("db_detail".to_string(), mysql_cmd));
@@ -1205,12 +1207,12 @@ fn detect_db_info_sync(
         if is_container {
             let cname = if instance_name.is_empty() { device_name } else { instance_name };
             let escaped = raw.replace('"', "\\\"");
-            format!("{} exec {} sh -c \"{}\" 2>&1 || echo container_not_found",
+            format!("{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
                 runtime, cname, escaped)
         } else if is_k8s {
             let cname = if instance_name.is_empty() { "mysql" } else { instance_name };
             let escaped = raw.replace('"', "\\\"");
-            format!("kubectl exec {} -- sh -c \"{}\" 2>&1 || echo k8s_pod_not_found", cname, escaped)
+            format!("kubectl exec {} -- sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, escaped)
         } else {
             format!("{} 2>&1", raw)
         }
@@ -1315,6 +1317,10 @@ fn detect_db_info_sync(
             if trimmed.is_empty() { continue; }
             if trimmed.contains("Access denied") {
                 db_error = Some(format!("数据库密码错误（用户: {}）", db_username));
+                break;
+            }
+            if trimmed.contains("client_not_found") {
+                db_error = Some(format!("容器内未安装 mysql 客户端：请在容器 '{}' 内安装 mysql-client", if instance_name.is_empty() { device_name } else { instance_name }));
                 break;
             }
             if trimmed.contains("container_not_found") {
