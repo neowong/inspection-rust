@@ -981,7 +981,46 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
   ],
 };
 
-// ── 厂商专属字段分组 ──
+// ── 设备大类 → 字段集映射 ──
+// 加新厂商只需改 vendorCategory()，字段集自动跟随
+type DeviceCategory = "network" | "linux" | "database";
+
+function vendorCategory(vendor: string): DeviceCategory {
+  if (!vendor) return "network";
+  const norm = vendor.toLowerCase();
+  if (["h3c","华为","思科","锐捷","ruijie","cisco"].some(o => norm.includes(o.toLowerCase()))) return "network";
+  if (["飞塔","forti"].some(o => norm.includes(o.toLowerCase()))) return "network";
+  if (["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma","龙蜥","欧拉","麒麟"].some(o => norm.includes(o))) return "linux";
+  if (["mysql","postgres","oracle","sql","达梦","mariadb","mssql"].some(o => norm.includes(o))) return "database";
+  return "network";
+}
+
+function categoryFields(cat: DeviceCategory): DeviceField[] {
+  switch (cat) {
+    case "linux":     return [...FIELD_COMMON, ...FIELD_SERVER];
+    case "database":  return [...FIELD_COMMON, ...FIELD_DATABASE, ...FIELD_DB_HOST];
+    default:          return [...FIELD_COMMON, ...FIELD_NETWORK];
+  }
+}
+
+function vendorFields(vendor: string): DeviceField[] {
+  return categoryFields(vendorCategory(vendor));
+}
+
+/** 将厂商名归一化到样本数据键 */
+function sampleKey(vendor: string): string {
+  if (!vendor) return "H3C";
+  const cat = vendorCategory(vendor);
+  if (cat === "database") {
+    if (SAMPLE_DEVICE[vendor]) return vendor;  // MySQL/PostgreSQL/Oracle 有独立样本
+    return "MySQL";  // 其他数据库回退
+  }
+  if (cat === "linux") {
+    if (SAMPLE_DEVICE[vendor]) return vendor;  // Ubuntu/CentOS/Rocky/Debian/Linux 有独立样本
+    return "Linux";  // 龙蜥/欧拉/麒麟等回退
+  }
+  return SAMPLE_DEVICE[vendor] ? vendor : "H3C";
+}
 const FIELD_COMMON: DeviceField[] = [
   { key: "name", label: "设备名称", visible: true },
   { key: "ip", label: "管理地址", visible: true },
@@ -1017,25 +1056,6 @@ const FIELD_DB_HOST: DeviceField[] = [
   { key: "mfg_date", label: "宿主机 出厂日期", visible: false },
   { key: "sysname", label: "宿主机 主机名", visible: false },
 ];
-
-/** 按厂商标记返回该厂商可用的完整字段集 */
-function vendorFields(vendor: string): DeviceField[] {
-  if (!vendor) return [...FIELD_COMMON, ...FIELD_NETWORK];
-  const norm = vendor.toLowerCase();
-  if (["h3c", "华为", "思科", "锐捷"].some(v => norm.includes(v.toLowerCase()))) {
-    return [...FIELD_COMMON, ...FIELD_NETWORK];
-  }
-  if (["飞塔", "fortigate", "fortinet"].some(v => norm.includes(v.toLowerCase()))) {
-    return [...FIELD_COMMON, ...FIELD_NETWORK];
-  }
-  if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos") || norm.includes("rocky") || norm.includes("debian") || norm.includes("rhel") || norm.includes("suse") || norm.includes("fedora") || norm.includes("alma") || norm.includes("龙蜥") || norm.includes("anolis") || norm.includes("欧拉") || norm.includes("euler") || norm.includes("麒麟") || norm.includes("kylin")) {
-    return [...FIELD_COMMON, ...FIELD_SERVER];
-  }
-  if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres") || norm.includes("sql") || norm.includes("达梦")) {
-    return [...FIELD_COMMON, ...FIELD_DATABASE, ...FIELD_DB_HOST];
-  }
-  return [...FIELD_COMMON, ...FIELD_NETWORK];
-}
 
 const STATUS_DEF: Record<string, { label: string; bg: string; color: string }> = {
   ok:       { label: "正常", bg: "#E2F0D9", color: "#385723" },
@@ -1367,21 +1387,6 @@ function applyVars(s: string, device: SampleDevice): string {
     .replace(/\{\{total\}\}/g, "3");
 }
 
-/** 将厂商名归一化到样本数据键 */
-function sampleKey(vendor: string): string {
-  if (!vendor) return "H3C";
-  // 精确匹配优先：各发行版、数据库、网络设备均有独立样本
-  if (SAMPLE_DEVICE[vendor]) return vendor;
-  const norm = vendor.toLowerCase();
-  // 未精确匹配的 Linux 变体回退到 "Linux"
-  if (["rhel","suse","fedora","almalinux","linux","龙蜥","anolis","欧拉","euler","麒麟","kylin"].some(o => norm.includes(o))) return "Linux";
-  if (["mysql","mariadb"].some(o => norm.includes(o))) return "MySQL";
-  if (norm.includes("postgres")) return "PostgreSQL";
-  if (norm.includes("oracle")) return "Oracle";
-  if (norm.includes("sql") || norm.includes("mssql")) return "MySQL";
-  return "H3C";
-}
-
 function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor: string }) {
   const sk = sampleKey(vendor);
   const dev = SAMPLE_DEVICE[sk] as SampleDevice;
@@ -1415,25 +1420,11 @@ function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor:
 
   // CLI 提示符：真实 sysname 来自设备配置；预览中用 aHope 模拟，不使用设备名称
   const promptOf = (): string => {
-    const v = dev.vendor.toLowerCase();
+    const cat = vendorCategory(dev.vendor);
     const sysname = "aHope";
-    // Linux 服务器：[user@host ~]# 或 $
-    if (
-      v === "linux" || v === "ubuntu" || v === "centos" || v === "rocky" ||
-      v === "debian" || v === "rhel" || v === "suse" || v === "fedora" ||
-      v === "almalinux" || v === "龙蜥" || v === "anolis" ||
-      v === "欧拉" || v === "openeuler" || v === "麒麟" || v === "kylin" ||
-      v === "mysql" || v === "postgresql" || v === "oracle" || v.includes("sql") || v.includes("达梦")
-    ) {
-      return `[root@${sysname} ~]# `;
-    }
-    if (v.includes("cisco") || v.includes("思科") || v.includes("ruijie") || v.includes("锐捷")) {
-      return `${sysname}>`;
-    }
-    if (v.includes("forti") || v.includes("飞塔")) {
-      return `${sysname}-FW # `;
-    }
-    // H3C/华为 默认尖括号
+    if (cat === "linux" || cat === "database") return `[root@${sysname} ~]# `;
+    if (dev.vendor === "飞塔" || dev.vendor.toLowerCase().includes("forti")) return `${sysname}-FW # `;
+    if (dev.vendor === "思科" || dev.vendor === "锐捷" || dev.vendor.toLowerCase().includes("cisco") || dev.vendor.toLowerCase().includes("ruijie")) return `${sysname}>`;
     return `<${sysname}>`;
   };
 

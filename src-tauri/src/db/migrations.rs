@@ -455,6 +455,16 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
     // ── v22: 内置报告模板 + H3C 接入交换机巡检模板 ──
     if version < 22 {
         // ---- 报告模板 ----
+        // 按大类决定字段集（与前端 vendorCategory 对齐）
+        let is_linux = |v: &str| {
+            ["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma","龙蜥","欧拉","麒麟"]
+                .iter().any(|o| v.to_lowercase().contains(o))
+        };
+        let is_db = |v: &str| {
+            ["mysql","postgres","oracle","sql","达梦","mariadb","mssql"]
+                .iter().any(|o| v.to_lowercase().contains(o))
+        };
+
         let make_config = |title: &str, color: &str, vendor: &str| -> serde_json::Value {
             let mut fields = vec![
                 serde_json::json!({"key":"name","label":"设备名称","visible":true}),
@@ -462,8 +472,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 serde_json::json!({"key":"vendor","label":"设备厂商","visible":true}),
                 serde_json::json!({"key":"inspect_time","label":"巡检时间","visible":true}),
             ];
-            let v = vendor.to_lowercase();
-            if v.contains("linux") || v.contains("ubuntu") || v.contains("centos") || v.contains("rocky") || v.contains("debian") || v.contains("龙蜥") || v.contains("欧拉") || v.contains("麒麟") {
+            if is_linux(vendor) {
                 fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
@@ -471,7 +480,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":false}));
                 fields.push(serde_json::json!({"key":"mfg_date","label":"出厂日期","visible":false}));
                 fields.push(serde_json::json!({"key":"sysname","label":"主机名","visible":false}));
-            } else if v.contains("mysql") || v.contains("postgres") || v.contains("oracle") || v.contains("sql") || v.contains("达梦") {
+            } else if is_db(vendor) {
                 fields.push(serde_json::json!({"key":"db_version","label":"数据库版本","visible":true}));
                 fields.push(serde_json::json!({"key":"instance_name","label":"实例名","visible":true}));
                 fields.push(serde_json::json!({"key":"os_release","label":"宿主机 OS","visible":true}));
