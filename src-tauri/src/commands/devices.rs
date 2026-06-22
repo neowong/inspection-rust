@@ -44,45 +44,47 @@ fn check_unique(
     conn: &rusqlite::Connection,
     name: &str,
     ip: &str,
+    device_type: &str,
     exclude_id: Option<i64>,
 ) -> Result<(), String> {
-    let count: i64 = if let Some(eid) = exclude_id {
+    // 名称全局唯一
+    let name_count: i64 = if let Some(eid) = exclude_id {
         conn.query_row(
-            "SELECT COUNT(*) FROM devices WHERE (name = ?1 OR ip = ?2) AND id != ?3",
-            rusqlite::params![name, ip, eid],
+            "SELECT COUNT(*) FROM devices WHERE name = ?1 AND id != ?2",
+            rusqlite::params![name, eid],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?
     } else {
         conn.query_row(
-            "SELECT COUNT(*) FROM devices WHERE name = ?1 OR ip = ?2",
-            rusqlite::params![name, ip],
+            "SELECT COUNT(*) FROM devices WHERE name = ?1",
+            rusqlite::params![name],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?
     };
+    if name_count > 0 {
+        return Err(format!("设备名称 '{}' 已存在", name));
+    }
 
-    if count > 0 {
-        let name_count: i64 = if let Some(eid) = exclude_id {
-            conn.query_row(
-                "SELECT COUNT(*) FROM devices WHERE name = ?1 AND id != ?2",
-                rusqlite::params![name, eid],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?
-        } else {
-            conn.query_row(
-                "SELECT COUNT(*) FROM devices WHERE name = ?1",
-                rusqlite::params![name],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?
-        };
-
-        if name_count > 0 {
-            return Err(format!("设备名称 '{}' 已存在", name));
-        }
-        return Err(format!("IP 地址 '{}' 已存在", ip));
+    // IP 按设备类型唯一（允许同 IP 不同类型：如服务器 192.168.1.10 + 数据库 192.168.1.10）
+    let ip_count: i64 = if let Some(eid) = exclude_id {
+        conn.query_row(
+            "SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2 AND id != ?3",
+            rusqlite::params![ip, device_type, eid],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?
+    } else {
+        conn.query_row(
+            "SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2",
+            rusqlite::params![ip, device_type],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?
+    };
+    if ip_count > 0 {
+        return Err(format!("同类型设备中 IP '{}' 已存在", ip));
     }
 
     Ok(())
@@ -155,7 +157,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
     let conn = state.db.lock();
 
     // 2. 检查名称和 IP 唯一性
-    check_unique(&conn, &data.name, &data.ip, None)?;
+    check_unique(&conn, &data.name, &data.ip, &data.device_type, None)?;
 
     // 3. 加密 SSH 密码（如果提供）
     let encrypted_password = match data.ssh_password_encrypted {
@@ -238,7 +240,8 @@ pub fn update_device(
     let new_name = data.name.as_deref().unwrap_or(&existing.name);
     let new_ip = data.ip.as_deref().unwrap_or(&existing.ip);
     if data.name.is_some() || data.ip.is_some() {
-        check_unique(&conn, new_name, new_ip, Some(device_id))?;
+        let device_type = data.device_type.as_deref().unwrap_or(&existing.device_type);
+        check_unique(&conn, new_name, new_ip, device_type, Some(device_id))?;
     }
 
     // 构建动态 UPDATE
