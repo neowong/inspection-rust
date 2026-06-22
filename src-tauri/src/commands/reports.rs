@@ -620,6 +620,11 @@ pub fn generate_docx_report(
         (record, device, cmd_descs, config, cover)
     }; // 锁释放
 
+    // 清理旧报告文件（避免重复生成累积）
+    if let Some(ref old_path) = record.report_path {
+        let _ = std::fs::remove_file(old_path);
+    }
+
     let reports_dir = ensure_reports_dir()?;
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("report_{}_{}.docx", record_id, timestamp);

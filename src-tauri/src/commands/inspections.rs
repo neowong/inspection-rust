@@ -1476,6 +1476,28 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
+    // 删除前收集所有关联的报告文件路径，在事务外清理磁盘文件
+    let report_files: Vec<String> = {
+        let mut stmt = tx
+            .prepare("SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''")
+            .map_err(|e| e.to_string())?;
+        let paths: Vec<String> = stmt
+            .query_map(rusqlite::params![batch_id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        paths
+    };
+    // 同时检查批次综合报告
+    let combined_path: Option<String> = tx
+        .query_row(
+            "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
+            rusqlite::params![batch_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .filter(|s: &String| !s.is_empty());
+
     // Delete associated records
     tx.execute(
         "DELETE FROM inspection_records WHERE batch_id = ?1",
@@ -1496,6 +1518,14 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
     }
 
     tx.commit().map_err(|e| e.to_string())?;
+
+    // 事务成功后清理磁盘上的报告文件（失败了不要紧，不影响 DB 一致性）
+    for path in &report_files {
+        let _ = std::fs::remove_file(path);
+    }
+    if let Some(ref path) = combined_path {
+        let _ = std::fs::remove_file(path);
+    }
 
     Ok(())
 }
