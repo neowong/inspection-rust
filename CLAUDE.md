@@ -178,7 +178,7 @@ panic = "abort"        # 移除展开表
 - **Pause/stop/retry cancellation**: `pause_batch`/`stop_batch` set the `batch_cancels` AtomicBool flag so running SSH tasks stop at the next command boundary; `finalize_batch_status` preserves a `paused` batch (won't auto-overwrite to completed/stopped). `retry_device` registers a cancel flag under the batch_id and finalizes the batch when it owns the batch; `restart_batch` cancels in-flight tasks and clears stale flags before resetting.
 - Fernet key (`MASTER_PASSWORD`) hardcoded in `crypto.rs` — encrypted data compatible with Python predecessor
 - Release binary is standalone (frontend embedded, no devUrl)
-- **数据库 Docker 容器发现**: 三层策略 — ① `docker ps --filter publish=<db_port>/tcp`（按宿主机映射端口）② `--filter name=mysql`（按容器名）③ 全量扫描 `docker inspect` + `grep mysql`（按镜像）→ 都失败则宿主机直连 fallback。`db_port` 必须填宿主机映射端口，不能填容器内端口
+- **数据库容器部署**: 用户直接在表单填容器名（`instance_name` 字段），`docker exec <容器名> sh -c "mysql ..."` 直连执行。通过退出码区分错误：127=客户端未安装，其他非0=容器未运行。不再用端口发现（docker-compose 内部网络不映射端口时失效）
 - **IP 唯一性按设备类型**: DB 层无 UNIQUE 约束（v31 迁移移除），应用层 `check_unique()` 按 `device_type` 检查。同 IP 可以加 Linux 设备和数据库设备
 - **仪表盘筛选导航**: 使用 URL 参数 `?type=switch,router` / `?status=online` / `?tab=commands`，目标页面读取参数同步筛选器，筛选器变更回写 URL
 - **模板命令简化**: `purpose` / `show_in_report` / `extract_fields` 已从模板命令配置中移除，所有命令都是巡检项。静态信息采集独立于模板运行
