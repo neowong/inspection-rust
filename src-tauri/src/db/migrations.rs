@@ -457,7 +457,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         // ---- 报告模板 ----
         // 按大类决定字段集（与前端 vendorCategory 对齐）
         let is_linux = |v: &str| {
-            ["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma","龙蜥","欧拉","麒麟"]
+            ["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma"]
                 .iter().any(|o| v.to_lowercase().contains(o))
         };
         let is_db = |v: &str| {
@@ -662,7 +662,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
 
     // ── v25: 补全所有 Linux 发行版模板的缺失字段 ──
     if version < 25 {
-        let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux","龙蜥","欧拉","麒麟"];
+        let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux"];
         let server_fields: Vec<(&str, &str)> = vec![
             ("os_release", "发行版"),
             ("cpu_cores",  "CPU 核心"),

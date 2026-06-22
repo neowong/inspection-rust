@@ -992,7 +992,7 @@ function vendorCategory(vendor: string): DeviceCategory {
   const norm = vendor.toLowerCase();
   if (["h3c","华为","思科","锐捷","ruijie","cisco"].some(o => norm.includes(o.toLowerCase()))) return "network";
   if (["飞塔","forti"].some(o => norm.includes(o.toLowerCase()))) return "network";
-  if (["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma","龙蜥","欧拉","麒麟"].some(o => norm.includes(o))) return "linux";
+  if (["linux","ubuntu","centos","rocky","debian","rhel","suse","fedora","alma"].some(o => norm.includes(o))) return "linux";
   if (["mysql","postgres","oracle","sql","达梦","mariadb","mssql"].some(o => norm.includes(o))) return "database";
   return "network";
 }
