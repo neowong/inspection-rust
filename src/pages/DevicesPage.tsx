@@ -665,18 +665,12 @@ export default function DevicesPage() {
                   <>
                     <div>
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
-                      <div className="flex gap-1 flex-wrap">
-                        {(["direct","docker","podman","k8s"] as const).map((v) => (
-                          <button key={v} type="button"
-                            onClick={() => setForm({ ...form, deployment: v })}
-                            className={`px-2 py-1 rounded text-[11px] border transition-colors ${
-                              form.deployment === v
-                                ? "bg-[hsl(var(--accent))] text-white border-[hsl(var(--accent))]"
-                                : "bg-[hsl(var(--bg-app))] text-[hsl(var(--text-secondary))] border-[hsl(var(--border))] hover:border-[hsl(var(--accent))]"
-                            }`}
-                          >{v === "direct" ? "包安装" : v === "docker" ? "Docker 容器" : v === "podman" ? "Podman 容器" : "Kubernetes"}</button>
-                        ))}
-                      </div>
+                      <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                        <option value="direct">包安装</option>
+                        <option value="docker">Docker 容器</option>
+                        <option value="podman">Podman 容器</option>
+                        <option value="k8s">Kubernetes</option>
+                      </Select>
                     </div>
                   </>
                 )}
