@@ -766,6 +766,24 @@ const SAMPLE_DEVICE: Record<string, { name: string; ip: string; vendor: string; 
     inspect_time: "2026-06-13 09:00:00", sysname: "web-srv-01",
     os_release: "Ubuntu 22.04.4 LTS", cpu_cores: "8", memory_gb: "16",
   },
+  "MySQL": {
+    name: "DB-MASTER-01", ip: "192.168.50.10", vendor: "MySQL",
+    model: "物理机 Dell R750", sn: "ABC123DEF456", mfg_date: "2025-03-01",
+    inspect_time: "2026-06-13 16:00:00", sysname: "db-master-01",
+    os_release: "Ubuntu 22.04.4 LTS", cpu_cores: "16", memory_gb: "64",
+  },
+  "PostgreSQL": {
+    name: "DB-PG-01", ip: "192.168.50.20", vendor: "PostgreSQL",
+    model: "物理机 Dell R650", sn: "XYZ789UVW012", mfg_date: "2025-06-15",
+    inspect_time: "2026-06-13 16:30:00", sysname: "db-pg-01",
+    os_release: "CentOS Stream 9", cpu_cores: "12", memory_gb: "48",
+  },
+  "Oracle": {
+    name: "DB-ORA-01", ip: "192.168.50.30", vendor: "Oracle",
+    model: "物理机 HP DL380", sn: "ORA123789ABC", mfg_date: "2024-11-20",
+    inspect_time: "2026-06-13 17:00:00", sysname: "db-ora-01",
+    os_release: "Oracle Linux 8.10", cpu_cores: "24", memory_gb: "128",
+  },
 };
 
 const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; status: string; finding: string; suggestion: string }[]> = {
@@ -839,6 +857,48 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
       output: "LISTEN  0  128  0.0.0.0:22    0.0.0.0:*  (sshd)\nLISTEN  0  511  0.0.0.0:443   0.0.0.0:*  (nginx)",
       status: "ok", finding: "", suggestion: "" },
   ],
+  "MySQL": [
+    { item: "数据库版本", cmd: "mysql --version",
+      output: "mysql  Ver 8.0.36-0ubuntu0.22.04.1 for Linux on x86_64",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "实例状态", cmd: "mysql -e 'SHOW STATUS' | head -20",
+      output: "Uptime: 120 days 6 hours\\nThreads_connected: 12\\nQuestions: 89023456",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /var/lib/mysql",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\\n/dev/sdb1   500G  420G   80G   84%  /var/lib/mysql",
+      status: "warning", finding: "数据库磁盘使用率 84%", suggestion: "建议扩容存储或清理历史数据" },
+    { item: "宿主机 CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 16\\nMem: 62Gi used: 48Gi free: 14Gi",
+      status: "ok", finding: "", suggestion: "" },
+  ],
+  "PostgreSQL": [
+    { item: "数据库版本", cmd: "psql --version",
+      output: "psql (PostgreSQL) 16.3",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "连接状态", cmd: "psql -c 'SELECT count(*) FROM pg_stat_activity'",
+      output: " count\\n    45\\n(1 row)",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /var/lib/postgresql",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\\n/dev/sdc1   800G  650G  150G   82%  /var/lib/postgresql",
+      status: "warning", finding: "数据目录使用率 82%", suggestion: "建议扩容" },
+    { item: "宿主机 CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 12\\nMem: 46Gi used: 32Gi free: 14Gi",
+      status: "ok", finding: "", suggestion: "" },
+  ],
+  "Oracle": [
+    { item: "数据库版本", cmd: "sqlplus -v",
+      output: "SQL*Plus: Release 19.0.0.0.0 - Production\\nVersion 19.3.0.0.0",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "实例状态", cmd: "echo 'SELECT INSTANCE_NAME, STATUS FROM V\\\\$INSTANCE;' | sqlplus -S / as sysdba",
+      output: "INSTANCE_NAME    STATUS\\n---------------- ---------\\nORCLCDB          OPEN",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "表空间使用", cmd: "ls -lh /oracle/oradata/ORCLCDB/",
+      output: "total 15G\\n-rw-r----- 1 oracle dba 5.0G system01.dbf\\n-rw-r----- 1 oracle dba 10G undotbs01.dbf",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "宿主机 CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 24\\nMem: 125Gi used: 96Gi free: 29Gi",
+      status: "ok", finding: "", suggestion: "" },
+  ],
 };
 
 // ── 厂商专属字段分组 ──
@@ -883,7 +943,7 @@ function vendorFields(vendor: string): DeviceField[] {
   if (norm.includes("linux") || norm.includes("ubuntu") || norm.includes("centos")) {
     return [...FIELD_COMMON, ...FIELD_SERVER];
   }
-  if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres")) {
+  if (norm.includes("数据库") || norm.includes("database") || norm.includes("mysql") || norm.includes("oracle") || norm.includes("postgres") || norm.includes("sql") || norm.includes("达梦")) {
     return [...FIELD_COMMON, ...FIELD_DATABASE, ...FIELD_DB_HOST];
   }
   return [...FIELD_COMMON, ...FIELD_NETWORK];

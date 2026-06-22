@@ -455,21 +455,29 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
     // ── v22: 内置报告模板 + H3C 接入交换机巡检模板 ──
     if version < 22 {
         // ---- 报告模板 ----
-        let make_config = |title: &str, color: &str, is_linux: bool| -> serde_json::Value {
+        let make_config = |title: &str, color: &str, vendor: &str| -> serde_json::Value {
             let mut fields = vec![
                 serde_json::json!({"key":"name","label":"设备名称","visible":true}),
                 serde_json::json!({"key":"ip","label":"管理地址","visible":true}),
                 serde_json::json!({"key":"vendor","label":"设备厂商","visible":true}),
                 serde_json::json!({"key":"inspect_time","label":"巡检时间","visible":true}),
             ];
-            if is_linux {
+            let v = vendor.to_lowercase();
+            if v.contains("linux") || v.contains("ubuntu") || v.contains("centos") || v.contains("rocky") || v.contains("debian") {
                 fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
+            } else if v.contains("mysql") || v.contains("postgres") || v.contains("oracle") || v.contains("sql") || v.contains("达梦") {
+                fields.push(serde_json::json!({"key":"db_version","label":"数据库版本","visible":true}));
+                fields.push(serde_json::json!({"key":"instance_name","label":"实例名","visible":true}));
+                fields.push(serde_json::json!({"key":"os_release","label":"宿主机 OS","visible":true}));
+                fields.push(serde_json::json!({"key":"cpu_cores","label":"宿主机 CPU 核心","visible":true}));
+                fields.push(serde_json::json!({"key":"memory_gb","label":"宿主机 内存(GB)","visible":true}));
             } else {
                 fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":true}));
                 fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":true}));
                 fields.push(serde_json::json!({"key":"mfg_date","label":"出厂日期","visible":true}));
+                fields.push(serde_json::json!({"key":"sysname","label":"主机名","visible":true}));
             }
             serde_json::json!({
                 "cover": {
@@ -497,20 +505,23 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             })
         };
 
-        let builtin_reports: &[(&str, &str, &str, &str, bool)] = &[
-            ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板", true),
-            ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板", true),
-            ("遥遥领先专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板", false),
-            ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板", false),
+        let builtin_reports: &[(&str, &str, &str, &str)] = &[
+            ("Ubuntu 服务器模板", "Linux", "#E95420", "Ubuntu 服务器巡检报告模板"),
+            ("CentOS 服务器模板", "Linux", "#262577", "CentOS/RHEL 服务器巡检报告模板"),
+            ("遥遥领先专用模板",   "华为",  "#CF0A2C", "华为 VRP 网络设备巡检报告模板"),
+            ("思科 专用模板",   "思科",  "#005073", "Cisco IOS/IOS-XE 网络设备巡检报告模板"),
+            ("MySQL 数据库模板", "MySQL",      "#4479A1", "MySQL 数据库巡检报告模板（含宿主机信息）"),
+            ("PostgreSQL 数据库模板", "PostgreSQL", "#336791", "PostgreSQL 数据库巡检报告模板（含宿主机信息）"),
+            ("Oracle 数据库模板", "Oracle",     "#C74634", "Oracle 数据库巡检报告模板（含宿主机信息）"),
         ];
 
-        for (name, vendor, color, desc, is_linux) in builtin_reports {
+        for (name, vendor, color, desc) in builtin_reports {
             let exists: i64 = conn
                 .prepare("SELECT COUNT(*) FROM report_templates WHERE name = ?1")
                 .and_then(|mut stmt| stmt.query_row(rusqlite::params![name], |row| row.get(0)))
                 .unwrap_or(0);
             if exists == 0 {
-                let cfg = make_config(name, color, *is_linux);
+                let cfg = make_config(name, color, vendor);
                 conn.execute(
                     "INSERT INTO report_templates (name, vendor, is_default, description, config_json) VALUES (?1, ?2, 0, ?3, ?4)",
                     rusqlite::params![name, vendor, desc, serde_json::to_string(&cfg).unwrap_or_default()],
