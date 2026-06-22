@@ -534,6 +534,8 @@ pub async fn detect_device_model(
     ssh_username: String,
     ssh_password: String,
     vendor: String,
+    deployment: String,
+    device_name: String,
 ) -> Result<String, String> {
     use crate::services::vendor_profile::{self, ExecMode};
 
@@ -548,7 +550,7 @@ pub async fn detect_device_model(
         .iter().any(|o| vendor.to_lowercase().contains(o));
 
     let result = if is_db {
-        detect_db_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone()).await
+        detect_db_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone(), deployment.clone(), device_name.clone()).await
     } else {
         match profile.exec_mode {
             ExecMode::Exec => {
@@ -573,7 +575,7 @@ pub async fn detect_device_model_by_id(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     // 1. 读取设备 + 解密密码
-    let read_result: Result<(String, u16, String, String, String), String> = {
+    let read_result: Result<(String, u16, String, String, String, String, String), String> = {
         let conn = state.db.lock();
         let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
         let device =
@@ -599,19 +601,23 @@ pub async fn detect_device_model_by_id(
                 return Err("设备未保存 SSH 密码，请编辑后重新输入".to_string());
             }
         };
+        let deployment = device.deployment.unwrap_or_default();
+        let device_name = device.name.clone();
         Ok((
             device.ip,
             port,
             device.ssh_username.unwrap_or_default(),
             pwd,
             device.vendor,
+            deployment,
+            device_name,
         ))
     };
-    let (ip, ssh_port, ssh_username, ssh_password, vendor) = read_result?;
+    let (ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name) = read_result?;
 
     // 2. 调用底层检测
     let detect_result =
-        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor).await;
+        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name).await;
 
     // 失败：分类并写入 auth_status
     let json = match detect_result {
@@ -755,13 +761,15 @@ pub fn detect_static_info_if_missing(
     let ip = device_info.ip.clone();
     let vendor = device_info.vendor.clone();
     let username = device_info.ssh_username.clone().unwrap_or_default();
+    let deployment = device_info.deployment.clone().unwrap_or_default();
+    let device_name = device_info.name.clone();
     drop(device_info);
 
     // 2. SSH 检测（锁外）
     let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
         .iter().any(|o| vendor.to_lowercase().contains(o));
     let result = if is_db {
-        detect_db_info_sync(&ip, port, &username, &password, &vendor)
+        detect_db_info_sync(&ip, port, &username, &password, &vendor, &deployment, &device_name)
     } else {
         let profile = vendor_profile::get_profile(&vendor);
         match profile.exec_mode {
@@ -971,9 +979,11 @@ async fn detect_db_info(
     ssh_username: String,
     ssh_password: String,
     vendor: String,
+    deployment: String,
+    device_name: String,
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        detect_db_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor)
+        detect_db_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor, &deployment, &device_name)
     })
     .await
     .map_err(|e| format!("检测任务失败: {}", e))?
@@ -985,17 +995,21 @@ fn detect_db_info_sync(
     ssh_username: &str,
     ssh_password: &str,
     vendor: &str,
+    deployment: &str,
+    device_name: &str,
 ) -> Result<String, String> {
     use crate::services::linux_runner;
     use crate::services::inspection_runner::SSHSessionSource;
     use std::collections::HashMap;
 
-    tracing::info!("[detect_db] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
+    tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
 
     let vendor_lower = vendor.to_lowercase();
+    let is_container = deployment == "docker" || deployment == "podman";
+    let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
-    // 根据数据库类型选择版本检测命令
-    let version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
+    // 容器内数据库版本检测命令
+    let db_version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
         "mysql --version"
     } else if vendor_lower.contains("postgres") {
         "psql --version"
@@ -1013,12 +1027,22 @@ fn detect_db_info_sync(
         "echo unknown"
     };
 
+    // 容器部署时，数据库命令用 docker/podman exec 包装
+    // OS 信息命令在宿主机执行，DB 命令在容器内执行
+    let version_cmd_full = if is_container {
+        // 先找容器 ID，再 exec 执行
+        format!("{} exec $({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || echo container_not_running",
+            runtime, runtime, device_name.to_lowercase(), db_version_cmd.replace('\'', "'\\''"))
+    } else {
+        db_version_cmd.to_string()
+    };
+
     let commands: Vec<String> = vec![
         "hostnamectl".to_string(),
         "cat /etc/os-release".to_string(),
         "nproc".to_string(),
         "lscpu".to_string(),
-        version_cmd.to_string(),
+        version_cmd_full.clone(),
     ];
     let needs_root_map = HashMap::new();
 
@@ -1066,7 +1090,7 @@ fn detect_db_info_sync(
     }
 
     // 数据库版本
-    if let Some(output) = outputs.get(version_cmd) {
+    if let Some(output) = outputs.get(&version_cmd_full) {
         let trimmed = output.trim().to_string();
         if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle" && trimmed != "mssql" && trimmed != "dm" {
             info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
