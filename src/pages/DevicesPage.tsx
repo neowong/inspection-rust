@@ -528,7 +528,7 @@ export default function DevicesPage() {
           </div>
         }
       >
-        <div className="space-y-3 pb-32">
+        <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">设备类型</label>
