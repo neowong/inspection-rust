@@ -22,11 +22,19 @@ interface DeviceForm {
   ip: string;
   device_type: string;
   vendor: string;
+  model: string;
+  sysname: string;
+  cpu_cores: string;
+  memory_gb: string;
+  serial_number: string;
+  manufacturing_date: string;
   ssh_username: string;
   ssh_password: string;
   ssh_port: number;
   template_id: number | null;
   deployment: string;
+  db_version: string;
+  instance_name: string;
   db_username: string;
   db_password: string;
   db_port: number;
@@ -34,8 +42,9 @@ interface DeviceForm {
 
 const EMPTY_FORM: DeviceForm = {
   name: "", ip: "", device_type: "router", vendor: "H3C",
+  model: "", sysname: "", cpu_cores: "", memory_gb: "", serial_number: "", manufacturing_date: "",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
-  deployment: "direct", db_username: "", db_password: "", db_port: 3306,
+  deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "", db_port: 3306,
 };
 
 export default function DevicesPage() {
@@ -120,11 +129,19 @@ export default function DevicesPage() {
       ip: d.ip,
       device_type: d.device_type || "router",
       vendor: d.vendor,
+      model: d.model || "",
+      sysname: d.sysname || "",
+      cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
+      memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
+      serial_number: d.serial_number || "",
+      manufacturing_date: d.manufacturing_date || "",
       ssh_username: d.ssh_username || "",
       ssh_password: "",
       ssh_port: d.ssh_port,
       template_id: d.template_id,
       deployment: (d as any).deployment || "direct",
+      db_version: (d as any).db_version || "",
+      instance_name: (d as any).instance_name || "",
       db_username: (d as any).db_username || "",
       db_password: "",
       db_port: (d as any).db_port || 3306,
@@ -146,6 +163,14 @@ export default function DevicesPage() {
       vendor: form.vendor,
       ssh_port: form.ssh_port,
     };
+    if (form.model) data.model = form.model;
+    if (form.serial_number) data.serial_number = form.serial_number;
+    if (form.manufacturing_date) data.manufacturing_date = form.manufacturing_date;
+    if (form.sysname) data.sysname = form.sysname;
+    if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
+    if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
+    if (form.db_version) data.db_version = form.db_version;
+    if (form.instance_name) data.instance_name = form.instance_name;
     if (form.ssh_username) data.ssh_username = form.ssh_username;
     if (form.ssh_password) data.ssh_password_encrypted = form.ssh_password;
     if (form.template_id !== null) data.template_id = form.template_id;
@@ -529,7 +554,11 @@ export default function DevicesPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-                  <Select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}>
+                  <Select value={form.vendor} onChange={(e) => {
+                    const v = e.target.value;
+                    const defaultPort = v === "PostgreSQL" ? 5432 : v === "Oracle" ? 1521 : v === "SQL Server" ? 1433 : v === "达梦" ? 5236 : 3306;
+                    setForm({ ...form, vendor: v, db_port: defaultPort });
+                  }}>
                     {(form.device_type === "server" ? SERVER_VENDORS : form.device_type === "database" ? DB_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
                   </Select>
                 </div>
@@ -560,11 +589,50 @@ export default function DevicesPage() {
                   <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
                 </div>
               </div>
+              {(form.device_type === "server" || form.device_type === "database") ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">发行版本号</label>
+                    <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
+                    <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
+                    <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">型号</label>
+                    <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                    <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
+                    <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
+                    <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
+                  </div>
+                </div>
+              )}
               {/* ── 数据库专属信息 ── */}
               {form.device_type === "database" && (
                 <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
                   <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-[5fr_5fr_2fr] gap-2">
                       <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库用户名</label>
                         <Input value={form.db_username} onChange={(e) => setForm({ ...form, db_username: e.target.value })} placeholder="如 root" />
@@ -573,8 +641,22 @@ export default function DevicesPage() {
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库密码</label>
                         <Input type="password" value={form.db_password} onChange={(e) => setForm({ ...form, db_password: e.target.value })} placeholder="留空不修改" />
                       </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
+                        <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 0 })} placeholder={form.vendor === "PostgreSQL" ? "5432" : form.vendor === "Oracle" ? "1521" : form.vendor === "SQL Server" ? "1433" : form.vendor === "达梦" ? "5236" : "3306"} />
+                      </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
+                        <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="自动检测" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">实例名</label>
+                        <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder="自动检测" />
+                      </div>
                   </div>
+                </div>
                 </div>
               )}
 
