@@ -641,30 +641,34 @@ export default function DevicesPage() {
                         <Input type="password" value={form.db_password} onChange={(e) => setForm({ ...form, db_password: e.target.value })} placeholder="留空不修改" />
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
-                      <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
-                        <option value="">未知</option>
-                        <option value="direct">物理机 / 包安装</option>
-                        <option value="docker">Docker 容器</option>
-                        <option value="podman">Podman 容器</option>
-                        <option value="k8s">Kubernetes</option>
-                      </Select>
-                    </div>
                   </div>
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
-                <Select
-                  value={form.template_id ?? ""}
-                  className={shakeFields.has("template_id") ? "animate-shake" : ""}
-                  onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
-                >
-                  <option value="">请选择模板</option>
-                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </Select>
+              <div className={form.device_type === "database" ? "grid grid-cols-2 gap-3" : ""}>
+                {form.device_type === "database" && (
+                  <div>
+                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
+                    <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                      <option value="">未知</option>
+                      <option value="direct">物理机 / 包安装</option>
+                      <option value="docker">Docker 容器</option>
+                      <option value="podman">Podman 容器</option>
+                      <option value="k8s">Kubernetes</option>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
+                  <Select
+                    value={form.template_id ?? ""}
+                    className={shakeFields.has("template_id") ? "animate-shake" : ""}
+                    onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
+                  >
+                    <option value="">请选择模板</option>
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </Select>
+                </div>
               </div>
         </div>
       </Modal>
