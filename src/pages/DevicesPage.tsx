@@ -578,7 +578,7 @@ export default function DevicesPage() {
                   <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
                 </div>
                 {(form.device_type === "server" || form.device_type === "database") ? (
-                  <>
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
                       <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
@@ -587,9 +587,9 @@ export default function DevicesPage() {
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
                       <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
                     </div>
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
                       <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
@@ -598,7 +598,7 @@ export default function DevicesPage() {
                       <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
                       <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
