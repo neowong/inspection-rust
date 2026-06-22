@@ -399,15 +399,26 @@ fn check_device_status_inner(
     }; // 锁释放
 
     // 2. TCP 连接检测（锁外，5 秒超时）
+    // 数据库设备额外检测数据库端口
     let ip_addr =
         IpAddr::from_str(&device.ip).map_err(|_| format!("无法解析设备 IP 地址: {}", device.ip))?;
-    let port = port_u16(device.ssh_port).ok_or_else(|| {
+    let ssh_port = port_u16(device.ssh_port).ok_or_else(|| {
         format!("设备 SSH 端口非法: {}", device.ssh_port)
     })?;
-    let socket_addr = SocketAddr::new(ip_addr, port);
+    let ssh_addr = SocketAddr::new(ip_addr, ssh_port);
 
-    let new_status = match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5)) {
-        Ok(_stream) => "online",
+    let new_status = match TcpStream::connect_timeout(&ssh_addr, Duration::from_secs(5)) {
+        Ok(_stream) => {
+            // SSH 可达，数据库设备额外探测 DB 端口
+            if device.device_type == "database" {
+                let db_port = device.db_port.unwrap_or(3306) as u16;
+                let db_addr = SocketAddr::new(ip_addr, db_port);
+                if TcpStream::connect_timeout(&db_addr, Duration::from_secs(3)).is_err() {
+                    tracing::warn!("数据库设备 {} SSH 在线但 DB 端口 {} 不可达", device.name, db_port);
+                }
+            }
+            "online"
+        }
         Err(_) => "offline",
     };
 
@@ -542,14 +553,20 @@ pub async fn detect_device_model(
         ssh_username, ip, ssh_port, vendor, profile.exec_mode
     );
 
-    let result = match profile.exec_mode {
-        ExecMode::Exec => {
-            // Linux / 发行版：exec channel 检测
-            detect_linux_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password).await
-        }
-        ExecMode::Shell => {
-            // 网络设备：shell 会话检测
-            detect_network_device_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone()).await
+    // 数据库设备：检测 OS 信息 + 数据库信息
+    let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
+        .iter().any(|o| vendor.to_lowercase().contains(o));
+
+    let result = if is_db {
+        detect_db_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone()).await
+    } else {
+        match profile.exec_mode {
+            ExecMode::Exec => {
+                detect_linux_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password).await
+            }
+            ExecMode::Shell => {
+                detect_network_device_info(ip.clone(), ssh_port, ssh_username.clone(), ssh_password, vendor.clone()).await
+            }
         }
     };
     match &result {
@@ -648,6 +665,13 @@ pub async fn detect_device_model_by_id(
             if let Some(s) = obj.get("sysname").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 updater.push_raw("sysname", s.to_string());
             }
+            // 数据库专属字段
+            if let Some(s) = obj.get("db_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                updater.push_raw("db_version", s.to_string());
+            }
+            if let Some(s) = obj.get("instance_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                updater.push_raw("instance_name", s.to_string());
+            }
             if let Some(s) = obj
                 .get("cpu_cores")
                 .and_then(|v| v.as_str())
@@ -714,9 +738,14 @@ pub fn detect_static_info_if_missing(
     };
 
     // 已有型号或主机名 → 跳过
-    if device_info.model.as_ref().filter(|s| !s.is_empty()).is_some()
-        || device_info.sysname.as_ref().filter(|s| !s.is_empty()).is_some()
-    {
+    // 数据库设备还需检查 db_version
+    let has_basic = device_info.model.as_ref().filter(|s| !s.is_empty()).is_some()
+        || device_info.sysname.as_ref().filter(|s| !s.is_empty()).is_some();
+    let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
+        .iter().any(|o| device_info.vendor.to_lowercase().contains(o));
+    let has_db_info = device_info.db_version.as_ref().filter(|s| !s.is_empty()).is_some();
+
+    if has_basic && (!is_db || has_db_info) {
         return;
     }
 
@@ -737,10 +766,16 @@ pub fn detect_static_info_if_missing(
     drop(device_info);
 
     // 2. SSH 检测（锁外）
-    let profile = vendor_profile::get_profile(&vendor);
-    let result = match profile.exec_mode {
-        ExecMode::Exec => detect_linux_info_sync(&ip, port, &username, &password),
-        ExecMode::Shell => detect_network_device_info_sync(&ip, port, &username, &password, &vendor),
+    let is_db = ["mysql","postgres","oracle","sql","达梦","redis","mongo"]
+        .iter().any(|o| vendor.to_lowercase().contains(o));
+    let result = if is_db {
+        detect_db_info_sync(&ip, port, &username, &password, &vendor)
+    } else {
+        let profile = vendor_profile::get_profile(&vendor);
+        match profile.exec_mode {
+            ExecMode::Exec => detect_linux_info_sync(&ip, port, &username, &password),
+            ExecMode::Shell => detect_network_device_info_sync(&ip, port, &username, &password, &vendor),
+        }
     };
 
     // 3. 写入 DB（短暂获锁）
@@ -775,6 +810,12 @@ pub fn detect_static_info_if_missing(
                     if let Ok(n) = num_str.parse::<f64>() {
                         updater.push_raw("memory_gb", n);
                     }
+                }
+                if let Some(s) = obj.get("db_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("db_version", s.to_string());
+                }
+                if let Some(s) = obj.get("instance_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("instance_name", s.to_string());
                 }
             }
             if !updater.is_empty() {
@@ -928,6 +969,120 @@ fn detect_linux_info_sync(
 
     let result = serde_json::Value::Object(info).to_string();
     tracing::info!("[detect_linux] 返回结果: {}", result);
+    Ok(result)
+}
+
+/// 数据库设备静态信息检测：先检测 OS 信息，再检测数据库版本/实例名
+async fn detect_db_info(
+    ip: String,
+    ssh_port: u16,
+    ssh_username: String,
+    ssh_password: String,
+    vendor: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        detect_db_info_sync(&ip, ssh_port, &ssh_username, &ssh_password, &vendor)
+    })
+    .await
+    .map_err(|e| format!("检测任务失败: {}", e))?
+}
+
+fn detect_db_info_sync(
+    ip: &str,
+    ssh_port: u16,
+    ssh_username: &str,
+    ssh_password: &str,
+    vendor: &str,
+) -> Result<String, String> {
+    use crate::services::linux_runner;
+    use crate::services::inspection_runner::SSHSessionSource;
+    use std::collections::HashMap;
+
+    tracing::info!("[detect_db] 开始: {}@{}:{}", ssh_username, ip, ssh_port);
+
+    let vendor_lower = vendor.to_lowercase();
+
+    // 根据数据库类型选择版本检测命令
+    let version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
+        "mysql --version"
+    } else if vendor_lower.contains("postgres") {
+        "psql --version"
+    } else if vendor_lower.contains("oracle") {
+        "sqlplus -v 2>/dev/null || echo oracle"
+    } else if vendor_lower.contains("sql") || vendor_lower.contains("mssql") {
+        "sqlcmd -Q 'SELECT @@VERSION' -W 2>/dev/null || echo mssql"
+    } else if vendor_lower.contains("达梦") {
+        "/opt/dmdbms/bin/disql -v 2>/dev/null || echo dm"
+    } else if vendor_lower.contains("redis") {
+        "redis-server --version 2>/dev/null || redis-cli --version"
+    } else if vendor_lower.contains("mongo") {
+        "mongod --version 2>/dev/null || mongosh --version"
+    } else {
+        "echo unknown"
+    };
+
+    let commands: Vec<String> = vec![
+        "hostnamectl".to_string(),
+        "cat /etc/os-release".to_string(),
+        "nproc".to_string(),
+        "lscpu".to_string(),
+        version_cmd.to_string(),
+    ];
+    let needs_root_map = HashMap::new();
+
+    let source = SSHSessionSource {
+        host: ip.to_string(),
+        port: ssh_port,
+        username: ssh_username.to_string(),
+        password: ssh_password.to_string(),
+    };
+
+    let outputs = linux_runner::run_commands_exec(
+        &source, &commands, &needs_root_map, None, None,
+    )?;
+
+    let mut info = serde_json::Map::new();
+
+    // OS 信息（复用 detect_linux_info 的逻辑）
+    if let Some(output) = outputs.get("hostnamectl") {
+        if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
+            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
+        }
+        if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
+            info.insert("model".to_string(), serde_json::Value::String(os));
+        }
+    }
+    if !info.contains_key("model") {
+        if let Some(output) = outputs.get("cat /etc/os-release") {
+            if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
+                info.insert("model".to_string(), serde_json::Value::String(name));
+            }
+        }
+    }
+    if let Some(output) = outputs.get("nproc") {
+        let trimmed = output.trim();
+        if trimmed.parse::<i64>().is_ok() {
+            info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
+        }
+    }
+    if !info.contains_key("cpu_cores") {
+        if let Some(output) = outputs.get("lscpu") {
+            if let Some(cores) = extract_lscpu_cores(output) {
+                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
+            }
+        }
+    }
+
+    // 数据库版本
+    if let Some(output) = outputs.get(version_cmd) {
+        let trimmed = output.trim().to_string();
+        if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle" && trimmed != "mssql" && trimmed != "dm" {
+            info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
+        }
+    }
+
+    let result = serde_json::Value::Object(info).to_string();
+    tracing::info!("[detect_db] 返回结果: {}", result);
     Ok(result)
 }
 

@@ -613,12 +613,24 @@ fn execute_device_ssh(
 
     let profile = crate::services::vendor_profile::get_profile(&device.vendor);
 
+    let deployment = device.deployment.as_deref().unwrap_or("direct");
+
     match profile.exec_mode {
         crate::services::vendor_profile::ExecMode::Exec => {
-            let cmd_strings: Vec<String> = commands.iter().map(|s| s.command.clone()).collect();
-            let needs_root_map: std::collections::HashMap<String, bool> = commands
+            let cmd_strings: Vec<String> = if deployment == "docker" || deployment == "podman" {
+                // 容器部署：每条命令用 docker/podman exec 包装
+                let runtime = if deployment == "docker" { "docker" } else { "podman" };
+                commands.iter().map(|s| {
+                    format!("{} exec -i $({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || {}",
+                        runtime, runtime, device.vendor.to_lowercase(), s.command.replace('\'', "'\\''"), s.command)
+                }).collect()
+            } else {
+                commands.iter().map(|s| s.command.clone()).collect()
+            };
+            let needs_root_map: std::collections::HashMap<String, bool> = cmd_strings
                 .iter()
-                .map(|s| (s.command.clone(), s.needs_root))
+                .zip(commands.iter())
+                .map(|(cmd, spec)| (cmd.clone(), spec.needs_root))
                 .collect();
             crate::services::linux_runner::run_commands_exec(
                 &source,
