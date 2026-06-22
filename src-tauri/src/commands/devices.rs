@@ -1054,18 +1054,15 @@ fn detect_db_info_sync(
 
     tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
 
-    // 1. OS 信息：优先从同 IP 的服务器设备复制（避免重复 SSH + sudo dmidecode 权限问题）
-    // 如果没有现成的服务器设备，则走 SSH 检测
-    let mut info: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
+    // 1. 复用 detect_linux_info_sync 获取 OS 信息（内含 dmidecode 内存，通过 needs_root_map 正确 sudo）
     let os_json = detect_linux_info_sync(ip, ssh_port, ssh_username, ssh_password);
-    if let Ok(json) = os_json {
-        if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json) {
-            info = map;
+    let mut info: serde_json::Map<String, serde_json::Value> = match os_json {
+        Ok(ref json) => serde_json::from_str(json).unwrap_or_default(),
+        Err(ref e) => {
+            tracing::warn!("[detect_db] OS 信息 SSH 检测失败: {}", e);
+            serde_json::Map::new()
         }
-    } else {
-        tracing::warn!("[detect_db] OS 信息 SSH 检测失败，尝试只检测 DB 版本: {:?}", os_json.err());
-    }
+    };
 
     // 2. 单独检测数据库版本
     let vendor_lower = vendor.to_lowercase();
