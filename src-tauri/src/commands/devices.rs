@@ -1135,7 +1135,7 @@ fn detect_db_info_sync(
     ssh_password: &str,
     vendor: &str,
     deployment: &str,
-    _device_name: &str,
+    device_name: &str,
     db_username: &str,
     db_password: &str,
     instance_name: &str,
@@ -1171,18 +1171,11 @@ fn detect_db_info_sync(
         let mysql_cmd = format!("mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str);
 
         if is_container {
-            // 三层容器发现 + 宿主机直连 fallback：
-            // 1) publish 端口过滤  2) name=mysql 兜底  3) 全量扫描 mysql 镜像
-            // 都失败则 fallback 到宿主机直接执行 mysql
-            let esc = |s: &str| s.replace('"', "\\\"");
+            // 容器部署：直接用用户录入的容器名（instance_name），没有则用 device_name 兜底
+            let cname = if instance_name.is_empty() { device_name } else { instance_name };
             db_cmds.push(("db_detail".to_string(), format!(
-                "C=$({rt} ps --filter publish={port}/tcp -q 2>/dev/null | head -1); \
-                 [ -z \"$C\" ] && C=$({rt} ps --filter name=mysql -q 2>/dev/null | head -1); \
-                 [ -z \"$C\" ] && C=$({rt} ps -q 2>/dev/null | while read cid; do {rt} inspect --format '{{{{.Name}}}}' $cid 2>/dev/null; done | grep -i mysql | head -1 | awk '{{print $1}}'); \
-                 if [ -n \"$C\" ]; then {rt} exec $C sh -c \"{cmd}\" 2>&1; \
-                 else {fallback} 2>&1; fi",
-                rt = runtime, port = db_port,
-                cmd = esc(&mysql_cmd), fallback = esc(&mysql_cmd))))
+                "{} exec {} sh -c \"{}\" 2>&1 || echo container_not_found",
+                runtime, cname, mysql_cmd.replace('"', "\\\""))));
         } else {
             db_cmds.push(("db_detail".to_string(), mysql_cmd));
         }
@@ -1210,15 +1203,14 @@ fn detect_db_info_sync(
 
     let wrap_cmd = |raw: &str| -> String {
         if is_container {
-            // 用 sh -c 确保 docker exec 内命令的引号参数被正确解析
+            let cname = if instance_name.is_empty() { device_name } else { instance_name };
             let escaped = raw.replace('"', "\\\"");
-            format!(
-                "C=$({} ps --filter publish={}/tcp -q 2>/dev/null | head -1); [ -n \"$C\" ] && {} exec $C sh -c \"{}\" 2>&1 || echo container_not_found",
-                runtime, db_port, runtime, escaped
-            )
+            format!("{} exec {} sh -c \"{}\" 2>&1 || echo container_not_found",
+                runtime, cname, escaped)
         } else if is_k8s {
+            let cname = if instance_name.is_empty() { "mysql" } else { instance_name };
             let escaped = raw.replace('"', "\\\"");
-            format!("kubectl exec deploy/mysql -- sh -c \"{}\" 2>&1 || echo k8s_pod_not_found", escaped)
+            format!("kubectl exec {} -- sh -c \"{}\" 2>&1 || echo k8s_pod_not_found", cname, escaped)
         } else {
             format!("{} 2>&1", raw)
         }
@@ -1234,10 +1226,9 @@ fn detect_db_info_sync(
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
     for (_, raw_cmd) in &db_cmds {
-        // MySQL 容器命令已在上面嵌入完整的三层发现+包装，直接追加
-        // 其他 DB 命令通过 wrap_cmd 统一添加 2>&1 / 容器包装
+        // MySQL 容器命令已在上面预包装（docker exec），其余通过 wrap_cmd 统一处理
         let is_mysql = vendor_lower.contains("mysql") || vendor_lower.contains("mariadb");
-        if is_container && is_mysql {
+        if (is_container || is_k8s) && is_mysql {
             commands.push(raw_cmd.clone());
         } else {
             commands.push(wrap_cmd(raw_cmd));

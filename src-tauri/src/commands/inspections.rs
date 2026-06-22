@@ -324,14 +324,16 @@ fn execute_device_ssh(
     match profile.exec_mode {
         crate::services::vendor_profile::ExecMode::Exec => {
             let cmd_strings: Vec<String> = if deployment == "docker" || deployment == "podman" {
-                // 容器部署：通过 publish 端口发现容器名，再 exec 进去执行
+                // 容器部署：用 instance_name 作为容器名，未填则用设备名兜底
                 let runtime = if deployment == "docker" { "docker" } else { "podman" };
-                let db_port = device.db_port.unwrap_or(3306);
+                let container_name = device.instance_name.clone()
+                    .unwrap_or_default();
+                let cname = if container_name.is_empty() { &device.name } else { &container_name };
                 commands.iter().map(|s| {
                     let escaped = s.command.replace('"', "\\\"");
                     format!(
-                        "C=$({rt} ps --filter publish={port}/tcp -q 2>/dev/null | head -1); [ -n \"$C\" ] && {rt} exec $C sh -c \"{cmd}\" 2>&1 || echo [容器命令失败]",
-                        rt = runtime, port = db_port, cmd = escaped
+                        "{rt} exec {cn} sh -c \"{cmd}\" 2>&1 || echo [容器命令失败]",
+                        rt = runtime, cn = cname, cmd = escaped
                     )
                 }).collect()
             } else {

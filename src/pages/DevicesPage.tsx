@@ -751,14 +751,6 @@ export default function DevicesPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
-                        <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="自动检测" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">实例名</label>
-                        <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder="自动检测" />
-                      </div>
-                      <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
                         <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
                           <option value="direct">包安装</option>
@@ -766,6 +758,18 @@ export default function DevicesPage() {
                           <option value="podman">Podman 容器</option>
                           <option value="k8s">Kubernetes</option>
                         </Select>
+                      </div>
+                      {form.deployment === "docker" || form.deployment === "podman" || form.deployment === "k8s" ? (
+                        <div>
+                          <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">容器名</label>
+                          <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder={form.deployment === "k8s" ? "如 deploy/mysql" : "如 mysql"} />
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
+                        <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="自动检测" />
                       </div>
                     </div>
                 </div>
