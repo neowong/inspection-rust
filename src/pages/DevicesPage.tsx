@@ -646,7 +646,7 @@ export default function DevicesPage() {
                         <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 0 })} placeholder={form.vendor === "PostgreSQL" ? "5432" : form.vendor === "Oracle" ? "1521" : form.vendor === "SQL Server" ? "1433" : form.vendor === "达梦" ? "5236" : form.vendor === "Redis" ? "6379" : form.vendor === "MongoDB" ? "27017" : "3306"} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
                         <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="自动检测" />
@@ -655,36 +655,30 @@ export default function DevicesPage() {
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">实例名</label>
                         <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder="自动检测" />
                       </div>
-                  </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
+                        <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
+                          <option value="direct">包安装</option>
+                          <option value="docker">Docker 容器</option>
+                          <option value="podman">Podman 容器</option>
+                          <option value="k8s">Kubernetes</option>
+                        </Select>
+                      </div>
+                    </div>
                 </div>
                 </div>
               )}
 
-              <div className={form.device_type === "database" ? "grid grid-cols-2 gap-3" : ""}>
-                {form.device_type === "database" && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">部署方式</label>
-                      <Select value={form.deployment} onChange={(e) => setForm({ ...form, deployment: e.target.value })}>
-                        <option value="direct">包安装</option>
-                        <option value="docker">Docker 容器</option>
-                        <option value="podman">Podman 容器</option>
-                        <option value="k8s">Kubernetes</option>
-                      </Select>
-                    </div>
-                  </>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
-                  <Select
-                    value={form.template_id ?? ""}
-                    className={shakeFields.has("template_id") ? "animate-shake" : ""}
-                    onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
-                  >
-                    <option value="">请选择模板</option>
-                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </Select>
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">关联模板 <span className="text-[hsl(var(--danger))]">*</span></label>
+                <Select
+                  value={form.template_id ?? ""}
+                  className={shakeFields.has("template_id") ? "animate-shake" : ""}
+                  onChange={(e) => { setForm({ ...form, template_id: e.target.value ? Number(e.target.value) : null }); }}
+                >
+                  <option value="">请选择模板</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
               </div>
         </div>
       </Modal>
