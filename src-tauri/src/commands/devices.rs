@@ -1318,8 +1318,7 @@ fn detect_db_info_sync(
                 break;
             }
             if trimmed.contains("container_not_found") {
-                // 容器发现全失败 + 直连也失败
-                db_error = Some(format!("容器未发现且宿主机无 mysql：请确认 db_port({}) 是 Docker 宿主机映射端口", db_port));
+                db_error = Some(format!("容器 '{}' 未运行或名称错误，请确认容器名正确", if instance_name.is_empty() { device_name } else { instance_name }));
                 break;
             }
             if trimmed.contains("command not found") || trimmed.contains("No such file") {
@@ -1338,7 +1337,7 @@ fn detect_db_info_sync(
         info.insert("_warn".to_string(), serde_json::Value::String(warn.clone()));
     } else if !info.contains_key("db_version") && is_container {
         info.insert("_warn".to_string(), serde_json::Value::String(
-            format!("数据库版本获取失败：请确认 db_port({}) 是宿主机映射端口，且密码正确", db_port)
+            format!("数据库版本获取失败：请确认容器名 '{}' 正确且密码无误", if instance_name.is_empty() { device_name } else { instance_name })
         ));
     } else if !info.contains_key("db_version") {
         info.insert("_warn".to_string(), serde_json::Value::String(
@@ -1393,18 +1392,6 @@ fn detect_db_info_sync(
                 _ => {}
             }
         }
-    }
-
-    // 诊断：OS 信息有了但 DB 信息缺失 → 附加警告
-    let has_db_result = info.contains_key("db_version");
-    if !has_db_result && is_container {
-        info.insert("_warn".to_string(), serde_json::Value::String(
-            format!("数据库版本获取失败：请确认 db_port({}) 与实际 Docker 宿主机映射端口一致，且数据库密码正确", db_port)
-        ));
-    } else if !has_db_result && !is_container {
-        info.insert("_warn".to_string(), serde_json::Value::String(
-            "数据库版本获取失败：请确认 mysql 客户端已安装且数据库密码正确".to_string()
-        ));
     }
 
     if info.is_empty() {

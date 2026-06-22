@@ -200,6 +200,11 @@ export default function DevicesPage() {
     if (!editing && !form.ssh_password.trim()) { triggerShake("ssh_password"); return; }
     if (form.template_id === null) { triggerShake("template_id"); return; }
 
+    // 容器部署的数据库设备：容器名必填
+    if (form.device_type === "database" && (form.deployment === "docker" || form.deployment === "podman" || form.deployment === "k8s")) {
+      if (!form.instance_name.trim()) { triggerShake("instance_name"); setSaveError("容器部署必须填写容器名"); return; }
+    }
+
     const data: Record<string, unknown> = {
       name: form.name,
       ip: form.ip,
@@ -763,7 +768,8 @@ export default function DevicesPage() {
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">容器名</label>
                         <Input
                           value={form.instance_name}
-                          onChange={(e) => setForm({ ...form, instance_name: e.target.value })}
+                          className={shakeFields.has("instance_name") ? "animate-shake" : ""}
+                          onChange={(e) => { setForm({ ...form, instance_name: e.target.value }); setSaveError(null); }}
                           placeholder={form.deployment === "direct" ? "无需" : form.deployment === "k8s" ? "如 deploy/mysql" : "如 mysql"}
                           disabled={form.deployment === "direct"}
                         />
