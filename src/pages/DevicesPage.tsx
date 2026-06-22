@@ -619,7 +619,6 @@ export default function DevicesPage() {
               {/* ── 数据库专属信息 ── */}
               {form.device_type === "database" && (
                 <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
-                  <p className="text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-2">数据库信息</p>
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
