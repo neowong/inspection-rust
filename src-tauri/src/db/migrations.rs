@@ -467,12 +467,20 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 fields.push(serde_json::json!({"key":"os_release","label":"发行版","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"内存(GB)","visible":true}));
+                fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":false}));
+                fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":false}));
+                fields.push(serde_json::json!({"key":"mfg_date","label":"出厂日期","visible":false}));
+                fields.push(serde_json::json!({"key":"sysname","label":"主机名","visible":false}));
             } else if v.contains("mysql") || v.contains("postgres") || v.contains("oracle") || v.contains("sql") || v.contains("达梦") {
                 fields.push(serde_json::json!({"key":"db_version","label":"数据库版本","visible":true}));
                 fields.push(serde_json::json!({"key":"instance_name","label":"实例名","visible":true}));
                 fields.push(serde_json::json!({"key":"os_release","label":"宿主机 OS","visible":true}));
                 fields.push(serde_json::json!({"key":"cpu_cores","label":"宿主机 CPU 核心","visible":true}));
                 fields.push(serde_json::json!({"key":"memory_gb","label":"宿主机 内存(GB)","visible":true}));
+                fields.push(serde_json::json!({"key":"model","label":"宿主机 型号","visible":false}));
+                fields.push(serde_json::json!({"key":"sn","label":"宿主机 序列号","visible":false}));
+                fields.push(serde_json::json!({"key":"mfg_date","label":"宿主机 出厂日期","visible":false}));
+                fields.push(serde_json::json!({"key":"sysname","label":"宿主机 主机名","visible":false}));
             } else {
                 fields.push(serde_json::json!({"key":"model","label":"设备型号","visible":true}));
                 fields.push(serde_json::json!({"key":"sn","label":"序列号","visible":true}));

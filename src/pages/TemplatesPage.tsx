@@ -998,16 +998,24 @@ const FIELD_SERVER: DeviceField[] = [
   { key: "os_release", label: "发行版", visible: true },
   { key: "cpu_cores", label: "CPU 核心", visible: true },
   { key: "memory_gb", label: "内存(GB)", visible: true },
+  { key: "model", label: "设备型号", visible: false },
+  { key: "sn", label: "序列号", visible: false },
+  { key: "mfg_date", label: "出厂日期", visible: false },
+  { key: "sysname", label: "主机名", visible: false },
 ];
 const FIELD_DATABASE: DeviceField[] = [
   { key: "db_version", label: "数据库版本", visible: true },
   { key: "instance_name", label: "实例名", visible: true },
 ];
-// 数据库宿主信息：数据库运行在服务器上，宿主机静态信息也需纳入报告
+// 数据库宿主信息：含 OS 属性 + 物理机属性（数据库可能在物理机上）
 const FIELD_DB_HOST: DeviceField[] = [
   { key: "os_release", label: "宿主机 OS", visible: true },
   { key: "cpu_cores", label: "宿主机 CPU 核心", visible: true },
   { key: "memory_gb", label: "宿主机 内存(GB)", visible: true },
+  { key: "model", label: "宿主机 型号", visible: false },
+  { key: "sn", label: "宿主机 序列号", visible: false },
+  { key: "mfg_date", label: "宿主机 出厂日期", visible: false },
+  { key: "sysname", label: "宿主机 主机名", visible: false },
 ];
 
 /** 按厂商标记返回该厂商可用的完整字段集 */
