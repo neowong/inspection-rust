@@ -761,10 +761,34 @@ const SAMPLE_DEVICE: Record<string, { name: string; ip: string; vendor: string; 
     os_release: "", cpu_cores: "", memory_gb: "",
   },
   "Linux": {
-    name: "WEB-SRV-01", ip: "192.168.10.10", vendor: "Linux",
+    name: "SRV-GENERIC", ip: "192.168.10.10", vendor: "Linux",
+    model: "KVM 虚拟机", sn: "VMware-42 1a 2b 3c 4d", mfg_date: "—",
+    inspect_time: "2026-06-13 09:00:00", sysname: "srv-generic",
+    os_release: "Ubuntu 22.04.4 LTS", cpu_cores: "4", memory_gb: "8",
+  },
+  "Ubuntu": {
+    name: "WEB-SRV-01", ip: "192.168.10.10", vendor: "Ubuntu",
     model: "KVM 虚拟机", sn: "VMware-42 1a 2b 3c 4d", mfg_date: "—",
     inspect_time: "2026-06-13 09:00:00", sysname: "web-srv-01",
     os_release: "Ubuntu 22.04.4 LTS", cpu_cores: "8", memory_gb: "16",
+  },
+  "CentOS": {
+    name: "APP-SRV-01", ip: "172.16.50.40", vendor: "CentOS",
+    model: "物理机 Dell R750", sn: "DEL-R750-XYZ789", mfg_date: "2024-10-15",
+    inspect_time: "2026-06-13 10:00:00", sysname: "app-srv-01",
+    os_release: "CentOS Linux release 7.9.2009 (Core)", cpu_cores: "16", memory_gb: "32",
+  },
+  "Rocky": {
+    name: "K8S-NODE-01", ip: "10.30.1.10", vendor: "Rocky",
+    model: "物理机 HP DL380", sn: "HP-DL380-ABC001", mfg_date: "2025-02-01",
+    inspect_time: "2026-06-13 10:30:00", sysname: "k8s-node-01",
+    os_release: "Rocky Linux 9.4 (Blue Onyx)", cpu_cores: "32", memory_gb: "128",
+  },
+  "Debian": {
+    name: "DB-SRV-01", ip: "10.50.1.20", vendor: "Debian",
+    model: "物理机 Supermicro", sn: "SM-SYS-001234", mfg_date: "2024-08-20",
+    inspect_time: "2026-06-13 11:00:00", sysname: "db-srv-01",
+    os_release: "Debian GNU/Linux 12 (bookworm)", cpu_cores: "24", memory_gb: "64",
   },
   "MySQL": {
     name: "DB-MASTER-01", ip: "192.168.50.10", vendor: "MySQL",
@@ -845,6 +869,20 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
   ],
   "Linux": [
     { item: "系统信息", cmd: "uname -a",
+      output: "Linux srv-generic 5.15.0-122-generic x86_64 GNU/Linux",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 4\nMem: 7.6Gi used: 4.2Gi free: 3.4Gi",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/sda1   50G   35G    15G   70%  /",
+      status: "warning", finding: "根分区使用率 70%", suggestion: "建议清理旧日志" },
+    { item: "网络连接", cmd: "ss -tlnp",
+      output: "LISTEN  0  128  0.0.0.0:22  0.0.0.0:*  (sshd)",
+      status: "ok", finding: "", suggestion: "" },
+  ],
+  "Ubuntu": [
+    { item: "系统信息", cmd: "uname -a",
       output: "Linux web-srv-01 5.15.0-122-generic x86_64 GNU/Linux",
       status: "ok", finding: "", suggestion: "" },
     { item: "CPU 和内存", cmd: "lscpu && free -h",
@@ -856,6 +894,48 @@ const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; s
     { item: "网络连接", cmd: "ss -tlnp",
       output: "LISTEN  0  128  0.0.0.0:22    0.0.0.0:*  (sshd)\nLISTEN  0  511  0.0.0.0:443   0.0.0.0:*  (nginx)",
       status: "ok", finding: "", suggestion: "" },
+  ],
+  "CentOS": [
+    { item: "系统信息", cmd: "uname -a",
+      output: "Linux app-srv-01 3.10.0-1160.el7.x86_64 GNU/Linux",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "发行版信息", cmd: "cat /etc/centos-release",
+      output: "CentOS Linux release 7.9.2009 (Core)",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 16\nMem: 31Gi used: 18Gi free: 13Gi",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/sda2   200G  165G   35G   83%  /",
+      status: "warning", finding: "根分区使用率 83%", suggestion: "建议扩容或迁移日志" },
+  ],
+  "Rocky": [
+    { item: "系统信息", cmd: "uname -a",
+      output: "Linux k8s-node-01 5.14.0-427.13.1.el9_4.x86_64 GNU/Linux",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "发行版信息", cmd: "cat /etc/rocky-release",
+      output: "Rocky Linux release 9.4 (Blue Onyx)",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 32\nMem: 125Gi used: 96Gi free: 29Gi",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/nvme0n1p2  500G  380G  120G  76%  /",
+      status: "warning", finding: "根分区使用率 76%", suggestion: "" },
+  ],
+  "Debian": [
+    { item: "系统信息", cmd: "uname -a",
+      output: "Linux db-srv-01 6.1.0-21-amd64 x86_64 GNU/Linux",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "发行版信息", cmd: "cat /etc/os-release",
+      output: "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 24\nMem: 62Gi used: 48Gi free: 14Gi",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/md0   1.8T  1.3T  500G   73%  /",
+      status: "warning", finding: "RAID 阵列使用率 73%", suggestion: "建议扩容存储" },
   ],
   "MySQL": [
     { item: "数据库版本", cmd: "mysql --version",
@@ -1282,14 +1362,16 @@ function applyVars(s: string, device: SampleDevice): string {
 /** 将厂商名归一化到样本数据键 */
 function sampleKey(vendor: string): string {
   if (!vendor) return "H3C";
-  if (SAMPLE_DEVICE[vendor]) return vendor;          // H3C/华为/思科/锐捷/飞塔/MySQL/PostgreSQL/Oracle — 精确匹配
+  // 精确匹配优先：各发行版、数据库、网络设备均有独立样本
+  if (SAMPLE_DEVICE[vendor]) return vendor;
   const norm = vendor.toLowerCase();
-  if (["ubuntu","centos","rocky","debian","rhel","suse","fedora","almalinux"].some(o => norm.includes(o))) return "Linux";
+  // 未精确匹配的 Linux 变体回退到 "Linux"
+  if (["rhel","suse","fedora","almalinux","linux"].some(o => norm.includes(o))) return "Linux";
   if (["mysql","mariadb"].some(o => norm.includes(o))) return "MySQL";
   if (norm.includes("postgres")) return "PostgreSQL";
   if (norm.includes("oracle")) return "Oracle";
   if (norm.includes("sql") || norm.includes("mssql")) return "MySQL";
-  return "H3C"; // 兜底
+  return "H3C";
 }
 
 function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor: string }) {
