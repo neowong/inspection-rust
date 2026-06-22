@@ -70,7 +70,7 @@ export default function Modal({
             <X size={16} />
           </button>
         </div>
-        <div className="flex-1 overflow-auto p-5 text-sm text-[hsl(var(--text-primary))]">
+        <div className="flex-1 overflow-y-auto p-5 text-sm text-[hsl(var(--text-primary))]">
           {children}
         </div>
         {footer && (

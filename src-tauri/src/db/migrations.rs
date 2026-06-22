@@ -461,7 +461,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                 .iter().any(|o| v.to_lowercase().contains(o))
         };
         let is_db = |v: &str| {
-            ["mysql","postgres","oracle","sql","达梦","mariadb","mssql"]
+            ["mysql","postgres","oracle","sql","达梦","mariadb","mssql","redis","mongo"]
                 .iter().any(|o| v.to_lowercase().contains(o))
         };
 
@@ -706,7 +706,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         }
 
         // 同样处理数据库模板：补全宿主机物理机字段
-        let db_vendors = ["MySQL","PostgreSQL","Oracle","SQL Server","达梦"];
+        let db_vendors = ["MySQL","PostgreSQL","Oracle","SQL Server","达梦","Redis","MongoDB"];
         let db_host_fields: Vec<(&str, &str)> = vec![
             ("model",      "宿主机 型号"),
             ("sn",         "宿主机 序列号"),

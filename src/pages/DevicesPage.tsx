@@ -556,7 +556,7 @@ export default function DevicesPage() {
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
                   <Select value={form.vendor} onChange={(e) => {
                     const v = e.target.value;
-                    const defaultPort = v === "PostgreSQL" ? 5432 : v === "Oracle" ? 1521 : v === "SQL Server" ? 1433 : v === "达梦" ? 5236 : 3306;
+                    const defaultPort = v === "PostgreSQL" ? 5432 : v === "Oracle" ? 1521 : v === "SQL Server" ? 1433 : v === "达梦" ? 5236 : v === "Redis" ? 6379 : v === "MongoDB" ? 27017 : 3306;
                     setForm({ ...form, vendor: v, db_port: defaultPort });
                   }}>
                     {(form.device_type === "server" ? SERVER_VENDORS : form.device_type === "database" ? DB_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
@@ -643,7 +643,7 @@ export default function DevicesPage() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
-                        <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 0 })} placeholder={form.vendor === "PostgreSQL" ? "5432" : form.vendor === "Oracle" ? "1521" : form.vendor === "SQL Server" ? "1433" : form.vendor === "达梦" ? "5236" : "3306"} />
+                        <Input type="number" value={form.db_port} onChange={(e) => setForm({ ...form, db_port: Number(e.target.value) || 0 })} placeholder={form.vendor === "PostgreSQL" ? "5432" : form.vendor === "Oracle" ? "1521" : form.vendor === "SQL Server" ? "1433" : form.vendor === "达梦" ? "5236" : form.vendor === "Redis" ? "6379" : form.vendor === "MongoDB" ? "27017" : "3306"} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
