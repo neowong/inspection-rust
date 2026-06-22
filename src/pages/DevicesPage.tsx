@@ -22,29 +22,20 @@ interface DeviceForm {
   ip: string;
   device_type: string;
   vendor: string;
-  model: string;
   ssh_username: string;
   ssh_password: string;
   ssh_port: number;
   template_id: number | null;
-  serial_number: string;
-  manufacturing_date: string;
-  sysname: string;
-  cpu_cores: string;
-  memory_gb: string;
   deployment: string;
-  db_version: string;
-  instance_name: string;
   db_username: string;
   db_password: string;
   db_port: number;
 }
 
 const EMPTY_FORM: DeviceForm = {
-  name: "", ip: "", device_type: "router", vendor: "H3C", model: "",
+  name: "", ip: "", device_type: "router", vendor: "H3C",
   ssh_username: "", ssh_password: "", ssh_port: 22, template_id: null,
-  serial_number: "", manufacturing_date: "", sysname: "", cpu_cores: "", memory_gb: "",
-  deployment: "direct", db_version: "", instance_name: "", db_username: "", db_password: "", db_port: 3306,
+  deployment: "direct", db_username: "", db_password: "", db_port: 3306,
 };
 
 export default function DevicesPage() {
@@ -129,19 +120,11 @@ export default function DevicesPage() {
       ip: d.ip,
       device_type: d.device_type || "router",
       vendor: d.vendor,
-      model: d.model || "",
       ssh_username: d.ssh_username || "",
       ssh_password: "",
       ssh_port: d.ssh_port,
       template_id: d.template_id,
-      serial_number: d.serial_number || "",
-      manufacturing_date: d.manufacturing_date || "",
-      sysname: d.sysname || "",
-      cpu_cores: d.cpu_cores != null ? String(d.cpu_cores) : "",
-      memory_gb: d.memory_gb != null ? String(d.memory_gb) : "",
       deployment: (d as any).deployment || "direct",
-      db_version: (d as any).db_version || "",
-      instance_name: (d as any).instance_name || "",
       db_username: (d as any).db_username || "",
       db_password: "",
       db_port: (d as any).db_port || 3306,
@@ -163,18 +146,10 @@ export default function DevicesPage() {
       vendor: form.vendor,
       ssh_port: form.ssh_port,
     };
-    if (form.model) data.model = form.model;
     if (form.ssh_username) data.ssh_username = form.ssh_username;
     if (form.ssh_password) data.ssh_password_encrypted = form.ssh_password;
     if (form.template_id !== null) data.template_id = form.template_id;
-    if (form.serial_number) data.serial_number = form.serial_number;
-    if (form.manufacturing_date) data.manufacturing_date = form.manufacturing_date;
-    if (form.sysname) data.sysname = form.sysname;
-    if (form.cpu_cores) data.cpu_cores = Number(form.cpu_cores);
-    if (form.memory_gb) data.memory_gb = Number(form.memory_gb);
     if (form.deployment) data.deployment = form.deployment;
-    if (form.db_version) data.db_version = form.db_version;
-    if (form.instance_name) data.instance_name = form.instance_name;
     if (form.db_username) data.db_username = form.db_username;
     if (form.db_password) data.db_password_encrypted = form.db_password;
     data.db_port = form.db_port;
@@ -571,40 +546,6 @@ export default function DevicesPage() {
                   {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" || form.device_type === "database" ? "发行版本号" : "型号"}</label>
-                  <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="自动检测" className={shakeFields.has("model") ? "animate-shake" : ""} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
-                  <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
-                </div>
-              </div>
-              {(form.device_type === "server" || form.device_type === "database") && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">CPU 核心数</label>
-                    <Input value={form.cpu_cores} onChange={(e) => setForm({ ...form, cpu_cores: e.target.value })} placeholder="自动检测" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">内存</label>
-                    <Input value={form.memory_gb} onChange={(e) => setForm({ ...form, memory_gb: e.target.value })} placeholder="自动检测" />
-                  </div>
-                </div>
-              )}
-              {form.device_type !== "server" && form.device_type !== "database" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SN</label>
-                    <Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} placeholder="自动检测" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">出厂日期</label>
-                    <Input value={form.manufacturing_date} onChange={(e) => setForm({ ...form, manufacturing_date: e.target.value })} placeholder="自动检测" />
-                  </div>
-                </div>
-              )}
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">SSH 用户名 <span className="text-[hsl(var(--danger))]">*</span></label>
@@ -623,16 +564,6 @@ export default function DevicesPage() {
               {form.device_type === "database" && (
                 <div className="col-span-2 mt-2 pt-2 border-t border-[hsl(var(--border))]">
                   <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
-                        <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="如 MySQL 8.0" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">实例名</label>
-                        <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder="如 prod-db-01" />
-                      </div>
-                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库用户名</label>
