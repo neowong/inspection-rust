@@ -556,14 +556,20 @@ export default function DevicesPage() {
                   {saveError && shakeFields.has("ip") && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" || form.device_type === "database" ? "发行版本号" : "型号"}</label>
-                <Input
-                  value={form.model}
-                  onChange={(e) => setForm({ ...form, model: e.target.value })}
-                  placeholder="自动检测"
-                  className={shakeFields.has("model") ? "animate-shake" : ""}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">{form.device_type === "server" || form.device_type === "database" ? "发行版本号" : "型号"}</label>
+                  <Input
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="自动检测"
+                    className={shakeFields.has("model") ? "animate-shake" : ""}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
+                  <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
+                </div>
               </div>
               <div className="grid grid-cols-[5fr_5fr_2fr] gap-3">
                 <div>
@@ -585,10 +591,6 @@ export default function DevicesPage() {
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">端口</label>
                   <Input type="number" value={form.ssh_port} onChange={(e) => setForm({ ...form, ssh_port: Number(e.target.value) || 22 })} />
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">主机名</label>
-                <Input value={form.sysname} onChange={(e) => setForm({ ...form, sysname: e.target.value })} placeholder="自动检测" />
               </div>
               {/* ── 服务器 — CPU/内存 ── */}
               {form.device_type === "server" && (
