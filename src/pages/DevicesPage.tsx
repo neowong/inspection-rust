@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { Device, InspectionTemplate } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
@@ -52,7 +53,8 @@ export default function DevicesPage() {
   const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -107,6 +109,12 @@ export default function DevicesPage() {
   }, []);
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
+  // URL ?status= 变化时同步筛选（dashboard 跳转）
+  useEffect(() => {
+    const s = searchParams.get("status") || "";
+    if (s !== statusFilter) setStatusFilter(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
   const filteredDevices = useMemo(() => devices.filter((d) =>
@@ -208,6 +216,12 @@ export default function DevicesPage() {
               showStatusHint(`${devName}: 在线，但未填 SSH 用户名，跳过静态信息检测`, "warn");
               return;
             }
+            // 编辑设备：若已有静态信息（型号/主机名）则跳过检测
+            const hasStatic = editing && (editing.model || editing.sysname);
+            if (hasStatic) {
+              showStatusHint(`${devName}: 在线，静态信息已存在`, "success");
+              return;
+            }
             showStatusHint(`正在后台检测 ${devName} 的静态信息...`, "info", 30000);
             return invoke<string>("detect_device_model_by_id", { deviceId: devId })
               .then((json) => {
@@ -263,26 +277,43 @@ export default function DevicesPage() {
   const handleCheckDevice = (d: Device) => {
     if (checkingIds.has(d.id)) return; // 防重复点击
     setCheckingIds((prev) => new Set(prev).add(d.id));
-    showStatusHint(`正在检测 ${d.name}...`, "info", 30000);
-    // 先做状态检测，在线后再做静态信息检测（离线时跳过避免 SSH 超时）
+    showStatusHint(`正在检测 ${d.name} 连通性...`, "info", 30000);
+    // 第一步：连通性检测（TCP 端口）
     invoke<{ new_status: string }>("check_device_status", { deviceId: d.id })
       .then((res) => {
+        loadDevices();
         if (res?.new_status !== "online") {
-          showStatusHint(`${d.name}: 设备离线，已跳过静态信息检测`, "warn");
+          // 设备离线——这是正常结果，不是"检测失败"
+          showStatusHint(`${d.name}: 离线（SSH 端口不可达）`, "warn");
           return;
         }
+        // 第二步：在线后检测静态信息（SSH 登录执行命令）
+        const hasCred = !!d.ssh_username;
+        if (!hasCred) {
+          showStatusHint(`${d.name}: 在线（未配置 SSH 凭据，跳过静态信息采集）`, "info");
+          return;
+        }
+        // 编辑设备已有静态信息则跳过
+        const hasStatic = d.model || d.sysname;
+        if (hasStatic) {
+          showStatusHint(`${d.name}: 在线，静态信息已存在`, "success");
+          return;
+        }
+        showStatusHint(`${d.name}: 在线，正在采集静态信息...`, "info", 30000);
         return invoke<string>("detect_device_model_by_id", { deviceId: d.id })
           .then(() => {
-            showStatusHint(`${d.name}: 状态与静态信息检测完成`, "success");
+            loadDevices();
+            showStatusHint(`${d.name}: 检测完成（在线 + 静态信息已更新）`, "success");
           })
           .catch((e) => {
-            console.error("[check] 静态信息检测失败:", e);
-            showStatusHint(detectErrorHint(d.name, e), "error");
+            console.error("[check] 静态信息采集失败:", e);
+            // 在线但静态信息采集失败——设备本身是在线的，只是 SSH 命令执行有问题
+            showStatusHint(`${d.name}: 在线，但静态信息采集失败（${detectErrorHint("", e).split(":").slice(1).join(":").trim() || "SSH 执行异常"}）`, "warn");
           });
       })
       .catch((e) => {
-        console.error("[check] 状态检测失败:", e);
-        showStatusHint(`${d.name}: 状态检测失败`, "error");
+        console.error("[check] 连通性检测异常:", e);
+        showStatusHint(`${d.name}: 连通性检测异常（${typeof e === "string" ? e : "内部错误"}）`, "error");
       })
       .finally(() => {
         setCheckingIds((prev) => {
@@ -405,7 +436,12 @@ export default function DevicesPage() {
           size="sm"
           className="w-28"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            // 同步 URL，dashboard 跳转过来时也能改回全部
+            if (e.target.value) setSearchParams({ status: e.target.value });
+            else setSearchParams({});
+          }}
         >
           <option value="">全部状态</option>
           <option value="online">在线</option>

@@ -80,8 +80,8 @@ export default function DashboardPage() {
       {/* 核心指标 */}
       <div className="grid grid-cols-4 gap-4">
         <SummaryCard label="设备总数" value={v("device_count")} icon={Monitor} color="accent" onClick={() => navigate("/devices")} />
-        <SummaryCard label="在线设备" value={v("online_device_count")} icon={Wifi} color="success" onClick={() => navigate("/devices")} />
-        <SummaryCard label="离线设备" value={v("offline_device_count")} icon={WifiOff} color="danger" muted={v("offline_device_count") === "0"} onClick={() => navigate("/devices")} />
+        <SummaryCard label="在线设备" value={v("online_device_count")} icon={Wifi} color="success" onClick={() => navigate("/devices?status=online")} />
+        <SummaryCard label="离线设备" value={v("offline_device_count")} icon={WifiOff} color="danger" muted={v("offline_device_count") === "0"} onClick={() => navigate("/devices?status=offline")} />
         <SummaryCard label="报告总数" value={v("report_count")} icon={FileCheck} color="accent" onClick={() => navigate("/reports")} />
       </div>
 

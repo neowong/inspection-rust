@@ -34,6 +34,7 @@ pub struct Device {
     #[serde(skip_serializing)]
     pub db_password_encrypted: Option<String>,
     pub db_port: Option<i64>,
+    pub kernel_version: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -63,6 +64,7 @@ pub struct DeviceCreate {
     pub db_username: Option<String>,
     pub db_password_encrypted: Option<String>,
     pub db_port: Option<i64>,
+    pub kernel_version: Option<String>,
 }
 
 /// 更新设备 - 前端请求 DTO（全部可选）
@@ -90,6 +92,7 @@ pub struct DeviceUpdate {
     pub db_username: Option<String>,
     pub db_password_encrypted: Option<String>,
     pub db_port: Option<i64>,
+    pub kernel_version: Option<String>,
 }
 
 // ============================
@@ -328,7 +331,7 @@ pub fn now_str() -> String {
 pub const DEVICE_COLUMNS: &str =
     "id, name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, \
      ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, \
-     cpu_cores, memory_gb, auth_status, auth_message, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, created_at, updated_at";
+     cpu_cores, memory_gb, auth_status, auth_message, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version, created_at, updated_at";
 
 pub const TEMPLATE_COLUMNS: &str =
     "id, name, vendor, model, device_type, config, description, report_template_id, template_type, \
@@ -384,8 +387,9 @@ pub fn device_from_row(row: &rusqlite::Row) -> rusqlite::Result<Device> {
         db_username: row.get(22)?,
         db_password_encrypted: row.get(23)?,
         db_port: row.get(24)?,
-        created_at: row.get(25)?,
-        updated_at: row.get(26)?,
+        kernel_version: row.get(25)?,
+        created_at: row.get(26)?,
+        updated_at: row.get(27)?,
     })
 }
 

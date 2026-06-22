@@ -175,7 +175,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
 
     // 4. 插入数据库
     conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         rusqlite::params![
             data.name,
             data.ip,
@@ -199,6 +199,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.db_username,
             encrypted_db_password,
             data.db_port.unwrap_or(3306),
+            data.kernel_version,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -266,6 +267,7 @@ pub fn update_device(
     updater.push_opt("instance_name", &data.instance_name);
     updater.push_opt("db_username", &data.db_username);
     updater.push_opt("db_port", &data.db_port);
+    updater.push_opt("kernel_version", &data.kernel_version);
     if let Some(ref pass) = data.db_password_encrypted {
         if !pass.is_empty() {
             let enc = CryptoService::encrypt(pass)?;
@@ -619,22 +621,32 @@ pub async fn detect_device_model_by_id(
     let os_info_from_sibling = {
         let conn = state.db.lock();
         let sql = format!(
-            "SELECT model, sysname, cpu_cores, memory_gb FROM devices \
+            "SELECT model, sysname, cpu_cores, memory_gb, kernel_version FROM devices \
              WHERE ip = ?1 AND device_type != 'database' AND (model IS NOT NULL OR sysname IS NOT NULL) LIMIT 1"
         );
-        conn.query_row(&sql, rusqlite::params![ip], |row| {
+        let r = conn.query_row(&sql, rusqlite::params![ip], |row| {
             Ok((
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Option<String>>(1)?,
                 row.get::<_, Option<i64>>(2)?,
                 row.get::<_, Option<f64>>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
-        }).ok()
+        });
+        match &r {
+            Ok((m, s, c, mem, kv)) => tracing::info!(
+                "[detect_db] 找到同 IP 服务器设备 OS 信息: model={:?}, sysname={:?}, cpu={:?}, mem={:?}, kernel={:?}",
+                m, s, c, mem, kv
+            ),
+            Err(e) => tracing::warn!("[detect_db] 未找到同 IP 服务器设备 OS 信息 (ip={}): {}", ip, e),
+        }
+        r.ok()
     };
 
     // 3. 调用底层检测（OS 信息 + DB 版本）
     let detect_result =
-        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment, device_name).await;
+        detect_device_model(ip, ssh_port, ssh_username, ssh_password, vendor, deployment.clone(), device_name.clone()).await;
+    tracing::info!("[detect_db] detect_device_model 结果: {:?}", detect_result.as_ref().err().map(|e| e.as_str()).unwrap_or("Ok"));
 
     // 失败：分类并写入 auth_status
     // 无论 SSH 成功与否，都用同 IP 服务器的 OS 信息补全缺失字段
@@ -644,28 +656,33 @@ pub async fn detect_device_model_by_id(
         Err(e) => {
             if os_info_from_sibling.is_some() {
                 tracing::warn!("[detect_db] SSH 检测失败，使用同 IP 服务器的 OS 信息: {}", e);
-                let (model, sysname, cpu_cores, memory_gb) = os_info_from_sibling.clone().unwrap();
+                let (model, sysname, cpu_cores, memory_gb, kernel_version) = os_info_from_sibling.clone().unwrap();
                 let mut map = serde_json::Map::new();
                 if let Some(m) = model { map.insert("model".into(), serde_json::Value::String(m)); }
                 if let Some(s) = sysname { map.insert("sysname".into(), serde_json::Value::String(s)); }
                 if let Some(c) = cpu_cores { map.insert("cpu_cores".into(), serde_json::Value::String(c.to_string())); }
                 if let Some(m) = memory_gb { map.insert("memory_gb".into(), serde_json::Value::String(m.to_string())); }
+                if let Some(k) = kernel_version { map.insert("kernel_version".into(), serde_json::Value::String(k)); }
                 serde_json::Value::Object(map).to_string()
             } else {
+                // SSH 检测失败：仅认证类错误写 auth_status，其他错误不污染状态列
                 let (auth_status, brief) = classify_detect_error(&e);
                 let now = now_str();
                 let conn = state.db.lock();
-                let _ = conn.execute(
-                    "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
-                    rusqlite::params![auth_status, brief, now, device_id],
-                );
+                // 只有认证失败/无凭据才标记 auth_status，避免命令执行异常误报为"账号错误"
+                if auth_status == "auth_failed" || auth_status == "no_credential" {
+                    let _ = conn.execute(
+                        "UPDATE devices SET auth_status=?1, auth_message=?2, updated_at=?3 WHERE id=?4",
+                        rusqlite::params![auth_status, brief, now, device_id],
+                    );
+                }
                 return Err(e);
             }
         }
     };
 
     // SSH 成功时，用兄弟设备信息补全缺失字段（特别是 memory）
-    let json = if let Some((ref s_model, ref s_sysname, s_cpu, s_mem)) = os_info_from_sibling {
+    let json = if let Some((ref s_model, ref s_sysname, s_cpu, s_mem, s_kernel)) = os_info_from_sibling {
         let mut map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
         if !map.contains_key("memory_gb") {
             if let Some(m) = s_mem { map.insert("memory_gb".into(), serde_json::Value::String(m.to_string())); }
@@ -678,6 +695,9 @@ pub async fn detect_device_model_by_id(
         }
         if !map.contains_key("sysname") {
             if let Some(s) = s_sysname.clone() { map.insert("sysname".into(), serde_json::Value::String(s)); }
+        }
+        if !map.contains_key("kernel_version") {
+            if let Some(k) = s_kernel.clone() { map.insert("kernel_version".into(), serde_json::Value::String(k)); }
         }
         serde_json::Value::Object(map).to_string()
     } else {
@@ -717,6 +737,9 @@ pub async fn detect_device_model_by_id(
             }
             if let Some(s) = obj.get("instance_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 updater.push_raw("instance_name", s.to_string());
+            }
+            if let Some(s) = obj.get("kernel_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                updater.push_raw("kernel_version", s.to_string());
             }
             if let Some(s) = obj
                 .get("cpu_cores")
@@ -867,6 +890,9 @@ pub fn detect_static_info_if_missing(
                 if let Some(s) = obj.get("instance_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                     updater.push_raw("instance_name", s.to_string());
                 }
+                if let Some(s) = obj.get("kernel_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    updater.push_raw("kernel_version", s.to_string());
+                }
             }
             if !updater.is_empty() {
                 updater.push_raw("auth_status", "ok".to_string());
@@ -951,6 +977,7 @@ fn detect_linux_info_sync(
     let commands: Vec<String> = vec![
         "hostnamectl".to_string(),
         "cat /etc/os-release".to_string(),
+        "uname -r".to_string(),
         "nproc".to_string(),
         "lscpu".to_string(),
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
@@ -994,6 +1021,13 @@ fn detect_linux_info_sync(
             if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
                 info.insert("model".to_string(), serde_json::Value::String(name));
             }
+        }
+    }
+
+    if let Some(output) = outputs.get("uname -r") {
+        let trimmed = output.trim().to_string();
+        if !trimmed.is_empty() {
+            info.insert("kernel_version".to_string(), serde_json::Value::String(trimmed));
         }
     }
 
@@ -1054,21 +1088,11 @@ fn detect_db_info_sync(
 
     tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
 
-    // 1. 复用 detect_linux_info_sync 获取 OS 信息（内含 dmidecode 内存，通过 needs_root_map 正确 sudo）
-    let os_json = detect_linux_info_sync(ip, ssh_port, ssh_username, ssh_password);
-    let mut info: serde_json::Map<String, serde_json::Value> = match os_json {
-        Ok(ref json) => serde_json::from_str(json).unwrap_or_default(),
-        Err(ref e) => {
-            tracing::warn!("[detect_db] OS 信息 SSH 检测失败: {}", e);
-            serde_json::Map::new()
-        }
-    };
-
-    // 2. 单独检测数据库版本
     let vendor_lower = vendor.to_lowercase();
     let is_container = deployment == "docker" || deployment == "podman";
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
+    // 数据库版本检测命令（原始，不含容器包装）
     let db_version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
         "mysql --version"
     } else if vendor_lower.contains("postgres") {
@@ -1087,13 +1111,26 @@ fn detect_db_info_sync(
         "echo unknown"
     };
 
-    // 容器部署时，DB 命令用 docker/podman exec 在容器内执行
+    // 容器部署时，DB 命令用 sh -c + docker/podman exec 包装（exec channel 不解析 $()）
     let version_cmd_full = if is_container {
-        format!("{} exec $({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || echo container_not_running",
+        format!("sh -c \"{} exec \\$({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || echo container_not_running\"",
             runtime, runtime, device_name.to_lowercase(), db_version_cmd.replace('\'', "'\\''"))
     } else {
         db_version_cmd.to_string()
     };
+
+    // 一次 SSH 批次执行 OS 命令 + DB 版本命令（避免并发多连接触发 sshd MaxStartups 限流）
+    let commands: Vec<String> = vec![
+        "hostnamectl".to_string(),
+        "cat /etc/os-release".to_string(),
+        "uname -r".to_string(),
+        "nproc".to_string(),
+        "lscpu".to_string(),
+        "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
+        version_cmd_full.clone(),
+    ];
+    let mut needs_root_map = HashMap::new();
+    needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
 
     let source = SSHSessionSource {
         host: ip.to_string(),
@@ -1101,21 +1138,77 @@ fn detect_db_info_sync(
         username: ssh_username.to_string(),
         password: ssh_password.to_string(),
     };
-    let mut version_cmds = HashMap::new();
-    version_cmds.insert(version_cmd_full.clone(), false);
-    let version_outputs = linux_runner::run_commands_exec(
-        &source, &[version_cmd_full.clone()], &version_cmds, None, None,
-    );
 
-    if let Ok(outputs) = version_outputs {
-        if let Some(output) = outputs.get(&version_cmd_full) {
-            let trimmed = output.trim().to_string();
-            if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle"
-                && trimmed != "mssql" && trimmed != "dm" && trimmed != "container_not_running"
-            {
-                info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
+    let outputs = linux_runner::run_commands_exec(
+        &source, &commands, &needs_root_map, None, None,
+    )?;
+
+    tracing::info!("[detect_db] 命令执行完成，输出数: {}", outputs.len());
+    for (cmd, output) in &outputs {
+        let mut end = output.len().min(200);
+        while end > 0 && !output.is_char_boundary(end) {
+            end -= 1;
+        }
+        tracing::debug!("[detect_db] 命令 '{}' → {}", cmd, &output[..end]);
+    }
+
+    let mut info = serde_json::Map::new();
+
+    // OS 信息（复用 detect_linux_info 的解析逻辑）
+    if let Some(output) = outputs.get("hostnamectl") {
+        if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
+            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
+        }
+        if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
+            info.insert("model".to_string(), serde_json::Value::String(os));
+        }
+    }
+    if !info.contains_key("model") {
+        if let Some(output) = outputs.get("cat /etc/os-release") {
+            if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
+                info.insert("model".to_string(), serde_json::Value::String(name));
             }
         }
+    }
+    if let Some(output) = outputs.get("uname -r") {
+        let trimmed = output.trim().to_string();
+        if !trimmed.is_empty() {
+            info.insert("kernel_version".to_string(), serde_json::Value::String(trimmed));
+        }
+    }
+    if let Some(output) = outputs.get("nproc") {
+        let trimmed = output.trim();
+        if trimmed.parse::<i64>().is_ok() {
+            info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
+        }
+    }
+    if !info.contains_key("cpu_cores") {
+        if let Some(output) = outputs.get("lscpu") {
+            if let Some(cores) = extract_lscpu_cores(output) {
+                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
+            }
+        }
+    }
+    if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
+        if let Some(mem) = extract_dmidecode_memory(output) {
+            info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
+        }
+    }
+
+    // 数据库版本
+    if let Some(output) = outputs.get(&version_cmd_full) {
+        let trimmed = output.trim().to_string();
+        if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle"
+            && trimmed != "mssql" && trimmed != "dm" && trimmed != "container_not_running"
+            && !trimmed.starts_with("[容器命令失败]")
+        {
+            info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
+        }
+    }
+
+    // OS 信息和 DB 版本都为空 → 检测失败
+    if info.is_empty() {
+        return Err("数据库设备 OS 信息和 DB 版本检测均失败".to_string());
     }
 
     let result = serde_json::Value::Object(info).to_string();

@@ -1021,6 +1021,7 @@ const FIELD_NETWORK: DeviceField[] = [
 ];
 const FIELD_SERVER: DeviceField[] = [
   { key: "os_release", label: "发行版", visible: true },
+  { key: "kernel_version", label: "内核版本", visible: true },
   { key: "cpu_cores", label: "CPU 核心", visible: true },
   { key: "memory_gb", label: "内存(GB)", visible: true },
   { key: "model", label: "设备型号", visible: false },
@@ -1400,6 +1401,7 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
       case "memory_gb": return `${dev.memory_gb} GB`;
       case "db_version": return "MySQL 8.0.36";
       case "instance_name": return "prod-db-01";
+      case "kernel_version": return "5.15.0-122-generic";
       default: return "";
     }
   };

@@ -599,6 +599,7 @@ fn build_device_info(
                     }
                 })
                 .unwrap_or_default(),
+            "kernel_version" => device.kernel_version.clone().unwrap_or_default(),
             _ => String::new(),
         }
     };

@@ -665,6 +665,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
         let linux_vendors = ["Linux","Ubuntu","CentOS","Rocky","Debian","RHEL","SUSE","Fedora","AlmaLinux"];
         let server_fields: Vec<(&str, &str)> = vec![
             ("os_release", "发行版"),
+            ("kernel_version", "内核版本"),
             ("cpu_cores",  "CPU 核心"),
             ("memory_gb",  "内存(GB)"),
             ("model",      "设备型号"),
@@ -801,10 +802,32 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
 
     // ── v29: 去掉 devices.ip 的 UNIQUE 约束，改为按 device_type 唯一（应用层检查）──
     if version < 29 {
-        // 重建表：ip 列去掉 UNIQUE，name 保留 UNIQUE
-        conn.execute_batch(
-            "ALTER TABLE devices RENAME TO devices_old;
-             CREATE TABLE devices (
+        let has_old: bool = conn
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='devices_old'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        // 上一次失败残留：devices 为空且 devices_old 有数据 → 先恢复旧表
+        if has_old {
+            let dev_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM devices", [], |row| row.get(0))
+                .unwrap_or(0);
+            if dev_count == 0 {
+                conn.execute_batch("DROP TABLE devices; ALTER TABLE devices_old RENAME TO devices;")
+                    .map_err(|e| format!("migration 29 restore: {}", e))?;
+            } else {
+                conn.execute_batch("DROP TABLE IF EXISTS devices_old;")
+                    .map_err(|e| format!("migration 29 cleanup: {}", e))?;
+            }
+        }
+
+        // 重建表：去掉 ip UNIQUE，name 保留 UNIQUE
+        let tx = conn.transaction().map_err(|e| format!("migration 29 tx: {}", e))?;
+        tx.execute_batch("ALTER TABLE devices RENAME TO devices_old;")
+            .map_err(|e| format!("migration 29 rename: {}", e))?;
+        tx.execute_batch(
+            "CREATE TABLE devices (
                  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
                  name                  TEXT NOT NULL UNIQUE,
                  ip                    TEXT NOT NULL,
@@ -833,13 +856,48 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
                  db_username           TEXT DEFAULT '',
                  db_password_encrypted TEXT DEFAULT '',
                  db_port               INTEGER DEFAULT 3306
-             );
-             INSERT INTO devices SELECT * FROM devices_old;
-             DROP TABLE devices_old;"
-        ).map_err(|e| format!("migration 29: {}", e))?;
+             );"
+        ).map_err(|e| format!("migration 29 create: {}", e))?;
+        tx.execute_batch("INSERT INTO devices SELECT * FROM devices_old;")
+            .map_err(|e| format!("migration 29 insert: {}", e))?;
+        tx.execute_batch("DROP TABLE devices_old;")
+            .map_err(|e| format!("migration 29 drop: {}", e))?;
+        tx.commit().map_err(|e| format!("migration 29 commit: {}", e))?;
 
         conn.execute_batch("PRAGMA user_version = 29;")
             .map_err(|e| format!("migration 29: {}", e))?;
+    }
+
+    // ── v30: devices 增加 kernel_version 字段 ──
+    if version < 30 {
+        let has: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'kernel_version'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN kernel_version TEXT DEFAULT '';")
+                .map_err(|e| format!("migration 30: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 30;")
+            .map_err(|e| format!("migration 30: {}", e))?;
+    }
+
+    // ── v31: 兜底清理 v29 残留 + 确保 kernel_version 列存在 ──
+    if version < 31 {
+        conn.execute_batch("DROP TABLE IF EXISTS devices_old;")
+            .map_err(|e| format!("migration 31 cleanup: {}", e))?;
+        let has_kernel: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('devices') WHERE name = 'kernel_version'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_kernel {
+            conn.execute_batch("ALTER TABLE devices ADD COLUMN kernel_version TEXT DEFAULT '';")
+                .map_err(|e| format!("migration 31 kernel: {}", e))?;
+        }
+        conn.execute_batch("PRAGMA user_version = 31;")
+            .map_err(|e| format!("migration 31: {}", e))?;
     }
 
     Ok(())

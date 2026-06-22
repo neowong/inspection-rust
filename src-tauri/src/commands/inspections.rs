@@ -618,11 +618,14 @@ fn execute_device_ssh(
     match profile.exec_mode {
         crate::services::vendor_profile::ExecMode::Exec => {
             let cmd_strings: Vec<String> = if deployment == "docker" || deployment == "podman" {
-                // 容器部署：每条命令用 docker/podman exec 包装
+                // 容器部署：每条命令用 sh -c + docker/podman exec 包装
+                // exec channel 不走 shell，$(...) 不解析，必须用 sh -c 包装
                 let runtime = if deployment == "docker" { "docker" } else { "podman" };
+                let container_filter = device.name.to_lowercase();
                 commands.iter().map(|s| {
-                    format!("{} exec -i $({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || {}",
-                        runtime, runtime, device.vendor.to_lowercase(), s.command.replace('\'', "'\\''"), s.command)
+                    let escaped = s.command.replace('\\', "\\\\").replace('\'', "'\\''");
+                    format!("sh -c \"{rt} exec $({rt} ps -q --filter name={cf}) sh -c '{esc}' 2>/dev/null || echo [容器命令失败]\"",
+                        rt = runtime, cf = container_filter, esc = escaped)
                 }).collect()
             } else {
                 commands.iter().map(|s| s.command.clone()).collect()

@@ -171,7 +171,8 @@ export interface DeviceField {
     | "cpu_cores"
     | "memory_gb"
     | "db_version"
-    | "instance_name";
+    | "instance_name"
+    | "kernel_version";
   label: string;
   visible: boolean;
 }
@@ -217,6 +218,7 @@ export const DEFAULT_REPORT_CONFIG: ReportTemplateConfig = {
       { key: "mfg_date",     label: "出厂日期",  visible: false },
       { key: "db_version",   label: "数据库版本", visible: false },
       { key: "instance_name",label: "实例名",     visible: false },
+      { key: "kernel_version", label: "内核版本", visible: false },
       { key: "inspect_time", label: "巡检时间",   visible: true },
     ],
   },
