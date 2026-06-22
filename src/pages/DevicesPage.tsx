@@ -759,14 +759,15 @@ export default function DevicesPage() {
                           <option value="k8s">Kubernetes</option>
                         </Select>
                       </div>
-                      {form.deployment === "docker" || form.deployment === "podman" || form.deployment === "k8s" ? (
-                        <div>
-                          <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">容器名</label>
-                          <Input value={form.instance_name} onChange={(e) => setForm({ ...form, instance_name: e.target.value })} placeholder={form.deployment === "k8s" ? "如 deploy/mysql" : "如 mysql"} />
-                        </div>
-                      ) : (
-                        <div />
-                      )}
+                      <div>
+                        <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">容器名</label>
+                        <Input
+                          value={form.instance_name}
+                          onChange={(e) => setForm({ ...form, instance_name: e.target.value })}
+                          placeholder={form.deployment === "direct" ? "无需" : form.deployment === "k8s" ? "如 deploy/mysql" : "如 mysql"}
+                          disabled={form.deployment === "direct"}
+                        />
+                      </div>
                       <div>
                         <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">数据库版本</label>
                         <Input value={form.db_version} onChange={(e) => setForm({ ...form, db_version: e.target.value })} placeholder="自动检测" />
