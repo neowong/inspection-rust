@@ -729,35 +729,117 @@ export default function TemplatesPage() {
 // Report Template Editor — 列定义驱动 + A4 实时预览
 // ============================================================
 
-const SAMPLE_DEVICE = {
-  name: "SW-CORE-01",
-  ip: "192.168.1.1",
-  vendor: "H3C",
-  model: "S6850-56HF",
-  sn: "210235A1A1234567",
-  mfg_date: "2024-08-12",
-  inspect_time: "2026-06-13 09:30:00",
-  sysname: "aHope-Core",
-  os_release: "Ubuntu 22.04.4 LTS",
-  cpu_cores: "8",
-  memory_gb: "16",
+const SAMPLE_DEVICE: Record<string, { name: string; ip: string; vendor: string; model: string; sn: string; mfg_date: string; inspect_time: string; sysname: string; os_release: string; cpu_cores: string; memory_gb: string }> = {
+  "H3C": {
+    name: "SW-CORE-01", ip: "192.168.1.1", vendor: "H3C",
+    model: "S6850-56HF", sn: "210235A1A1234567", mfg_date: "2024-08-12",
+    inspect_time: "2026-06-13 09:30:00", sysname: "aHope-Core",
+    os_release: "", cpu_cores: "", memory_gb: "",
+  },
+  "华为": {
+    name: "HW-CORE-01", ip: "10.10.1.1", vendor: "华为",
+    model: "CE12808", sn: "2102114182P0LB000001", mfg_date: "2024-12-20",
+    inspect_time: "2026-06-13 14:00:00", sysname: "HW-Core",
+    os_release: "", cpu_cores: "", memory_gb: "",
+  },
+  "思科": {
+    name: "CISCO-CORE-01", ip: "172.16.1.1", vendor: "思科",
+    model: "C9500-48Y4C", sn: "FCW2345A1BC", mfg_date: "2024-06-01",
+    inspect_time: "2026-06-13 10:15:00", sysname: "Cisco-Core",
+    os_release: "", cpu_cores: "", memory_gb: "",
+  },
+  "锐捷": {
+    name: "RG-CORE-01", ip: "10.20.1.1", vendor: "锐捷",
+    model: "RG-S7808C", sn: "G1R2345ABCDEF", mfg_date: "2024-03-15",
+    inspect_time: "2026-06-13 11:00:00", sysname: "RG-Core",
+    os_release: "", cpu_cores: "", memory_gb: "",
+  },
+  "飞塔": {
+    name: "FG-EDGE-01", ip: "192.168.100.1", vendor: "飞塔",
+    model: "FortiGate-100F", sn: "FGT100FTK23001234", mfg_date: "2025-01-10",
+    inspect_time: "2026-06-13 08:45:00", sysname: "FG-Edge",
+    os_release: "", cpu_cores: "", memory_gb: "",
+  },
+  "Linux": {
+    name: "WEB-SRV-01", ip: "192.168.10.10", vendor: "Linux",
+    model: "KVM 虚拟机", sn: "VMware-42 1a 2b 3c 4d", mfg_date: "—",
+    inspect_time: "2026-06-13 09:00:00", sysname: "web-srv-01",
+    os_release: "Ubuntu 22.04.4 LTS", cpu_cores: "8", memory_gb: "16",
+  },
 };
 
-const SAMPLE_ROWS = [
-  { item: "查看设备版本", cmd: "display version",
-    output: "H3C Comware Software, Version 7.1.075 R6628P12\nUptime: 60 days 4 hours",
-    status: "ok", finding: "", suggestion: "" },
-  { item: "查看 CPU 使用率", cmd: "display cpu-usage",
-    output: "Slot 0 CPU 0 usage:\n  in last 5 seconds: 78%\n  in last 1 minute:  72%",
-    status: "warning", finding: "CPU 使用率偏高 (78%)",
-    suggestion: "建议关注 CPU 负载趋势，必要时检查 CPU 占用进程" },
-  { item: "查看内存使用率", cmd: "display memory-usage",
-    output: "System Total Memory(MB):   8192\nMemory Used(MB):           3686 (45%)",
-    status: "ok", finding: "", suggestion: "" },
-  { item: "查看接口状态", cmd: "display interface brief",
-    output: "GE1/0/1   UP    1000Mbps  full\nGE1/0/2   DOWN  --        --",
-    status: "info", finding: "GE1/0/2 处于 DOWN 状态", suggestion: "确认是否为预期未使用接口" },
-];
+const SAMPLE_ROWS: Record<string, { item: string; cmd: string; output: string; status: string; finding: string; suggestion: string }[]> = {
+  "H3C": [
+    { item: "查看设备版本", cmd: "display version",
+      output: "H3C Comware Software, Version 7.1.075 R6628P12\nUptime: 60 days 4 hours",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看 CPU 使用率", cmd: "display cpu-usage",
+      output: "Slot 0 CPU 0 usage:\n  in last 5 seconds: 78%\n  in last 1 minute:  72%",
+      status: "warning", finding: "CPU 使用率偏高 (78%)",
+      suggestion: "建议持续关注 CPU 负载趋势" },
+    { item: "查看接口状态", cmd: "display interface brief",
+      output: "GE1/0/1   UP    1000Mbps  full\nGE1/0/2   DOWN  --        --",
+      status: "info", finding: "GE1/0/2 处于 DOWN 状态", suggestion: "确认是否为预期未使用接口" },
+  ],
+  "华为": [
+    { item: "查看设备版本", cmd: "display version",
+      output: "Huawei Versatile Routing Platform Software\nVRP (R) software, Version 8.180\nUptime is 120 days, 3 hours, 15 minutes",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看 CPU 使用率", cmd: "display cpu-usage",
+      output: "CPU Usage Stat. Cycle: 60 (Second)\nCPU Usage            : 45% Max: 92%\nCPU Usage Stat. Time : 2026-06-13 13:55:00",
+      status: "warning", finding: "CPU 历史峰值达 92%", suggestion: "检查峰值时段的任务调度" },
+    { item: "查看接口状态", cmd: "display interface brief",
+      output: "PHY: Physical\n*down: administratively down\n10GE1/0/1  up    up       10000Mbps  full\n10GE1/0/2  up    up       10000Mbps  full",
+      status: "ok", finding: "", suggestion: "" },
+  ],
+  "思科": [
+    { item: "查看设备版本", cmd: "show version",
+      output: "Cisco IOS XE Software, Version 17.09.04a\nSystem image file is \"bootflash:packages.conf\"\nUptime: 45 days, 12 hours, 8 minutes",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看 CPU 使用率", cmd: "show processes cpu",
+      output: "CPU utilization for five seconds: 32%/0%; one minute: 28%; five minutes: 30%",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看接口状态", cmd: "show ip interface brief",
+      output: "Interface     IP-Address      Status  Protocol\nTe1/0/1       172.16.1.1      up      up\nTe1/0/2       unassigned      down    down",
+      status: "info", finding: "Te1/0/2 未配置且已关闭", suggestion: "确认是否为备用端口" },
+  ],
+  "锐捷": [
+    { item: "查看设备版本", cmd: "show version",
+      output: "System description: Ruijie S7808C\nSystem start time: 2026-04-15 08:00:00\nSystem uptime: 59:3:45:12",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看 CPU 使用率", cmd: "show cpu",
+      output: "CPU using rate is 25%.\nCPU using rate in 5 secs is 28%.",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看接口状态", cmd: "show interface status",
+      output: "Interface     Status  Vlan  Duplex  Speed  Type\nTe1/0/1       up      100   Full    10G    10GBase-LR\nTe1/0/2       down    1    Auto    Auto   10GBase-LR",
+      status: "info", finding: "Te1/0/2 链路 down", suggestion: "" },
+  ],
+  "飞塔": [
+    { item: "查看系统状态", cmd: "get system status",
+      output: "Version: FortiGate-100F v7.4.5,build2702\nFirmware Signature: certified\nVirus-DB: 92.01234\nSerial-Number: FGT100FTK23001234",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看 CPU 状态", cmd: "get system performance status",
+      output: "CPU states: 8% user 4% system 0% nice 88% idle\nMemory states: 3954 MB total / 2101 MB used (53%)",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "查看接口状态", cmd: "get system interface physical",
+      output: "== [ port1 ]\n  mode: static\n  status: up  speed: 1000Mbps\n== [ port2 ]\n  status: down",
+      status: "info", finding: "port2 未连接", suggestion: "确认是否需要启用" },
+  ],
+  "Linux": [
+    { item: "系统信息", cmd: "uname -a",
+      output: "Linux web-srv-01 5.15.0-122-generic x86_64 GNU/Linux",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "CPU 和内存", cmd: "lscpu && free -h",
+      output: "CPU(s): 8\nThread(s) per core: 2\nMem: 15Gi used: 8.2Gi free: 6.8Gi",
+      status: "ok", finding: "", suggestion: "" },
+    { item: "磁盘使用", cmd: "df -h /",
+      output: "Filesystem  Size  Used  Avail  Use%  Mounted on\n/dev/sda1   100G   72G    28G   73%  /",
+      status: "warning", finding: "根分区使用率 73%", suggestion: "建议清理旧日志或扩容存储" },
+    { item: "网络连接", cmd: "ss -tlnp",
+      output: "LISTEN  0  128  0.0.0.0:22    0.0.0.0:*  (sshd)\nLISTEN  0  511  0.0.0.0:443   0.0.0.0:*  (nginx)",
+      status: "ok", finding: "", suggestion: "" },
+  ],
+};
 
 const STATUS_DEF: Record<string, { label: string; bg: string; color: string }> = {
   ok:       { label: "正常", bg: "#E2F0D9", color: "#385723" },
@@ -970,7 +1052,7 @@ function ReportTemplateEditor({
         </div>
         <div className="flex-1 overflow-auto bg-[hsl(var(--bg-app))] border border-t-0 border-[hsl(var(--border))] rounded-b-md p-4">
           <div className="min-w-full flex justify-center">
-            <DocxPreview config={form.config} />
+            <DocxPreview config={form.config} vendor={form.vendor} />
           </div>
         </div>
       </div>
@@ -1047,7 +1129,10 @@ function DraggableList<T>({
 
 // ----- A4 预览 -----
 
-function applyVars(s: string, device: typeof SAMPLE_DEVICE): string {
+type SampleDevice = { name: string; ip: string; vendor: string; model: string; sn: string; mfg_date: string; inspect_time: string; sysname: string; os_release: string; cpu_cores: string; memory_gb: string };
+type SampleRow = { item: string; cmd: string; output: string; status: string; finding: string; suggestion: string };
+
+function applyVars(s: string, device: SampleDevice): string {
   return s
     .replace(/\{\{vendor\}\}/g, device.vendor)
     .replace(/\{\{device_name\}\}/g, device.name)
@@ -1055,8 +1140,9 @@ function applyVars(s: string, device: typeof SAMPLE_DEVICE): string {
     .replace(/\{\{total\}\}/g, "3");
 }
 
-function DocxPreview({ config }: { config: ReportTemplateConfig }) {
-  const dev = SAMPLE_DEVICE;
+function DocxPreview({ config, vendor }: { config: ReportTemplateConfig; vendor: string }) {
+  const dev = (SAMPLE_DEVICE[vendor] || SAMPLE_DEVICE["H3C"]) as SampleDevice;
+  const rows = (SAMPLE_ROWS[vendor] || SAMPLE_ROWS["H3C"]) as SampleRow[];
   const accent = config.cover.primary_color;
   const title = applyVars(config.cover.title, dev);
   const headerText = applyVars(config.header, dev);
@@ -1106,7 +1192,7 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
     return `<${sysname}>`;
   };
 
-  const cellFor = (col: TableColumn, row: typeof SAMPLE_ROWS[number], idx: number): React.ReactNode => {
+  const cellFor = (col: TableColumn, row: SampleRow, idx: number): React.ReactNode => {
     switch (col.key) {
       case "seq": return idx + 1;
       case "item": return row.item;
@@ -1130,7 +1216,7 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
     }
   };
 
-  const problems = SAMPLE_ROWS.filter((r) => r.status === "warning" || r.status === "critical");
+  const problems = rows.filter((r) => r.status === "warning" || r.status === "critical");
 
   return (
     <div style={{ width: "min(100%, 210mm)", display: "flex", justifyContent: "center" }}>
@@ -1238,7 +1324,7 @@ function DocxPreview({ config }: { config: ReportTemplateConfig }) {
               </tr>
             </thead>
             <tbody>
-              {SAMPLE_ROWS.map((row, i) => (
+              {rows.map((row, i) => (
                 <tr key={i}>
                   {visibleColumns.map((col) => {
                     const fill = col.key === "ai_judgment" ? STATUS_DEF[row.status]?.bg : undefined;
