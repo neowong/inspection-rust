@@ -472,6 +472,20 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("达梦", "echo \"SELECT T.NAME, ROUND(SUM(A.TOTAL_SIZE)*PAGE/1024/1024,1) AS MB FROM V\\$TABLESPACE T, V\\$DATAFILE A WHERE T.ID=A.GROUP_ID GROUP BY T.NAME ORDER BY MB DESC;\" | disql SYSDBA/SYSDBA 2>/dev/null", "数据文件统计", "storage", 0),
         ("达梦", "echo \"SELECT USERNAME, ACCOUNT_STATUS FROM DBA_USERS;\" | disql SYSDBA/SYSDBA 2>/dev/null", "用户状态", "security", 0),
         ("达梦", "echo \"SELECT * FROM V\\$RLOG;\" | disql SYSDBA/SYSDBA 2>/dev/null", "归档日志状态", "general", 0),
+        // ==================== 数据库 — 容器场景 ====================
+        // 适用于 Docker/Podman 部署的数据库，SSH 到宿主机后通过容器执行
+        ("MySQL", "docker ps --filter name=mysql --format '{{.Names}} {{.Status}}'", "MySQL 容器状态", "general", 0),
+        ("MySQL", "docker exec $(docker ps --filter name=mysql -q) mysql -e 'SHOW STATUS' 2>/dev/null | head -30", "MySQL 运行状态（容器内）", "general", 0),
+        ("MySQL", "docker exec $(docker ps --filter name=mysql -q) mysql -e \"SELECT table_schema, ROUND(SUM(data_length+index_length)/1024/1024,1) AS MB FROM information_schema.tables GROUP BY table_schema ORDER BY MB DESC LIMIT 10\" 2>/dev/null", "各库占用空间（容器内）", "storage", 0),
+        ("PostgreSQL", "docker ps --filter name=postgres --format '{{.Names}} {{.Status}}'", "PostgreSQL 容器状态", "general", 0),
+        ("PostgreSQL", "docker exec $(docker ps --filter name=postgres -q) psql -U postgres -c 'SELECT version()' 2>/dev/null", "PostgreSQL 版本（容器内）", "version", 0),
+        ("PostgreSQL", "docker exec $(docker ps --filter name=postgres -q) psql -U postgres -c \"SELECT datname, pg_size_pretty(pg_database_size(datname)) FROM pg_database ORDER BY pg_database_size(datname) DESC\" 2>/dev/null", "各库占用空间（容器内）", "storage", 0),
+        ("Oracle", "docker ps --filter name=oracle --format '{{.Names}} {{.Status}}'", "Oracle 容器状态", "general", 0),
+        ("达梦", "docker ps --filter name=dm8 --format '{{.Names}} {{.Status}}'", "达梦容器状态", "general", 0),
+        // Podman 别名
+        ("Linux", "podman ps --format '{{.Names}} {{.Status}}'", "Podman 容器列表", "general", 0),
+        ("MySQL", "podman exec $(podman ps --filter name=mysql -q) mysql -e 'SHOW STATUS' 2>/dev/null | head -30", "MySQL 运行状态（Podman 容器内）", "general", 0),
+        ("PostgreSQL", "podman exec $(podman ps --filter name=postgres -q) psql -U postgres -c 'SELECT version()' 2>/dev/null", "PostgreSQL 版本（Podman 容器内）", "version", 0),
     ];
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
