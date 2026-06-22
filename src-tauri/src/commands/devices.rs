@@ -1004,11 +1004,16 @@ fn detect_db_info_sync(
 
     tracing::info!("[detect_db] 开始: {}@{}:{}, deployment={}", ssh_username, ip, ssh_port, deployment);
 
+    // 1. 复用 Linux 检测获取 OS 信息（hostnamectl/os-release/nproc/lscpu/dmidecode 内存）
+    let os_json = detect_linux_info_sync(ip, ssh_port, ssh_username, ssh_password)?;
+    let mut info: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&os_json).unwrap_or_default();
+
+    // 2. 单独检测数据库版本
     let vendor_lower = vendor.to_lowercase();
     let is_container = deployment == "docker" || deployment == "podman";
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
-    // 容器内数据库版本检测命令
     let db_version_cmd = if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
         "mysql --version"
     } else if vendor_lower.contains("postgres") {
@@ -1027,24 +1032,13 @@ fn detect_db_info_sync(
         "echo unknown"
     };
 
-    // 容器部署时，数据库命令用 docker/podman exec 包装
-    // OS 信息命令在宿主机执行，DB 命令在容器内执行
+    // 容器部署时，DB 命令用 docker/podman exec 在容器内执行
     let version_cmd_full = if is_container {
-        // 先找容器 ID，再 exec 执行
         format!("{} exec $({} ps -q --filter name={}) sh -c '{}' 2>/dev/null || echo container_not_running",
             runtime, runtime, device_name.to_lowercase(), db_version_cmd.replace('\'', "'\\''"))
     } else {
         db_version_cmd.to_string()
     };
-
-    let commands: Vec<String> = vec![
-        "hostnamectl".to_string(),
-        "cat /etc/os-release".to_string(),
-        "nproc".to_string(),
-        "lscpu".to_string(),
-        version_cmd_full.clone(),
-    ];
-    let needs_root_map = HashMap::new();
 
     let source = SSHSessionSource {
         host: ip.to_string(),
@@ -1052,48 +1046,20 @@ fn detect_db_info_sync(
         username: ssh_username.to_string(),
         password: ssh_password.to_string(),
     };
+    let mut version_cmds = HashMap::new();
+    version_cmds.insert(version_cmd_full.clone(), false);
+    let version_outputs = linux_runner::run_commands_exec(
+        &source, &[version_cmd_full.clone()], &version_cmds, None, None,
+    );
 
-    let outputs = linux_runner::run_commands_exec(
-        &source, &commands, &needs_root_map, None, None,
-    )?;
-
-    let mut info = serde_json::Map::new();
-
-    // OS 信息（复用 detect_linux_info 的逻辑）
-    if let Some(output) = outputs.get("hostnamectl") {
-        if let Some(hostname) = extract_hostnamectl_value(output, "Static hostname") {
-            info.insert("sysname".to_string(), serde_json::Value::String(hostname));
-        }
-        if let Some(os) = extract_hostnamectl_value(output, "Operating System") {
-            info.insert("model".to_string(), serde_json::Value::String(os));
-        }
-    }
-    if !info.contains_key("model") {
-        if let Some(output) = outputs.get("cat /etc/os-release") {
-            if let Some(name) = extract_os_release_value(output, "PRETTY_NAME") {
-                info.insert("model".to_string(), serde_json::Value::String(name));
+    if let Ok(outputs) = version_outputs {
+        if let Some(output) = outputs.get(&version_cmd_full) {
+            let trimmed = output.trim().to_string();
+            if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle"
+                && trimmed != "mssql" && trimmed != "dm" && trimmed != "container_not_running"
+            {
+                info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
             }
-        }
-    }
-    if let Some(output) = outputs.get("nproc") {
-        let trimmed = output.trim();
-        if trimmed.parse::<i64>().is_ok() {
-            info.insert("cpu_cores".to_string(), serde_json::Value::String(trimmed.to_string()));
-        }
-    }
-    if !info.contains_key("cpu_cores") {
-        if let Some(output) = outputs.get("lscpu") {
-            if let Some(cores) = extract_lscpu_cores(output) {
-                info.insert("cpu_cores".to_string(), serde_json::Value::String(cores));
-            }
-        }
-    }
-
-    // 数据库版本
-    if let Some(output) = outputs.get(&version_cmd_full) {
-        let trimmed = output.trim().to_string();
-        if !trimmed.is_empty() && trimmed != "unknown" && trimmed != "oracle" && trimmed != "mssql" && trimmed != "dm" {
-            info.insert("db_version".to_string(), serde_json::Value::String(trimmed));
         }
     }
 
