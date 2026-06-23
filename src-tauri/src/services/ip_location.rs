@@ -1,0 +1,66 @@
+//! IP 归属地查询（离线 ip2region xdb）
+//!
+//! 启动时从 resource 目录加载 ip2region.xdb 到内存（Arc<Vec<u8>>），
+//! 查询时零拷贝返回 `国家|区域|省份|城市|ISP` 格式字符串。
+//! xdb-parse 的 search_ip 返回借用自 buffer 的 &str，查询微秒级。
+
+use std::path::Path;
+
+/// 加载 xdb 文件到内存
+pub fn load_xdb(path: &Path) -> Result<Vec<u8>, String> {
+    xdb_parse::load_file(path.to_path_buf()).map_err(|e| format!("加载 ip2region.xdb 失败: {}", e))
+}
+
+/// 查询 IP 归属地，返回原始 `国家|区域|省份|城市|ISP` 字符串（0 表示无值）
+/// 失败（无效 IP/库中无记录）返回 None
+pub fn lookup(db: &[u8], ip: &str) -> Option<String> {
+    xdb_parse::search_ip(ip, db).ok().map(|s| s.to_string())
+}
+
+/// 将原始 `国家|区域|省份|城市|ISP` 格式化为可读字符串
+/// 例：`中国|0|浙江省|杭州市|电信` → `中国 浙江省杭州市 电信`
+///     `0|0|0|0|0` → 空串（无记录）
+pub fn format_region(raw: &str) -> String {
+    let parts: Vec<&str> = raw.split('|').collect();
+    if parts.len() < 5 {
+        return raw.to_string();
+    }
+    let country = parts[0].trim();
+    let region = parts[1].trim();
+    let province = parts[2].trim();
+    let city = parts[3].trim();
+    let isp = parts[4].trim();
+
+    // 全部为 0 → 无记录
+    let all_empty = [country, region, province, city, isp]
+        .iter()
+        .all(|s| *s == "0" || s.is_empty());
+    if all_empty {
+        return String::new();
+    }
+
+    let mut bits: Vec<String> = Vec::new();
+    // 国家（0 表示内网/保留，显示原始）
+    if !country.is_empty() && country != "0" {
+        bits.push(country.to_string());
+    }
+    // 省+市合并（省=市时去重）
+    if !province.is_empty() && province != "0" {
+        if !city.is_empty() && city != "0" && province != city {
+            bits.push(format!("{}{}", province, city));
+        } else {
+            bits.push(province.to_string());
+        }
+    } else if !city.is_empty() && city != "0" {
+        bits.push(city.to_string());
+    }
+    // 区域（如 "华东"）
+    if !region.is_empty() && region != "0" {
+        bits.push(region.to_string());
+    }
+    // ISP
+    if !isp.is_empty() && isp != "0" {
+        bits.push(isp.to_string());
+    }
+    bits.join(" ")
+}

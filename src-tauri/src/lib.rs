@@ -5,6 +5,7 @@ pub mod services;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::sync::Arc;
+use tauri::Manager;
 
 /// 全局数据目录，由 `run()` 初始化一次，供 reports.rs / crypto.rs 等模块使用。
 pub static APP_DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
@@ -17,6 +18,8 @@ pub struct AppState {
     /// 持锁 panic 会中毒 std Mutex，导致后续所有 stop/run/pause 链式失败。
     pub batch_cancels:
         Arc<Mutex<std::collections::HashMap<i64, Arc<std::sync::atomic::AtomicBool>>>>,
+    /// 离线 IP 归属地库（ip2region.xdb），setup 时加载，None 表示未加载
+    pub ip_db: Arc<parking_lot::RwLock<Option<Arc<Vec<u8>>>>>,
 }
 
 impl AppState {
@@ -31,6 +34,7 @@ impl AppState {
         Self {
             db: Arc::new(Mutex::new(conn)),
             batch_cancels: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            ip_db: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 }
@@ -431,8 +435,24 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .setup(|_app| {
+        .setup(|app| {
             startup_log("Tauri setup 完成，窗口即将显示");
+            // 加载离线 IP 归属地库 ip2region.xdb（resource 目录）
+            let xdb_path = app.path().resource_dir().ok().map(|d| d.join("ip2region.xdb"));
+            if let Some(path) = xdb_path {
+                match crate::services::ip_location::load_xdb(&path) {
+                    Ok(data) => {
+                        let state = app.state::<AppState>();
+                        *state.ip_db.write() = Some(Arc::new(data));
+                        tracing::info!("ip2region.xdb 已加载: {}", path.display());
+                    }
+                    Err(e) => {
+                        tracing::warn!("ip2region.xdb 加载失败（路由跟踪归属地功能不可用）: {}", e);
+                    }
+                }
+            } else {
+                tracing::warn!("无法获取 resource 目录，路由跟踪归属地功能不可用");
+            }
             Ok(())
         })
         .manage(state)
@@ -502,6 +522,7 @@ pub fn run() {
             commands::tools::snmp_get,
             commands::tools::snmp_v3_get,
             commands::tools::check_zabbix_agent,
+            commands::tools::trace_route,
             // Stats
             get_stats,
         ])

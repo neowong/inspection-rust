@@ -1808,6 +1808,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "xdb-parse",
  "zip 2.4.2",
 ]
 
@@ -5665,6 +5666,15 @@ dependencies = [
  "libc",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "xdb-parse"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c7c50aa4a672631da2f7d4fff81de9f60f29c5a1ed8c1a53d7d3bce0969301d"
+dependencies = [
+ "thiserror 2.0.18",
 ]
 
 [[package]]

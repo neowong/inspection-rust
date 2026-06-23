@@ -8,6 +8,7 @@ const TOOLS = [
   { key: "subnet", label: "子网计算器" },
   { key: "scanner", label: "存活扫描" },
   { key: "port", label: "端口扫描" },
+  { key: "trace", label: "路由跟踪" },
   { key: "web", label: "WEB检测" },
   { key: "snmp", label: "SNMP" },
   { key: "zabbix", label: "Zabbix" },
@@ -451,7 +452,12 @@ function LiveScanner() {
 const TCP_PORT_PRESETS: Record<string, string> = {
   "常用端口": "22,80,443,8080,8443",
   "Web 端口": "80,443,8080,8443,9090,3000,5000,8000",
-  "数据库端口": "3306,5432,1433,1521,6379,27017",
+  "数据库端口": "3306,5432,1433,1521,6379,27017,5236",
+  "SMB/文件共享": "135,139,445,2049",
+  "FTP": "20,21,990",
+  "邮件服务": "25,110,143,465,587,993,995",
+  "远程登录": "22,23,3389,5900,5985",
+  "基础设施": "53,88,123,389,636,464,623,161,162",
   "全端口 (1-1000)": "1-1000",
   "全端口 (1-5000)": "1-5000",
 };
@@ -461,6 +467,8 @@ const UDP_PORT_PRESETS: Record<string, string> = {
   "DNS+DHCP+NTP": "53,67,68,123",
   "SNMP+管理": "161,162,514,623",
   "发现服务": "1900,5353,5683",
+  "SMB/NetBIOS": "137,138",
+  "Syslog/TFTP": "514,69",
   "全端口 (1-500)": "1-500",
 };
 
@@ -677,6 +685,120 @@ function PortScanner() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- Traceroute -------------------------------------------------------------
+
+interface TraceHop {
+  hop: number;
+  ip: string | null;
+  region: string;
+  rtt_ms: number | null;
+}
+
+function Traceroute() {
+  const [target, setTarget] = useState("8.8.8.8");
+  const [maxHops, setMaxHops] = useState("30");
+  const [timeout, setTimeout_] = useState("1000");
+  const [tracing, setTracing] = useState(false);
+  const [hops, setHops] = useState<TraceHop[] | null>(null);
+  const [error, setError] = useState("");
+
+  const handleTrace = async () => {
+    setError("");
+    setHops(null);
+    setTracing(true);
+    try {
+      const data = await invoke<TraceHop[]>("trace_route", {
+        target: target.trim(),
+        maxHops: parseInt(maxHops, 10) || 30,
+        timeoutMs: parseInt(timeout, 10) || 1000,
+      });
+      setHops(data);
+    } catch (e: any) {
+      setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setTracing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className={labelClass}>目标 IP / 域名</label>
+          <input
+            type="text" placeholder="如 8.8.8.8 或 www.baidu.com"
+            value={target} onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !tracing && handleTrace()}
+            className={`w-64 ${inputClass}`}
+            style={{ imeMode: "disabled" }}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>最大跳数</label>
+          <input type="number" value={maxHops} onChange={(e) => setMaxHops(e.target.value)} className={`w-24 ${inputClass}`} />
+        </div>
+        <div>
+          <label className={labelClass}>每跳超时(ms)</label>
+          <input type="number" value={timeout} onChange={(e) => setTimeout_(e.target.value)} className={`w-28 ${inputClass}`} />
+        </div>
+        <button onClick={handleTrace} disabled={tracing} className={btnClass}>
+          {tracing ? "跟踪中..." : "开始跟踪"}
+        </button>
+      </div>
+
+      {tracing && (
+        <p className="text-sm text-[hsl(var(--text-tertiary))]">路由跟踪中，最多 {maxHops} 跳，请耐心等待（可能需要数十秒）...</p>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-[hsl(var(--danger)_/_0.3)] bg-[hsl(var(--danger)_/_0.1)] px-3 py-2 text-sm text-[hsl(var(--danger))]">
+          {error}
+        </div>
+      )}
+
+      {hops && hops.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-[hsl(var(--border))]">
+          <table className="w-full text-sm">
+            <thead className="bg-[hsl(var(--bg-hover))]">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium text-[hsl(var(--text-secondary))] w-16">跳数</th>
+                <th className="px-4 py-2 text-left font-medium text-[hsl(var(--text-secondary))] w-44">节点 IP</th>
+                <th className="px-4 py-2 text-left font-medium text-[hsl(var(--text-secondary))]">归属地</th>
+                <th className="px-4 py-2 text-right font-medium text-[hsl(var(--text-secondary))] w-28">延迟(ms)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[hsl(var(--border-light))]">
+              {hops.map((h) => (
+                <tr key={h.hop} className="hover:bg-[hsl(var(--bg-hover))]">
+                  <td className="px-4 py-2 text-[hsl(var(--text-tertiary))]">{h.hop}</td>
+                  <td className="px-4 py-2 font-mono text-[hsl(var(--text-primary))]">
+                    {h.ip ?? <span className="text-[hsl(var(--text-tertiary))]">*</span>}
+                  </td>
+                  <td className="px-4 py-2 text-[hsl(var(--text-secondary))]">
+                    {h.region || <span className="text-[hsl(var(--text-tertiary))]">-</span>}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[hsl(var(--text-secondary))]">
+                    {h.rtt_ms != null ? h.rtt_ms.toFixed(1) : <span className="text-[hsl(var(--text-tertiary))]">*</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hops && hops.length === 0 && !error && (
+        <p className="text-sm text-[hsl(var(--text-tertiary))]">未获取到跟踪结果</p>
+      )}
+
+      <p className="text-xs text-[hsl(var(--text-tertiary))]">
+        调用系统 traceroute（Linux）/ tracert（Windows），归属地由离线 ip2region 库解析。
+        Linux 需先安装 traceroute：sudo apt install traceroute
+      </p>
     </div>
   );
 }
@@ -1221,6 +1343,7 @@ export default function ToolsPage() {
       <div hidden={active !== "subnet"}><SubnetCalc /></div>
       <div hidden={active !== "scanner"}><LiveScanner /></div>
       <div hidden={active !== "port"}><PortScanner /></div>
+      <div hidden={active !== "trace"}><Traceroute /></div>
       <div hidden={active !== "web"}><WebChecker /></div>
       <div hidden={active !== "snmp"}><SnmpChecker /></div>
       <div hidden={active !== "zabbix"}><ZabbixChecker /></div>

@@ -34,7 +34,8 @@
     ],
     "resources": [
       "WebView2Loader.dll",
-      "MicrosoftEdgeWebview2Setup.exe"
+      "MicrosoftEdgeWebview2Setup.exe",
+      "resources/ip2region.xdb"
     ],
     "windows": {
       "nsis": {
