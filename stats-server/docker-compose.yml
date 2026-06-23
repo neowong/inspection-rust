@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  stats-server:
+    build: .
+    container_name: ai-inspection-stats
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-ai-inspection-stats-secret-key-change-me}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ai-inspection}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/verify"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

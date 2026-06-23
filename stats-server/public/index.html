@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI巡检助手 - 统计 Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+    .login-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .login-box {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-box h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      color: #333;
+      font-size: 24px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #555;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .btn:hover { background: #5568d3; }
+    .error {
+      color: #e74c3c;
+      font-size: 14px;
+      margin-top: 10px;
+      text-align: center;
+    }
+    .dashboard {
+      display: none;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .header h1 { font-size: 24px; color: #333; }
+    .header .user-info { display: flex; align-items: center; gap: 15px; }
+    .header .username { color: #666; }
+    .header .logout-btn {
+      padding: 8px 16px;
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: white;
+      padding: 25px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .stat-card .value {
+      font-size: 36px;
+      font-weight: bold;
+      color: #667eea;
+      margin: 10px 0;
+    }
+    .stat-card .label {
+      color: #666;
+      font-size: 14px;
+    }
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .chart-card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .chart-card h3 {
+      margin-bottom: 15px;
+      color: #333;
+      font-size: 16px;
+    }
+    .recent-table {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .recent-table h3 {
+      padding: 20px;
+      margin: 0;
+      border-bottom: 1px solid #eee;
+    }
+    .recent-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .recent-table th, .recent-table td {
+      padding: 12px 20px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    .recent-table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #555;
+    }
+    .recent-table tr:hover { background: #f8f9fa; }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-windows { background: #e3f2fd; color: #1976d2; }
+    .badge-linux { background: #e8f5e9; color: #388e3c; }
+  </style>
+</head>
+<body>
+  <!-- 登录页面 -->
+  <div id="loginPage" class="login-container">
+    <div class="login-box">
+      <h1>🔐 登录</h1>
+      <form id="loginForm">
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="username" placeholder="输入用户名" required>
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input type="password" id="password" placeholder="输入密码" required>
+        </div>
+        <button type="submit" class="btn">登录</button>
+        <div id="loginError" class="error" style="display:none;"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboardPage" class="dashboard">
+    <div class="header">
+      <h1>📊 AI巡检助手 - 统计 Dashboard</h1>
+      <div class="user-info">
+        <span class="username" id="currentUser"></span>
+        <button class="logout-btn" onclick="logout()">退出</button>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">总用户数</div>
+        <div class="value" id="totalUsers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">今日活跃</div>
+        <div class="value" id="todayUsers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">本周活跃</div>
+        <div class="value" id="weekUsers">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">本月活跃</div>
+        <div class="value" id="monthUsers">-</div>
+      </div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>📈 每日活跃用户（最近30天）</h3>
+        <canvas id="dailyChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>📦 版本分布</h3>
+        <canvas id="versionChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>💻 操作系统分布</h3>
+        <canvas id="osChart"></canvas>
+      </div>
+    </div>
+
+    <!-- 最近记录 -->
+    <div class="recent-table">
+      <h3>📋 最近上报记录</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>设备ID</th>
+            <th>版本</th>
+            <th>系统</th>
+            <th>IP</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody id="recentTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+    let token = localStorage.getItem('token');
+
+    // 检查登录状态
+    if (token) {
+      verifyToken();
+    }
+
+    // 登录表单提交
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('loginError');
+
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorEl.textContent = data.error || '登录失败';
+          errorEl.style.display = 'block';
+          return;
+        }
+
+        token = data.token;
+        localStorage.setItem('token', token);
+        localStorage.setItem('username', data.username);
+        showDashboard();
+      } catch (err) {
+        errorEl.textContent = '网络错误';
+        errorEl.style.display = 'block';
+      }
+    });
+
+    // 验证令牌
+    async function verifyToken() {
+      try {
+        const res = await fetch(`${API_BASE}/api/verify`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          showDashboard();
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('username');
+        }
+      } catch (err) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+      }
+    }
+
+    // 显示 Dashboard
+    function showDashboard() {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('dashboardPage').style.display = 'block';
+      document.getElementById('currentUser').textContent = localStorage.getItem('username') || 'root';
+      loadStats();
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      token = null;
+      document.getElementById('loginPage').style.display = 'flex';
+      document.getElementById('dashboardPage').style.display = 'none';
+    }
+
+    // 加载统计数据
+    async function loadStats() {
+      const headers = { 'Authorization': `Bearer ${token}` };
+
+      try {
+        // 并行加载所有数据
+        const [overview, versions, os, daily, recent] = await Promise.all([
+          fetch(`${API_BASE}/api/stats/overview`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/stats/versions`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/stats/os`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/stats/daily`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/stats/recent?limit=20`, { headers }).then(r => r.json()),
+        ]);
+
+        // 更新统计卡片
+        document.getElementById('totalUsers').textContent = overview.totalUsers || 0;
+        document.getElementById('todayUsers').textContent = overview.todayUsers || 0;
+        document.getElementById('weekUsers').textContent = overview.weekUsers || 0;
+        document.getElementById('monthUsers').textContent = overview.monthUsers || 0;
+
+        // 渲染图表
+        renderDailyChart(daily);
+        renderVersionChart(versions);
+        renderOsChart(os);
+
+        // 渲染表格
+        renderRecentTable(recent);
+      } catch (err) {
+        console.error('加载统计数据失败:', err);
+      }
+    }
+
+    // 每日活跃用户图表
+    let dailyChartInstance = null;
+    function renderDailyChart(data) {
+      const ctx = document.getElementById('dailyChart').getContext('2d');
+      if (dailyChartInstance) {
+        dailyChartInstance.destroy();
+      }
+      dailyChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => d.date.slice(5)), // 只显示月-日
+          datasets: [{
+            label: '活跃用户',
+            data: data.map(d => d.users),
+            borderColor: '#667eea',
+            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+          }
+        }
+      });
+    }
+
+    // 版本分布图表
+    let versionChartInstance = null;
+    function renderVersionChart(data) {
+      const ctx = document.getElementById('versionChart').getContext('2d');
+      if (versionChartInstance) {
+        versionChartInstance.destroy();
+      }
+      const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140', '#30cfd0'];
+      versionChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: data.map(d => `v${d.version}`),
+          datasets: [{
+            data: data.map(d => d.users),
+            backgroundColor: colors.slice(0, data.length)
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    // 操作系统分布图表
+    let osChartInstance = null;
+    function renderOsChart(data) {
+      const ctx = document.getElementById('osChart').getContext('2d');
+      if (osChartInstance) {
+        osChartInstance.destroy();
+      }
+      const colors = { windows: '#1976d2', linux: '#388e3c', unknown: '#9e9e9e' };
+      osChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: data.map(d => d.os),
+          datasets: [{
+            data: data.map(d => d.users),
+            backgroundColor: data.map(d => colors[d.os] || '#9e9e9e')
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    // 最近记录表格
+    function renderRecentTable(data) {
+      const tbody = document.getElementById('recentTable');
+      tbody.innerHTML = data.map(row => `
+        <tr>
+          <td><code>${row.device_id.slice(0, 16)}...</code></td>
+          <td>v${row.version}</td>
+          <td><span class="badge badge-${row.os}">${row.os}</span></td>
+          <td>${row.ip || '-'}</td>
+          <td>${new Date(row.timestamp).toLocaleString('zh-CN')}</td>
+        </tr>
+      `).join('');
+    }
+  </script>
+</body>
+</html>

@@ -221,20 +221,20 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
-    // 统计接口地址（后续配置化）
-    // 目前先记录日志，等服务器地址确定后再启用
+    // 统计接口地址
+    let api_url = "https://neowong.eu.org/api/track";
+
     tracing::info!("[track] device_id={}, version={}, os={}", device_id, version, os);
 
-    // TODO: 启用实际上报（取消注释并填入服务器地址）
-    // let api_url = "https://your-server.com/api/track";
-    // let client = reqwest::Client::builder()
-    //     .timeout(std::time::Duration::from_secs(5))
-    //     .build()
-    //     .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-    // let _ = client.post(api_url)
-    //     .json(&payload)
-    //     .send()
-    //     .await;
+    // 实际上报（静默，失败忽略）
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+    let _ = client.post(api_url)
+        .json(&_payload)
+        .send()
+        .await;
 
     Ok(())
 }
