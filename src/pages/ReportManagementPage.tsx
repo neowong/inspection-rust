@@ -68,10 +68,12 @@ export default function ReportManagementPage() {
     } catch (e) { console.error(e); }
   };
 
-  // Auto-refresh（仅在选中批次且可能有运行中状态时轮询）
+  // Auto-refresh（仅在选中批次处于运行中/等待中时轮询）
   useEffect(() => {
     const id = selectedBatch?.id;
     if (!id) return;
+    const status = selectedBatch?.status;
+    if (status !== 'running' && status !== 'pending') return;
     const timer = setInterval(() => {
       loadBatches();
       invoke<any>("get_batch", { batchId: id }).then((full) => {
@@ -80,7 +82,7 @@ export default function ReportManagementPage() {
       }).catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [selectedBatch?.id, loadBatches]);
+  }, [selectedBatch?.id, selectedBatch?.status, loadBatches]);
 
   // ----- Record detail -----
   // 序号守卫：快速切换记录时，仅最后一次请求的响应会更新 state，避免旧响应覆盖新数据
