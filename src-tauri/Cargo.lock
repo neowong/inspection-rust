@@ -1784,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "inspection-rust"
-version = "3.40.20"
+version = "3.40.21"
 dependencies = [
  "aes",
  "chrono",
