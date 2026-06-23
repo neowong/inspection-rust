@@ -437,21 +437,41 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             startup_log("Tauri setup 完成，窗口即将显示");
-            // 加载离线 IP 归属地库 ip2region.xdb（resource 目录）
-            let xdb_path = app.path().resource_dir().ok().map(|d| d.join("ip2region.xdb"));
-            if let Some(path) = xdb_path {
-                match crate::services::ip_location::load_xdb(&path) {
-                    Ok(data) => {
-                        let state = app.state::<AppState>();
-                        *state.ip_db.write() = Some(Arc::new(data));
-                        tracing::info!("ip2region.xdb 已加载: {}", path.display());
-                    }
-                    Err(e) => {
-                        tracing::warn!("ip2region.xdb 加载失败（路由跟踪归属地功能不可用）: {}", e);
+            // 加载离线 IP 归属地库 ip2region.xdb
+            // 查找顺序：1) 二进制同目录（裸分发） 2) resource 目录（tauri 打包）
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let candidates: Vec<std::path::PathBuf> = match &exe_dir {
+                Some(d) => vec![d.join("ip2region.xdb")],
+                None => vec![],
+            };
+            let mut candidates = candidates;
+            if let Ok(rdir) = app.path().resource_dir() {
+                candidates.push(rdir.join("ip2region.xdb"));
+            }
+            let mut loaded = false;
+            for path in &candidates {
+                if path.exists() {
+                    match crate::services::ip_location::load_xdb(path) {
+                        Ok(data) => {
+                            let state = app.state::<AppState>();
+                            *state.ip_db.write() = Some(Arc::new(data));
+                            tracing::info!("ip2region.xdb 已加载: {}", path.display());
+                            loaded = true;
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!("ip2region.xdb 加载失败 {}: {}", path.display(), e);
+                        }
                     }
                 }
-            } else {
-                tracing::warn!("无法获取 resource 目录，路由跟踪归属地功能不可用");
+            }
+            if !loaded {
+                tracing::warn!(
+                    "ip2region.xdb 未找到（路由跟踪归属地功能不可用）。请将 ip2region.xdb 放在二进制同目录: {}",
+                    exe_dir.map(|d| d.display().to_string()).unwrap_or_default()
+                );
             }
             Ok(())
         })

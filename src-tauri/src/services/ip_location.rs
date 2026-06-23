@@ -1,8 +1,8 @@
 //! IP 归属地查询（离线 ip2region xdb）
 //!
-//! 启动时从 resource 目录加载 ip2region.xdb 到内存（Arc<Vec<u8>>），
-//! 查询时零拷贝返回 `国家|区域|省份|城市|ISP` 格式字符串。
-//! xdb-parse 的 search_ip 返回借用自 buffer 的 &str，查询微秒级。
+//! ip2region.xdb 作为外挂文件放在二进制同目录（或 resource 目录），
+//! 启动时加载到内存。裸二进制分发需把 ip2region.xdb 放到 exe 同目录。
+//! 查询时零拷贝返回 `国家|区域|省份|城市|ISP`，xdb-parse 微秒级。
 
 use std::path::Path;
 
