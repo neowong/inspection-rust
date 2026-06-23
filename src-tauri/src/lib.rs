@@ -145,17 +145,17 @@ fn is_webview2_installed() -> bool {
     false
 }
 
-/// 启动日志：优先写到 exe 同目录，若无权限则写到 %LOCALAPPDATA%\ai-inspection\startup.log
+/// 启动日志路径：优先 exe_dir/logs/，fallback 到 %LOCALAPPDATA%\ai-inspection\
 pub fn startup_log_path() -> std::path::PathBuf {
-    // 优先尝试 exe 目录（便携模式 / 有写权限时）
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
-        let test_file = exe_dir.join("startup.log");
-        // 测试能否写入
-        if std::fs::OpenOptions::new().create(true).append(true).open(&test_file).is_ok() {
-            return test_file;
+        let log_dir = exe_dir.join("logs");
+        if std::fs::create_dir_all(&log_dir).is_ok() {
+            let test_file = log_dir.join("startup.log");
+            if std::fs::OpenOptions::new().create(true).append(true).open(&test_file).is_ok() {
+                return test_file;
+            }
         }
     }
-    // 回退到 %LOCALAPPDATA%\inspection-rust\
     let fallback = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("ai-inspection");
@@ -276,11 +276,20 @@ pub fn run() {
 
     startup_log("=== 程序启动 ===");
 
-    // 调试：记录到临时文件
+    // 调试日志：优先 exe_dir/logs/，fallback 到 %TEMP%
     let debug_log = |msg: &str| {
-        let temp = std::env::temp_dir().join("inspection-debug.log");
+        let log_file = if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+            let log_dir = exe_dir.join("logs");
+            if std::fs::create_dir_all(&log_dir).is_ok() {
+                log_dir.join("debug.log")
+            } else {
+                std::env::temp_dir().join("ai-inspection-debug.log")
+            }
+        } else {
+            std::env::temp_dir().join("ai-inspection-debug.log")
+        };
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&temp)
+        let _ = std::fs::OpenOptions::new().create(true).append(true).open(&log_file)
             .and_then(|mut f| { use std::io::Write; writeln!(f, "[{}] {}", ts, msg) });
     };
 
@@ -317,13 +326,25 @@ pub fn run() {
     let _ = APP_DATA_DIR.set(app_data_dir.clone());
 
     // Logging: stdout + rolling daily file
+    // 优先 exe_dir/logs/（与二进制同目录），不可写时 fallback 到 app_data_dir/logs/
+    let preferred_log_dir = exe_dir.join("logs");
     let log_dir = config
         .get("log_dir")
         .and_then(|v| v.as_str())
         .map(|p| resolve_path(&exe_dir, p))
-        .unwrap_or_else(|| app_data_dir.join("logs"));
+        .unwrap_or_else(|| {
+            // 尝试在 exe 目录创建 logs/，失败则 fallback
+            if std::fs::create_dir_all(&preferred_log_dir).is_ok()
+                && preferred_log_dir.metadata().map(|m| !m.permissions().readonly()).unwrap_or(false)
+            {
+                preferred_log_dir
+            } else {
+                app_data_dir.join("logs")
+            }
+        });
     std::fs::create_dir_all(&log_dir).ok();
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "inspection.log");
+    tracing::info!("日志目录: {}", log_dir.display());
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "ai-inspection.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     // 同时输出到 stdout（控制台/终端）和文件（rolling daily）

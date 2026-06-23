@@ -212,8 +212,12 @@ fn connect_session_with_mode(source: &SSHSessionSource, legacy: bool) -> Result<
         .next()
         .ok_or_else(|| "无法解析主机地址".to_string())?;
 
+    let start = std::time::Instant::now();
+
     let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(10))
         .map_err(|e| format!("TCP连接失败(10s超时): {}", e))?;
+
+    let tcp_ms = start.elapsed().as_millis();
 
     let mut session = Session::new().map_err(|e| format!("创建SSH会话失败: {}", e))?;
 
@@ -242,11 +246,14 @@ fn connect_session_with_mode(source: &SSHSessionSource, legacy: bool) -> Result<
         return Err("SSH认证未通过".to_string());
     }
 
+    let total_ms = start.elapsed().as_millis();
     tracing::info!(
-        "SSH 认证成功: {}@{} ({})",
+        "SSH 认证成功: {}@{} ({}, tcp={}ms, total={}ms)",
         source.username,
         source.host,
-        if legacy { "旧算法兼容" } else { "默认算法" }
+        if legacy { "旧算法兼容" } else { "默认算法" },
+        tcp_ms,
+        total_ms
     );
     Ok(session)
 }

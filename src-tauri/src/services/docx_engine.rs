@@ -34,8 +34,16 @@ pub fn generate_record_docx(
     output_path: &Path,
     cover: &ReportCoverContext,
 ) -> Result<(), String> {
+    tracing::info!("DOCX 报告生成开始: device={}, output={}", device.name, output_path.display());
+    let start = std::time::Instant::now();
     let docx = build_record_docx(config, device, record, cmd_descs, true, cover);
-    write_docx(docx, output_path)
+    let result = write_docx(docx, output_path);
+    let latency = start.elapsed().as_millis();
+    match &result {
+        Ok(()) => tracing::info!("DOCX 报告生成完成: device={}, output={}, latency={}ms", device.name, output_path.display(), latency),
+        Err(e) => tracing::warn!("DOCX 报告生成失败: device={}, latency={}ms, error={}", device.name, latency, e),
+    }
+    result
 }
 
 /// 批次 → 合并到一个 docx，每台设备从新页开始
@@ -52,6 +60,8 @@ pub fn generate_combined_docx(
     if items.is_empty() {
         return Err("没有可用的巡检记录".to_string());
     }
+    tracing::info!("DOCX 合并报告生成开始: devices={}, output={}", items.len(), output_path.display());
+    let start = std::time::Instant::now();
 
     let project_config = &configs[0];
     // 合并报告页眉页脚使用项目级上下文，避免封面出现某一台设备名。
@@ -71,7 +81,13 @@ pub fn generate_combined_docx(
         );
         docx = append_record_body(docx, cfg, device, record, cmd_descs);
     }
-    write_docx(docx, output_path)
+    let result = write_docx(docx, output_path);
+    let latency = start.elapsed().as_millis();
+    match &result {
+        Ok(()) => tracing::info!("DOCX 合并报告生成完成: devices={}, output={}, latency={}ms", items.len(), output_path.display(), latency),
+        Err(e) => tracing::warn!("DOCX 合并报告生成失败: devices={}, latency={}ms, error={}", items.len(), latency, e),
+    }
+    result
 }
 
 /// 批次 → 每台一份 docx 打包成 zip
@@ -86,6 +102,8 @@ pub fn generate_zip_bundle(
     if items.is_empty() {
         return Err("没有可用的巡检记录".to_string());
     }
+    tracing::info!("DOCX ZIP 报告生成开始: devices={}, output={}", items.len(), output_path.display());
+    let start = std::time::Instant::now();
 
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
@@ -129,6 +147,8 @@ pub fn generate_zip_bundle(
             .map_err(|e| format!("zip 写入数据失败: {}", e))?;
     }
     zw.finish().map_err(|e| format!("zip 收尾失败: {}", e))?;
+    let latency = start.elapsed().as_millis();
+    tracing::info!("DOCX ZIP 报告生成完成: devices={}, output={}, latency={}ms", items.len(), output_path.display(), latency);
     Ok(())
 }
 

@@ -12,8 +12,13 @@ pub async fn scan_live_hosts(
 ) -> Result<Vec<services::live_scanner::LiveHostResult>, String> {
     let ips = services::live_scanner::parse_cidr(&subnet)?;
     let timeout_secs = (timeout_ms as f64 / 1000.0).ceil() as u64;
+    let total = ips.len();
+
+    tracing::info!("存活扫描开始: subnet={}, hosts={}, timeout={}ms", subnet, total, timeout_ms);
+    let start = std::time::Instant::now();
+
     let sem = Arc::new(tokio::sync::Semaphore::new(80));
-    let mut handles = Vec::with_capacity(ips.len());
+    let mut handles = Vec::with_capacity(total);
 
     for ip in ips {
         let sem = sem.clone();
@@ -42,6 +47,11 @@ pub async fn scan_live_hosts(
             | (parts.get(2).copied().unwrap_or(0) << 8)
             | parts.get(3).copied().unwrap_or(0)
     });
+
+    let alive = results.iter().filter(|r| r.alive).count();
+    let latency = start.elapsed().as_millis();
+    tracing::info!("存活扫描完成: subnet={}, total={}, alive={}, latency={}ms", subnet, total, alive, latency);
+
     Ok(results)
 }
 
@@ -51,7 +61,15 @@ pub async fn scan_ports(
     ports: String,
     timeout_ms: u64,
 ) -> Result<Vec<services::port_scanner::PortScanResult>, String> {
-    services::port_scanner::scan_ports(&ip, &ports, timeout_ms).await
+    tracing::info!("TCP 端口扫描开始: ip={}, ports={}, timeout={}ms", ip, ports, timeout_ms);
+    let start = std::time::Instant::now();
+    let result = services::port_scanner::scan_ports(&ip, &ports, timeout_ms).await;
+    let latency = start.elapsed().as_millis();
+    match &result {
+        Ok(r) => tracing::info!("TCP 端口扫描完成: ip={}, ports={}, results={}, latency={}ms", ip, ports, r.len(), latency),
+        Err(e) => tracing::warn!("TCP 端口扫描失败: ip={}, ports={}, latency={}ms, error={}", ip, ports, latency, e),
+    }
+    result
 }
 
 #[tauri::command]
@@ -60,7 +78,15 @@ pub async fn scan_udp_ports(
     ports: String,
     timeout_ms: u64,
 ) -> Result<Vec<services::port_scanner::UdpPortResult>, String> {
-    services::port_scanner::scan_udp_ports(&ip, &ports, timeout_ms).await
+    tracing::info!("UDP 端口扫描开始: ip={}, ports={}, timeout={}ms", ip, ports, timeout_ms);
+    let start = std::time::Instant::now();
+    let result = services::port_scanner::scan_udp_ports(&ip, &ports, timeout_ms).await;
+    let latency = start.elapsed().as_millis();
+    match &result {
+        Ok(r) => tracing::info!("UDP 端口扫描完成: ip={}, ports={}, results={}, latency={}ms", ip, ports, r.len(), latency),
+        Err(e) => tracing::warn!("UDP 端口扫描失败: ip={}, ports={}, latency={}ms, error={}", ip, ports, latency, e),
+    }
+    result
 }
 
 #[tauri::command]
@@ -68,7 +94,12 @@ pub async fn check_web_urls(
     urls: Vec<String>,
     timeout_secs: u64,
 ) -> Result<Vec<services::web_checker::WebCheckResult>, String> {
-    Ok(services::web_checker::check_urls(&urls, timeout_secs).await)
+    tracing::info!("WEB 检测开始: urls={}, timeout={}s", urls.len(), timeout_secs);
+    let start = std::time::Instant::now();
+    let result = services::web_checker::check_urls(&urls, timeout_secs).await;
+    let latency = start.elapsed().as_millis();
+    tracing::info!("WEB 检测完成: urls={}, results={}, latency={}ms", urls.len(), result.len(), latency);
+    Ok(result)
 }
 
 #[tauri::command]

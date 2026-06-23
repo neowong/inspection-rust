@@ -114,6 +114,7 @@ fn send_zabbix_request(ip: &str, port: u16, request_json: &str, timeout: std::ti
 pub fn check_zabbix_agent(ip: &str, port: u16, timeout_ms: u64) -> ZabbixAgentResult {
     let timeout = std::time::Duration::from_millis(timeout_ms);
     let start = std::time::Instant::now();
+    tracing::info!("Zabbix Agent 检测开始: ip={}, port={}, timeout={}ms", ip, port, timeout_ms);
 
     if ip.trim().is_empty() || ip.trim().parse::<std::net::IpAddr>().is_err() {
         return ZabbixAgentResult {
@@ -197,7 +198,7 @@ pub fn check_zabbix_agent(ip: &str, port: u16, timeout_ms: u64) -> ZabbixAgentRe
                 .and_then(|v| v.as_str().map(String::from))
         });
 
-    ZabbixAgentResult {
+    let result = ZabbixAgentResult {
         reachable: true,
         version,
         hostname,
@@ -209,5 +210,10 @@ pub fn check_zabbix_agent(ip: &str, port: u16, timeout_ms: u64) -> ZabbixAgentRe
         },
         response_time_ms: elapsed,
         error: None,
-    }
+    };
+    tracing::info!(
+        "Zabbix Agent 检测完成: ip={}, port={}, reachable={}, ping_ok={}, version={:?}, latency={}ms",
+        ip, port, result.reachable, result.ping_ok, result.version, elapsed
+    );
+    result
 }

@@ -94,20 +94,31 @@ pub async fn analyze_with_openai(
         "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": formatted_input}
+            {"role": "user", "content": &formatted_input}
         ],
         "temperature": 0.3,
         // 47 条命令的 JSON 输出约 8-12k tokens；4096 不够会被截断成无效 JSON
         "max_tokens": 16384
     });
 
+    let cmd_count = command_outputs.len();
+
+    // ── 请求前日志 ──
     info!(
-        "Sending request to OpenAI API (model: {}, commands: {})",
-        model,
-        command_outputs.len()
+        "AI 请求开始: model={}, base_url={}, commands={}",
+        model, base_url, cmd_count
+    );
+    tracing::debug!(
+        "AI 请求详情: url={}, system_prompt_len={}, user_prompt_len={}\n--- USER PROMPT (前 2000 字) ---\n{}",
+        url,
+        SYSTEM_PROMPT.len(),
+        formatted_input.len(),
+        formatted_input.chars().take(2000).collect::<String>()
     );
 
     let client = get_client();
+    let start = std::time::Instant::now();
+
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -116,37 +127,61 @@ pub async fn analyze_with_openai(
         .send()
         .await
         .map_err(|e| {
-            let msg = format!("OpenAI API 请求失败: {}", e);
-            warn!("{}", msg);
-            msg
+            let latency = start.elapsed().as_millis();
+            warn!("AI 请求失败: model={}, latency={}ms, error={}", model, latency, e);
+            format!("OpenAI API 请求失败: {}", e)
         })?;
 
+    let latency = start.elapsed().as_millis();
     let status = response.status();
     let response_text = response
         .text()
         .await
         .map_err(|e| {
-            let msg = format!("读取 OpenAI 响应失败: {}", e);
-            warn!("{}", msg);
-            msg
+            warn!("AI 响应读取失败: model={}, latency={}ms, error={}", model, latency, e);
+            format!("读取 OpenAI 响应失败: {}", e)
         })?;
 
+    // ── 响应日志（debug 级别记录完整响应）──
+    tracing::debug!(
+        "AI 响应详情: model={}, status={}, latency={}ms, response_len={}\n--- RESPONSE (前 5000 字) ---\n{}",
+        model, status, latency, response_text.len(),
+        response_text.chars().take(5000).collect::<String>()
+    );
+
     if !status.is_success() {
-        warn!("OpenAI API returned error status {}: {}", status, response_text);
+        warn!(
+            "AI 请求失败: model={}, status={}, latency={}ms, body_len={}",
+            model, status, latency, response_text.len()
+        );
         return Err(format!("OpenAI API 错误 ({}): {}", status, response_text));
     }
 
     let parsed: serde_json::Value = serde_json::from_str(&response_text)
         .map_err(|e| {
-            warn!("解析 OpenAI 响应 JSON 失败: {} — 前 300 字: {}", e,
-                  response_text.chars().take(300).collect::<String>());
+            warn!(
+                "AI 响应 JSON 解析失败: model={}, latency={}ms, error={}, 前 300 字: {}",
+                model, latency, e,
+                response_text.chars().take(300).collect::<String>()
+            );
             format!("解析 OpenAI 响应 JSON 失败: {}", e)
         })?;
+
+    // ── Token 用量日志 ──
+    let usage = parsed.get("usage");
+    let prompt_tokens = usage.and_then(|u| u.get("prompt_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let completion_tokens = usage.and_then(|u| u.get("completion_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+    let total_tokens = usage.and_then(|u| u.get("total_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+
+    info!(
+        "AI 请求完成: model={}, latency={}ms, prompt_tokens={}, completion_tokens={}, total_tokens={}, commands={}",
+        model, latency, prompt_tokens, completion_tokens, total_tokens, cmd_count
+    );
 
     let content = parsed["choices"][0]["message"]["content"]
         .as_str()
         .ok_or_else(|| {
-            warn!("OpenAI 响应缺少 choices[0].message.content: {}", response_text);
+            warn!("AI 响应格式异常: 缺少 choices[0].message.content, response_len={}", response_text.len());
             "OpenAI 响应格式异常: 未找到分析结果".to_string()
         })?;
 
@@ -156,17 +191,34 @@ pub async fn analyze_with_openai(
     let analysis: serde_json::Value = serde_json::from_str(content).map_err(|e| {
         if finish_reason == "length" {
             warn!(
-                "AI 输出被 max_tokens 截断 (finish_reason=length)，内容长度 {} 字符",
-                content.len()
+                "AI 输出被 max_tokens 截断: model={}, finish_reason=length, content_len={}",
+                model, content.len()
             );
             "AI 输出被截断（命令数过多导致 max_tokens 不足）。请减少巡检命令数或在系统设置中切换到上下文更长的模型。".to_string()
         } else {
+            warn!(
+                "AI 分析结果 JSON 解析失败: model={}, error={}, 前 500 字: {}",
+                model, e, content.chars().take(500).collect::<String>()
+            );
             format!("解析 AI 分析结果 JSON 失败: {} — 原始内容前 500 字: {}",
                 e, content.chars().take(500).collect::<String>())
         }
     })?;
 
-    info!("Successfully analyzed {} commands with OpenAI", command_outputs.len());
+    info!(
+        "AI 分析完成: model={}, latency={}ms, total_tokens={}, items={}",
+        model, latency, total_tokens,
+        analysis.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0)
+    );
+
+    // ── 分析结果摘要日志 ──
+    tracing::debug!(
+        "AI 分析结果: model={}, summary={:?}, overall={:?}",
+        model,
+        analysis.get("summary").and_then(|v| v.as_str()),
+        analysis.get("overall").and_then(|v| v.as_str()),
+    );
+
     Ok(analysis)
 }
 
