@@ -375,20 +375,35 @@ pub fn run() {
     }
     debug_log("数据子目录创建完成");
 
-    // Background task: auto-detect device status every 5 minutes (blocking TCP, parallel via std::thread::scope)
+    // Background task: 差异化轮询设备状态
+    // - 离线设备 90s 探测一次（尽快发现恢复）
+    // - 全量设备 5min 探测一次（覆盖在线设备的掉线检测）
+    // 两套节奏独立调度，互不阻塞
     let bg_db = state.db.clone();
-    let bg_db2 = state.db.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(5 * 60));
-        poll_device_statuses(&bg_db);
+    let bg_db3 = state.db.clone();
+    let bg_db_startup = state.db.clone();
+    std::thread::spawn(move || {
+        // 离线设备快轮询：每 90s 跑一次（只探测当前离线的设备，尽快发现恢复）
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(90));
+            poll_offline_devices(&bg_db3);
+        }
     });
-    // 启动后立即触发一次数据库设备的静态信息检测（首次录入后一次性补齐）
+    std::thread::spawn(move || {
+        // 全量轮询：每 5min 一次（覆盖在线设备掉线 + 离线设备补静态信息）
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5 * 60));
+            poll_device_statuses(&bg_db);
+        }
+    });
+    // 启动后立即触发一次所有缺静态信息设备的检测（server + database + 网络设备）
+    // detect_static_info_if_missing 内部按已有信息/凭据判断是否真正执行，故全量遍历安全
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(3)); // 等 DB 初始化完成
         let device_ids: Vec<i64> = {
-            if let Some(conn) = bg_db2.try_lock() {
+            if let Some(conn) = bg_db_startup.try_lock() {
                 let stmt = conn
-                    .prepare("SELECT id FROM devices WHERE device_type = 'database'")
+                    .prepare("SELECT id FROM devices ORDER BY id")
                     .ok();
                 stmt.and_then(|mut s| {
                     s.query_map([], |row| row.get::<_, i64>(0))
@@ -400,11 +415,11 @@ pub fn run() {
                 vec![]
             }
         };
-        tracing::info!("[startup] 发现 {} 台数据库设备，开始静态信息检测", device_ids.len());
+        tracing::info!("[startup] 启动静态信息检测，共 {} 台设备", device_ids.len());
         for id in device_ids {
-            commands::devices::detect_static_info_if_missing(id, &bg_db2);
+            commands::devices::detect_static_info_if_missing(id, &bg_db_startup);
         }
-        tracing::info!("[startup] 数据库设备静态信息检测完成");
+        tracing::info!("[startup] 启动静态信息检测完成");
     });
     debug_log("后台检测线程已启动");
 
@@ -563,9 +578,123 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
     }))
 }
 
+/// 静态信息检测冷却：同一设备 10 分钟内不重复触发（防止状态抖动反复 SSH）
+const STATIC_DETECT_COOLDOWN_SECS: i64 = 600;
+/// 进程内记录每设备最近一次静态检测时间戳（epoch 秒），用于冷却去重
+static LAST_STATIC_DETECT: std::sync::OnceLock<Mutex<std::collections::HashMap<i64, i64>>> =
+    std::sync::OnceLock::new();
+
+fn last_detect_map() -> &'static Mutex<std::collections::HashMap<i64, i64>> {
+    LAST_STATIC_DETECT.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+/// 判断设备是否仍在冷却期内（返回 true 表示应跳过本次检测）
+fn in_cooldown(device_id: i64, now_epoch: i64) -> bool {
+    let map = last_detect_map().lock();
+    if let Some(&last) = map.get(&device_id) {
+        now_epoch - last < STATIC_DETECT_COOLDOWN_SECS
+    } else {
+        false
+    }
+}
+
+/// 记录一次静态检测（更新冷却时间戳）
+fn mark_detected(device_id: i64, now_epoch: i64) {
+    last_detect_map().lock().insert(device_id, now_epoch);
+}
+
+fn now_epoch() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// 仅探测当前离线设备的状态（高频快轮询用），上线后触发静态检测（带冷却）
+fn poll_offline_devices(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
+    // 读取当前离线设备
+    let devices: Vec<(i64, String, i64)> = {
+        if let Some(conn) = db.try_lock() {
+            let mut stmt = match conn.prepare(
+                "SELECT id, ip, ssh_port FROM devices WHERE status = 'offline' OR status = 'unknown'",
+            ) {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+            })
+            .ok()
+            .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+        } else {
+            return;
+        }
+    };
+    if devices.is_empty() {
+        return;
+    }
+
+    let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now_epoch();
+    let recovered: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+    std::thread::scope(|s| {
+        for (id, ip, port) in &devices {
+            let recovered = &recovered;
+            let id = *id;
+            s.spawn(move || {
+                let online = ip.parse::<std::net::IpAddr>()
+                    .ok()
+                    .zip(u16::try_from(*port).ok().filter(|&p| p > 0))
+                    .map(|(ip_addr, p)| {
+                        std::net::TcpStream::connect_timeout(
+                            &std::net::SocketAddr::new(ip_addr, p),
+                            std::time::Duration::from_secs(5),
+                        ).is_ok()
+                    })
+                    .unwrap_or(false);
+                if online {
+                    recovered.lock().push(id);
+                }
+            });
+        }
+    });
+
+    let recovered = recovered.lock();
+    if recovered.is_empty() {
+        return;
+    }
+    tracing::info!("[poll-offline] {} 台离线设备已恢复在线", recovered.len());
+
+    // 写回 online 状态 + 状态日志
+    {
+        let conn = db.lock();
+        for id in recovered.iter() {
+            let _ = conn.execute(
+                "UPDATE devices SET status = 'online', last_checked_at = ?1 WHERE id = ?2",
+                rusqlite::params![now_str, id],
+            );
+            let _ = conn.execute(
+                "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, "offline", "online", now_str],
+            );
+        }
+    }
+
+    // 恢复在线的设备触发静态检测（带冷却去重）
+    for id in recovered.iter() {
+        if !in_cooldown(*id, now) {
+            mark_detected(*id, now);
+            commands::devices::detect_static_info_if_missing(*id, db);
+        }
+    }
+}
+
 /// Background poller: TCP-connect each device's SSH port in parallel and update status.
 /// After status update, triggers static-info SSH detection for newly-online devices
-/// that don't yet have model/sysname (skips devices already auto-detected on save).
+/// that don't yet have model/sysname (带冷却去重，防止状态抖动反复 SSH).
 fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     // Phase 1: read id/ip/port + model/sysname/status — model/sysname 用于跳过冗余 SSH，
     // status 用于判断是否变更（仅变更时写状态日志）
@@ -686,15 +815,25 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         offline_count.load(std::sync::atomic::Ordering::Relaxed),
     );
 
-    // Phase 2: 对需要采集静态信息的在线设备做后台 SSH 检测
+    // Phase 2: 对需要采集静态信息的在线设备做后台 SSH 检测（带冷却去重）
     // 每批最多 3 台并发，完成后再取下一批
     let pending = needs_detect.lock();
     if !pending.is_empty() {
+        let now = now_epoch();
+        let filtered: Vec<i64> = pending
+            .iter()
+            .filter(|id| !in_cooldown(**id, now))
+            .copied()
+            .collect();
+        let skipped = pending.len() - filtered.len();
         tracing::info!(
-            "后台静态信息采集: {} 台设备需要检测（每批并发 3）",
-            pending.len()
+            "后台静态信息采集: {} 台需要检测，{} 台冷却中跳过（每批并发 3）",
+            filtered.len(), skipped
         );
-        for chunk in pending.chunks(3) {
+        for id in &filtered {
+            mark_detected(*id, now);
+        }
+        for chunk in filtered.chunks(3) {
             std::thread::scope(|s| {
                 for id in chunk {
                     let db = Arc::clone(db);

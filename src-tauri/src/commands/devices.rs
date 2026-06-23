@@ -903,6 +903,42 @@ pub fn detect_static_info_if_missing(
         }
     };
 
+    // 非认证类失败（SSH 超时/网络抖动等）短间隔重试一次；认证失败不重试
+    let result = match result {
+        Ok(_) => result,
+        Err(ref e) => {
+            let err_lower = e.to_lowercase();
+            let is_auth_err = err_lower.contains("密码") || err_lower.contains("认证")
+                || err_lower.contains("auth") || err_lower.contains("no_credential");
+            if is_auth_err {
+                result
+            } else {
+                tracing::warn!("[bg-detect] 设备 #{} ({}) 首次检测失败（{}），3s 后重试一次", device_id, device_name, e);
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                // 重新执行（result 已 move，用 Err 引用判断后重新调用）
+                let retry = if is_db {
+                    detect_db_info_sync(&ip, port, &username, &password, &vendor, &deployment, &device_name, &db_username, &db_password, &instance_name, db_port)
+                } else {
+                    let profile = vendor_profile::get_profile(&vendor);
+                    match profile.exec_mode {
+                        ExecMode::Exec => detect_linux_info_sync(&ip, port, &username, &password),
+                        ExecMode::Shell => detect_network_device_info_sync(&ip, port, &username, &password, &vendor),
+                    }
+                };
+                match &retry {
+                    Ok(_) => {
+                        tracing::info!("[bg-detect] 设备 #{} ({}) 重试成功", device_id, device_name);
+                        retry
+                    }
+                    Err(re) => {
+                        tracing::warn!("[bg-detect] 设备 #{} ({}) 重试仍失败: {}", device_id, device_name, re);
+                        retry
+                    }
+                }
+            }
+        }
+    };
+
     // 3. 写入 DB（短暂获锁）
     match result {
         Ok(json) => {
