@@ -765,8 +765,7 @@ function Traceroute() {
           </p>
           <ol className="list-decimal pl-5 text-[hsl(var(--text-secondary))] space-y-0.5">
             <li>下载 <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" className="text-[hsl(var(--accent))] underline">ip2region_v4.xdb</a></li>
-            <li>将文件重命名为 <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-xs">ip2region.xdb</code></li>
-            <li>放到程序可执行文件（inspection-rust）同目录</li>
+            <li>放到程序可执行文件（inspection-rust / inspection-rust.exe）同目录</li>
             <li>重启程序</li>
           </ol>
         </div>

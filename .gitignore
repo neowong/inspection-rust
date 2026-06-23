@@ -51,3 +51,5 @@ release/
 *-snapshot.txt
 src-tauri/resources/inspection-rust
 src-tauri/resources/ip2region.xdb
+src-tauri/resources/ip2region_v4.xdb
+ip2region_v4.xdb
