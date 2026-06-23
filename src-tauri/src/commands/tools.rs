@@ -1,4 +1,5 @@
 use crate::services;
+use serde_json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -133,6 +134,97 @@ pub struct TraceHop {
 #[tauri::command]
 pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
     state.ip_db.read().is_some()
+}
+
+/// 静默下载 ip2region_v4.xdb 到二进制同目录，完成后自动加载到内存
+/// 前端通过 listen("ip-db-download-progress") 监听进度 {percent, downloaded, total}
+#[tauri::command]
+pub async fn download_ip_db(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<String, String> {
+    let url = "https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb";
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .ok_or("无法获取程序目录")?;
+    let dest = exe_dir.join("ip2region_v4.xdb");
+
+    tracing::info!("[ip-db] 开始下载 {} → {}", url, dest.display());
+
+    // 流式下载
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client.get(url).send().await.map_err(|e| {
+        tracing::error!("[ip-db] 请求失败: {}", e);
+        format!("下载请求失败: {}", e)
+    })?;
+
+    if !resp.status().is_success() {
+        return Err(format!("下载失败，HTTP {}", resp.status()));
+    }
+
+    let total = resp.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    // 写入临时文件，成功后 rename（避免中断留下损坏文件）
+    let tmp_path = dest.with_extension("xdb.tmp");
+    let mut file = std::fs::File::create(&tmp_path)
+        .map_err(|e| format!("创建临时文件失败: {}", e))?;
+
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    use std::io::Write;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            // 下载中断，清理临时文件
+            let _ = std::fs::remove_file(&tmp_path);
+            format!("下载中断: {}", e)
+        })?;
+        file.write_all(&chunk).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            format!("写入文件失败: {}", e)
+        })?;
+        downloaded += chunk.len() as u64;
+
+        // 发进度事件（每 256KB 或完成时）
+        if total > 0 && (downloaded % 262144 < chunk.len() as u64 || downloaded == total) {
+            let percent = (downloaded * 100 / total) as u32;
+            let _ = app.emit("ip-db-download-progress", serde_json::json!({
+                "percent": percent,
+                "downloaded": downloaded,
+                "total": total,
+            }));
+        }
+    }
+
+    file.flush().map_err(|e| format!("刷新文件失败: {}", e))?;
+    drop(file);
+
+    // rename 到最终路径
+    std::fs::rename(&tmp_path, &dest).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        format!("重命名文件失败: {}", e)
+    })?;
+
+    tracing::info!("[ip-db] 下载完成: {} ({} 字节)", dest.display(), downloaded);
+
+    // 加载到内存
+    match crate::services::ip_location::load_xdb(&dest) {
+        Ok(data) => {
+            *state.ip_db.write() = Some(Arc::new(data));
+            tracing::info!("[ip-db] 已加载到内存");
+            Ok("下载完成，归属地功能已启用".to_string())
+        }
+        Err(e) => {
+            tracing::warn!("[ip-db] 下载成功但加载失败: {}", e);
+            Err(format!("文件已下载但加载失败: {}", e))
+        }
+    }
 }
 
 /// 路由跟踪：调用系统 traceroute/tracert，解析每跳并查归属地

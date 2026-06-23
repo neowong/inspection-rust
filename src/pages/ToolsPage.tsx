@@ -706,11 +706,38 @@ function Traceroute() {
   const [hops, setHops] = useState<TraceHop[] | null>(null);
   const [error, setError] = useState("");
   const [hasIpDb, setHasIpDb] = useState(true); // 默认 true，避免闪烁
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadError, setDownloadError] = useState("");
 
   // 检查离线 IP 归属地库是否已加载
   useEffect(() => {
     invoke<boolean>("has_ip_db").then(setHasIpDb).catch(() => setHasIpDb(false));
   }, []);
+
+  // 监听下载进度事件
+  useEffect(() => {
+    if (!downloading) return;
+    const unlisten = listen<{ percent: number }>("ip-db-download-progress", (e) => {
+      setDownloadProgress(e.payload.percent);
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [downloading]);
+
+  const handleDownload = async () => {
+    setDownloadError("");
+    setDownloading(true);
+    setDownloadProgress(0);
+    try {
+      await invoke<string>("download_ip_db");
+      setHasIpDb(true);
+    } catch (e: any) {
+      setDownloadError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      setDownloading(false);
+      setDownloadProgress(0);
+    }
+  };
 
   const handleTrace = async () => {
     setError("");
@@ -757,17 +784,30 @@ function Traceroute() {
       </div>
 
       {!hasIpDb && (
-        <div className="rounded-lg border border-[hsl(var(--warning)_/_0.3)] bg-[hsl(var(--warning)_/_0.08)] px-4 py-3 text-sm space-y-1">
-          <p className="font-medium text-[hsl(var(--warning))]">IP 归属地库未加载</p>
-          <p className="text-[hsl(var(--text-secondary))]">
-            路由跟踪可正常使用，但节点归属地无法解析。
-            如需归属地功能，请下载 IP 库并放到程序安装目录：
+        <div className="rounded-lg border border-[hsl(var(--warning)_/_0.3)] bg-[hsl(var(--warning)_/_0.08)] px-4 py-3 text-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-[hsl(var(--warning))]">IP 归属地库未安装</p>
+              <p className="text-[hsl(var(--text-secondary))] mt-0.5">
+                路由跟踪可正常使用，但节点归属地无法解析。下载离线 IP 库即可启用。
+              </p>
+            </div>
+            <button onClick={handleDownload} disabled={downloading} className={btnClass + " shrink-0"}>
+              {downloading ? `下载中 ${downloadProgress}%` : "一键下载"}
+            </button>
+          </div>
+          {downloading && (
+            <div className="w-full bg-[hsl(var(--bg-hover))] rounded-full h-1.5">
+              <div className="bg-[hsl(var(--accent))] h-1.5 rounded-full transition-all" style={{ width: `${downloadProgress}%` }} />
+            </div>
+          )}
+          {downloadError && (
+            <p className="text-xs text-[hsl(var(--danger))]">{downloadError}</p>
+          )}
+          <p className="text-xs text-[hsl(var(--text-tertiary))]">
+            自动下载 ip2region_v4.xdb（~11MB）到程序目录。也可手动下载：
+            <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" className="text-[hsl(var(--accent))] underline ml-1">GitHub</a>
           </p>
-          <ol className="list-decimal pl-5 text-[hsl(var(--text-secondary))] space-y-0.5">
-            <li>下载 <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" className="text-[hsl(var(--accent))] underline">ip2region_v4.xdb</a></li>
-            <li>放到程序可执行文件（inspection-rust / inspection-rust.exe）同目录</li>
-            <li>重启程序</li>
-          </ol>
         </div>
       )}
 
