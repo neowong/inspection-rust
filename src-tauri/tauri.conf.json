@@ -1,6 +1,6 @@
 {
   "productName": "AI巡检助手",
-  "version": "3.50.00",
+  "version": "3.50.0",
   "identifier": "com.inspection.rust",
   "build": {
     "frontendDist": "../dist",
