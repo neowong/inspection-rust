@@ -278,6 +278,58 @@ pub async fn track_usage(version: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 提交问题反馈到统计服务端（静默，失败忽略）
+#[tauri::command]
+pub async fn submit_feedback(
+    feedback_type: String,
+    title: String,
+    content: String,
+    contact: Option<String>,
+    version: String,
+) -> Result<(), String> {
+    let device_id = {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mac = get_mac_address().unwrap_or_default();
+        let raw = format!("{}:{}", hostname, mac);
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let payload = serde_json::json!({
+        "device_id": &device_id,
+        "feedback_type": &feedback_type,
+        "title": &title,
+        "content": &content,
+        "contact": contact.unwrap_or_default(),
+        "version": &version,
+    });
+
+    let api_url = "https://neowong.eu.org/stats/api/feedback";
+    tracing::info!("[feedback] 提交反馈: type={}, title={}", feedback_type, title);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client.post(api_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("提交反馈失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("提交失败，服务器返回 {}", resp.status()));
+    }
+
+    tracing::info!("[feedback] 反馈提交成功");
+    Ok(())
+}
+
 /// 获取本机 MAC 地址
 fn get_mac_address() -> Option<String> {
     // 读取 /sys/class/net/*/address (Linux) 或通过网络接口获取

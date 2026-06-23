@@ -565,6 +565,7 @@ pub fn run() {
             commands::tools::download_ip_db,
             commands::tools::check_update,
             commands::tools::track_usage,
+            commands::tools::submit_feedback,
             commands::tools::trace_route,
             // Stats
             get_stats,

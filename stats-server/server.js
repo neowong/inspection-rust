@@ -54,6 +54,23 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_track_timestamp ON track_records(timestamp)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_track_version ON track_records(version)`);
 
+  // 反馈表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS feedbacks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id TEXT,
+      feedback_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      contact TEXT,
+      version TEXT,
+      ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_feedbacks_created ON feedbacks(created_at)`);
+
   // 创建默认管理员账户（root / ai-inspection）
   const defaultPassword = process.env.ADMIN_PASSWORD || 'ai-inspection';
   bcrypt.hash(defaultPassword, 10, (err, hash) => {
@@ -235,6 +252,46 @@ app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
     `SELECT device_id, version, os, ip, timestamp
      FROM track_records
      ORDER BY timestamp DESC
+     LIMIT ?`,
+    [limit],
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: '查询失败' });
+      }
+      res.json(rows || []);
+    }
+  );
+});
+
+// 提交反馈（无需认证）
+app.post(`${BASE_PATH}/api/feedback`, (req, res) => {
+  const { device_id, feedback_type, title, content, contact, version } = req.body;
+  const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+  if (!feedback_type || !title || !content) {
+    return res.status(400).json({ error: '反馈类型、标题和内容不能为空' });
+  }
+
+  db.run(
+    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version, ip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [device_id, feedback_type, title, content, contact || null, version, ip],
+    (err) => {
+      if (err) {
+        console.error('记录反馈失败:', err);
+        return res.status(500).json({ error: '记录失败' });
+      }
+      res.json({ success: true });
+    }
+  );
+});
+
+// 获取反馈列表（需认证）
+app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
+  const limit = parseInt(req.query.limit) || 100;
+  db.all(
+    `SELECT id, device_id, feedback_type, title, content, contact, version, ip, created_at
+     FROM feedbacks
+     ORDER BY created_at DESC
      LIMIT ?`,
     [limit],
     (err, rows) => {

@@ -258,6 +258,24 @@
         <tbody id="recentTable"></tbody>
       </table>
     </div>
+
+    <!-- 反馈列表 -->
+    <div class="recent-table" style="margin-top: 20px;">
+      <h3>💬 用户反馈</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>类型</th>
+            <th>标题</th>
+            <th>内容</th>
+            <th>联系方式</th>
+            <th>版本</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody id="feedbackTable"></tbody>
+      </table>
+    </div>
   </div>
 
   <script>
@@ -343,12 +361,13 @@
 
       try {
         // 并行加载所有数据
-        const [overview, versions, os, daily, recent] = await Promise.all([
+        const [overview, versions, os, daily, recent, feedbacks] = await Promise.all([
           fetch(`${API_BASE}/api/stats/overview`, { headers }).then(r => r.json()),
           fetch(`${API_BASE}/api/stats/versions`, { headers }).then(r => r.json()),
           fetch(`${API_BASE}/api/stats/os`, { headers }).then(r => r.json()),
           fetch(`${API_BASE}/api/stats/daily`, { headers }).then(r => r.json()),
           fetch(`${API_BASE}/api/stats/recent?limit=20`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/feedbacks?limit=50`, { headers }).then(r => r.json()),
         ]);
 
         // 更新统计卡片
@@ -364,6 +383,7 @@
 
         // 渲染表格
         renderRecentTable(recent);
+        renderFeedbackTable(feedbacks);
       } catch (err) {
         console.error('加载统计数据失败:', err);
       }
@@ -461,6 +481,32 @@
           <td><span class="badge badge-${row.os}">${row.os}</span></td>
           <td>${row.ip || '-'}</td>
           <td>${new Date(row.timestamp).toLocaleString('zh-CN')}</td>
+        </tr>
+      `).join('');
+    }
+
+    // 反馈表格
+    const TYPE_LABELS = { bug: '问题反馈', feature: '功能需求', other: '其他' };
+    const TYPE_COLORS = { bug: '#e74c3c', feature: '#3498db', other: '#95a5a6' };
+
+    function renderFeedbackTable(data) {
+      const tbody = document.getElementById('feedbackTable');
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">暂无反馈</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(row => `
+        <tr>
+          <td>
+            <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;background:${TYPE_COLORS[row.feedback_type] || '#95a5a6'}22;color:${TYPE_COLORS[row.feedback_type] || '#95a5a6'}">
+              ${TYPE_LABELS[row.feedback_type] || row.feedback_type}
+            </span>
+          </td>
+          <td style="font-weight:500">${row.title}</td>
+          <td style="max-width:300px;white-space:pre-wrap;word-break:break-all">${row.content}</td>
+          <td>${row.contact || '-'}</td>
+          <td>${row.version ? 'v' + row.version : '-'}</td>
+          <td>${new Date(row.created_at).toLocaleString('zh-CN')}</td>
         </tr>
       `).join('');
     }
