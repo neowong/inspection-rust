@@ -148,6 +148,37 @@ export default function AboutPage() {
         )}
       </Card>
 
+      {/* 联系方式 - 醒目位置 */}
+      <Card className="border-l-4 border-l-[hsl(var(--accent))]">
+        <div className="flex items-start gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
+              <Mail size={18} className="text-[hsl(var(--accent))]" />
+              联系我们
+            </div>
+            <p className="mt-2 text-sm text-[hsl(var(--text-secondary))]">
+              遇到问题或有功能建议，欢迎通过以下方式联系：
+            </p>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Mail size={14} className="text-[hsl(var(--accent))]" />
+                <span className="text-sm font-medium text-[hsl(var(--text-primary))]">neowong2005@gmail.com</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" style={{ color: "hsl(var(--accent))" }}>
+                  <path d="M8.5,13.5a1,1,0,1,1,1-1A1,1,0,0,1,8.5,13.5Zm5,0a1,1,0,1,1,1-1A1,1,0,0,1,13.5,13.5ZM12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/>
+                </svg>
+                <span className="text-sm font-medium text-[hsl(var(--text-primary))]">微信扫码添加</span>
+              </div>
+            </div>
+          </div>
+          <div className="shrink-0 text-center">
+            <img src="/weixin.png" alt="微信二维码" className="h-32 w-32 rounded-lg border border-[hsl(var(--border))] object-contain" />
+            <p className="mt-2 text-xs text-[hsl(var(--text-tertiary))]">扫码添加微信</p>
+          </div>
+        </div>
+      </Card>
+
       {/* 问题反馈表单 */}
       <Card>
         <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--text-primary))]">
@@ -238,23 +269,6 @@ export default function AboutPage() {
             </button>
           </div>
         )}
-      </Card>
-
-      {/* 联系方式 */}
-      <Card>
-        <p className="text-sm text-[hsl(var(--text-secondary))]">
-          也可以通过以下方式联系我们：
-        </p>
-        <p className="mt-2 flex items-center gap-1.5 text-sm text-[hsl(var(--accent))]">
-          <Mail size={14} />
-          neowong2005@gmail.com
-        </p>
-        <div className="mt-4 flex items-start gap-6">
-          <div className="text-center">
-            <img src="/weixin.png" alt="微信二维码" className="h-36 w-36 rounded-lg border border-[hsl(var(--border))] object-contain" />
-            <p className="mt-2 text-xs text-[hsl(var(--text-tertiary))]">扫码添加微信</p>
-          </div>
-        </div>
       </Card>
     </div>
   );
