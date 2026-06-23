@@ -357,6 +357,7 @@ fn get_mac_address() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         // Windows 通过 ipconfig /all 获取
+        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         std::process::Command::new("ipconfig")
             .args(["/all"])
