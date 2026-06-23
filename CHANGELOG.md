@@ -1,5 +1,38 @@
 # 更新日志
 
+## v3.50.1 (2026-06-23)
+
+### 🐛 Bug 修复
+- **版本号显示修复**：关于页面硬编码旧版本号 → 改为动态调用 `get_app_version()`，始终显示真实版本
+- **误报更新修复**：关于页面用旧版本号对比 GitHub Releases 导致误报 → 使用真实版本号对比
+- **统计服务端 IP 恢复**：上报记录 IP 列恢复，从 X-Forwarded-For 提取客户端真实 IP
+- **统计 Dashboard 反馈区恢复**：重新部署含反馈模块的最新版 Dashboard
+- **统计服务端 Docker 网络持久化**：容器重启后自动连接 nginx 网络，不再出现 502
+
+## v3.50.0 (2026-06-23)
+
+### 🔒 全局安全审计
+- SNMP BER 解码：DES 密钥长度修复、OID 解码溢出保护、整数解析边界检查
+- Zabbix 协议解析：checked_add 溢出保护、载荷 10MB 上限
+- SSH 连接日志：增加 TCP/总耗时统计，便于排查
+- 数据库密码安全：MySQL 使用 MYSQL_PWD 环境变量、PostgreSQL 单引号转义
+- AI 调试日志：移除完整 prompt 输出（可能含设备配置敏感信息），仅记录长度
+- 统计服务端安全加固：JWT_SECRET/ADMIN_PASSWORD 强制要求、速率限制、输入校验
+
+### 🐛 Bug 修复
+- `parking_lot::Mutex` 替换 `std::sync::Mutex` 避免中毒
+- `run_batch` 竞态窗口修复（cancel flag 先于 status 注册）
+- `stop_batch` 已完成批次保护
+- `retry_device` 竞态修复
+- SQL 参数化替代字符串拼接
+- 报告文件路径穿越防护
+- Traceroute 目标输入校验
+- 端口扫描实时事件推送 + unwrap 容错
+
+### 🏗️ CI/CD
+- macOS Universal 构建 (x86_64 + aarch64)
+- 版本号统一管理：前后端共用 `env!("CARGO_PKG_VERSION")`
+
 ## v3.40.0 (2026-06-21)
 
 ### 🎨 界面优化
