@@ -207,8 +207,8 @@ export default function InspectionPage() {
                   )}
                   {b.status === "running" && (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => handleAction(b.id, "pause")}>暂停</Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleAction(b.id, "stop")}>停止</Button>
+                      <Button size="sm" variant="ghost" loading={actionLoading === b.id} disabled={actionLoading === b.id} onClick={() => handleAction(b.id, "pause")}>暂停</Button>
+                      <Button size="sm" variant="ghost" loading={actionLoading === b.id} disabled={actionLoading === b.id} onClick={() => handleAction(b.id, "stop")}>停止</Button>
                     </>
                   )}
                   {(b.status === "stopped" || b.status === "paused" || b.status === "failed") && (

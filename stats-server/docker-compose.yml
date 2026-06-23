@@ -12,10 +12,10 @@ services:
     environment:
       - PORT=3000
       - BASE_PATH=/stats
-      - JWT_SECRET=${JWT_SECRET:-ai-inspection-stats-secret-key-change-me}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-ai-inspection}
+      - JWT_SECRET=${JWT_SECRET:?必须设置 JWT_SECRET 环境变量}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?必须设置 ADMIN_PASSWORD 环境变量}
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/stats/api/verify"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/stats/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

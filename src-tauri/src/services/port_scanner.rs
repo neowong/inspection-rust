@@ -6,14 +6,14 @@ use std::sync::OnceLock;
 // Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct PortScanResult {
     pub port: u16,
     pub open: bool,
     pub service: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct UdpPortResult {
     pub port: u16,
     pub open: bool,         // true = got response data
@@ -150,7 +150,7 @@ pub async fn scan_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Result<
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap());
+        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -188,7 +188,7 @@ where
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap());
+        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -348,7 +348,7 @@ pub async fn scan_udp_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Res
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap());
+        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -386,7 +386,7 @@ where
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap());
+        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
     }
     results.sort_by_key(|r| r.port);
     Ok(results)

@@ -478,6 +478,11 @@ pub async fn trace_route(
     if target.is_empty() {
         return Err("请输入目标 IP 或域名".to_string());
     }
+    // 校验 target 为合法 IP 或域名（防止注入命令行标志）
+    if target.starts_with('-') ||
+       !target.chars().all(|c| c.is_alphanumeric() || c == '.' || c == ':' || c == '-' || c == '_') {
+        return Err("目标地址格式无效".to_string());
+    }
     let max_hops = if max_hops == 0 { 30 } else { max_hops };
     let timeout_ms = if timeout_ms == 0 { 1000 } else { timeout_ms };
 

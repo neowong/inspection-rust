@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct WebCheckResult {
     pub url: String,
     pub final_url: String,
@@ -125,7 +125,7 @@ pub async fn check_urls(raw_urls: &[String], timeout_secs: u64) -> Vec<WebCheckR
 
     let mut results = Vec::with_capacity(tasks.len());
     for t in tasks {
-        results.push(t.await.unwrap());
+        results.push(t.await.unwrap_or_else(|_| { tracing::warn!("URL 检测任务异常退出"); Default::default() }));
     }
     results
 }

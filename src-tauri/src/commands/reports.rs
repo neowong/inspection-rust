@@ -828,6 +828,15 @@ pub async fn save_generated_file(
     suggested_name: String,
     extension: String,
 ) -> Result<(), String> {
+    // 校验源路径在 reports 目录内（防止路径穿越）
+    let src = std::path::PathBuf::from(&source_path);
+    let reports_dir = ensure_reports_dir()?;
+    let canonical_src = src.canonicalize().map_err(|_| "源文件不存在")?;
+    let canonical_reports = reports_dir.canonicalize().unwrap_or_else(|_| reports_dir.clone());
+    if !canonical_src.starts_with(&canonical_reports) {
+        return Err("不允许复制 reports 目录外的文件".to_string());
+    }
+
     use tauri_plugin_dialog::DialogExt;
     let ext_label = match extension.as_str() {
         "zip" => "Zip Archive",

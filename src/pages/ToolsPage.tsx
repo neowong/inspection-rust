@@ -763,6 +763,8 @@ function Traceroute() {
       });
     } catch (e: any) {
       setError(typeof e === "string" ? e : e?.message || String(e));
+    } finally {
+      // 确保 tracing 一定被复位（trace-done 事件可能丢失）
       setTracing(false);
     }
   };

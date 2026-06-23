@@ -108,12 +108,12 @@ pub async fn analyze_with_openai(
         "AI 请求开始: model={}, base_url={}, commands={}",
         model, base_url, cmd_count
     );
+    // debug 级别仅记录长度，不记录原始命令输出（可能含密码等敏感信息）
     tracing::debug!(
-        "AI 请求详情: url={}, system_prompt_len={}, user_prompt_len={}\n--- USER PROMPT (前 2000 字) ---\n{}",
+        "AI 请求详情: url={}, system_prompt_len={}, user_prompt_len={}",
         url,
         SYSTEM_PROMPT.len(),
-        formatted_input.len(),
-        formatted_input.chars().take(2000).collect::<String>()
+        formatted_input.len()
     );
 
     let client = get_client();

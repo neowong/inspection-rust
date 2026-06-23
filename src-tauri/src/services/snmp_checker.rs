@@ -154,7 +154,8 @@ fn encode_oid(oid_str: &str) -> Result<Vec<u8>, String> {
         return Err("OID至少需要2个组件".into());
     }
 
-    let first = components[0] * 40 + components[1];
+    let first = components[0].checked_mul(40).and_then(|v| v.checked_add(components[1]))
+        .ok_or_else(|| format!("OID 首组件溢出: {}", oid_str))?;
     let mut sub_ids = vec![first];
     sub_ids.extend_from_slice(&components[2..]);
 
@@ -208,6 +209,8 @@ fn decode_length(data: &[u8], pos: &mut usize) -> Result<usize, String> {
         Ok(first as usize)
     } else {
         let num_bytes = (first & 0x7F) as usize;
+        // 限制长度字节数防止整数溢出（RFC 上限 4 字节，放宽到 8 防御）
+        if num_bytes > 8 { return Err("长度字段过长".into()); }
         if *pos + num_bytes > data.len() { return Err("长度字段截断".into()); }
         let mut len: usize = 0;
         for _ in 0..num_bytes {
@@ -223,7 +226,9 @@ fn decode_tlv(data: &[u8], pos: &mut usize) -> Result<(u8, Vec<u8>), String> {
     let tag = data[*pos];
     *pos += 1;
     let len = decode_length(data, pos)?;
-    if *pos + len > data.len() { return Err("值截断".into()); }
+    // 用 checked_sub 防止 *pos + len 加法溢出后绕过边界检查
+    let available = data.len().checked_sub(*pos).ok_or("值截断")?;
+    if len > available { return Err("值截断".into()); }
     let value = data[*pos..*pos + len].to_vec();
     *pos += len;
     Ok((tag, value))
@@ -238,10 +243,14 @@ fn decode_oid_value(data: &[u8]) -> String {
     let mut i = 1;
     while i < data.len() {
         let mut val: u64 = 0;
+        let mut cont_bytes = 0u8;
         loop {
+            if i >= data.len() { break; } // 防止越界
             val = (val << 7) | (data[i] as u64 & 0x7F);
             let done = data[i] & 0x80 == 0;
             i += 1;
+            cont_bytes += 1;
+            if cont_bytes > 10 { break; } // 防止无限续延
             if done { break; }
         }
         components.push(val.to_string());
@@ -256,25 +265,35 @@ fn hex_encode(data: &[u8]) -> String {
 fn format_snmp_value(tag: u8, data: &[u8]) -> (String, String) {
     match tag {
         0x02 => {
+            // 限制 INTEGER 最多 8 字节防止移位溢出
+            let data = if data.len() > 8 { &data[..8] } else { data };
             let mut val: i64 = 0;
             let negative = !data.is_empty() && (data[0] & 0x80) != 0;
             for &b in data { val = (val << 8) | b as i64; }
-            if negative { val -= 1i64 << (data.len() * 8); }
+            // 仅 <8 字节时需要补码修正；8 字节时 i64 已是正确补码
+            if negative && data.len() < 8 { val -= 1i64 << (data.len() * 8); }
             ("INTEGER".to_string(), val.to_string())
         }
         0x04 => ("OCTET STRING".to_string(), String::from_utf8_lossy(data).to_string()),
         0x05 => ("NULL".to_string(), "(null)".to_string()),
         0x06 => ("OID".to_string(), decode_oid_value(data)),
-        0x41 => ("Counter32".to_string(), data.iter().fold(0u64, |a, &b| (a << 8) | b as u64).to_string()),
-        0x42 => ("Gauge32".to_string(), data.iter().fold(0u64, |a, &b| (a << 8) | b as u64).to_string()),
-        0x43 => ("TimeTicks".to_string(), data.iter().fold(0u64, |a, &b| (a << 8) | b as u64).to_string()),
-        0x46 => ("Counter64".to_string(), data.iter().fold(0u64, |a, &b| (a << 8) | b as u64).to_string()),
+        0x41 => ("Counter32".to_string(), fold_u64(data, 4)),
+        0x42 => ("Gauge32".to_string(), fold_u64(data, 4)),
+        0x43 => ("TimeTicks".to_string(), fold_u64(data, 4)),
+        0x46 => ("Counter64".to_string(), fold_u64(data, 8)),
         0x40 => ("IpAddress".to_string(), String::from_utf8_lossy(data).to_string()),
         _ => ("未知".to_string(), hex_encode(data)),
     }
 }
 
+/// 将字节数组折叠为 u64，限制最大字节数防止溢出
+fn fold_u64(data: &[u8], max_len: usize) -> String {
+    let data = if data.len() > max_len { &data[..max_len] } else { data };
+    data.iter().fold(0u64, |a, &b| (a << 8) | b as u64).to_string()
+}
+
 fn decode_u32_integer(data: &[u8]) -> u32 {
+    let data = if data.len() > 4 { &data[..4] } else { data };
     data.iter().fold(0u32, |a, &b| (a << 8) | b as u32)
 }
 
@@ -321,7 +340,11 @@ fn localize_priv_key(password: &[u8], engine_id: &[u8], priv_proto: PrivProtocol
         AuthProtocol::SHA256 => localize_key!(password, engine_id, sha2::Sha256),
     };
     match priv_proto {
-        PrivProtocol::DES => kul[..8].to_vec(),
+        // DES 需要 16 字节本地化密钥（8 字节密钥 + 8 字节 pre-IV）
+        PrivProtocol::DES => {
+            if kul.len() >= 16 { kul[..16].to_vec() }
+            else { kul.clone() }
+        }
         PrivProtocol::AES128 => kul[..16].to_vec(),
         PrivProtocol::None => vec![],
     }

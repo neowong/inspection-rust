@@ -25,9 +25,12 @@ fn build_zabbix_frame(json: &str) -> Vec<u8> {
 fn parse_zabbix_response(data: &[u8]) -> Option<String> {
     if data.len() < 13 { return None; }
     if &data[..5] != b"ZBXD\x01" { return None; }
-    let payload_len = u64::from_le_bytes(data[5..13].try_into().ok()?) as usize;
-    if data.len() < 13 + payload_len { return None; }
-    let json_str = std::str::from_utf8(&data[13..13 + payload_len]).ok()?;
+    // 保持 u64 防止溢出，用 checked_add 比较
+    let payload_len = u64::from_le_bytes(data[5..13].try_into().ok()?);
+    let expected = 13u64.checked_add(payload_len)?;
+    if (data.len() as u64) < expected { return None; }
+    let end = 13 + usize::try_from(payload_len).ok()?;
+    let json_str = std::str::from_utf8(&data[13..end]).ok()?;
     Some(json_str.to_string())
 }
 
@@ -67,8 +70,13 @@ fn read_all_with_timeout(stream: &mut std::net::TcpStream, timeout: std::time::D
         return Err(format!("非Zabbix协议 (头部: {})", hex_preview(&buf[..total.min(32)], total.min(32))));
     }
 
-    let payload_len = u64::from_le_bytes(buf[5..13].try_into().unwrap()) as usize;
-    let expected_total = 13 + payload_len;
+    let payload_len_u64 = u64::from_le_bytes(buf[5..13].try_into().unwrap());
+    // 限制 payload 长度防止溢出和过大分配
+    if payload_len_u64 > 10_000_000 {
+        return Err(format!("Zabbix 响应 payload 过大: {} 字节", payload_len_u64));
+    }
+    let payload_len = payload_len_u64 as usize;
+    let expected_total = 13usize.checked_add(payload_len).ok_or("长度溢出")?;
 
     // Read remaining payload bytes
     while total < expected_total {

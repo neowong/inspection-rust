@@ -3,15 +3,41 @@ const sqlite3 = require('sqlite3').verbose();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
-const path = require('path');
+
+// 速率限制（简易实现，避免引入额外依赖）
+const rateLimitMap = new Map();
+function rateLimit(key, maxRequests, windowMs) {
+  return (req, res, next) => {
+    const ip = req.socket.remoteAddress || 'unknown';
+    const fullKey = `${key}:${ip}`;
+    const now = Date.now();
+    const entry = rateLimitMap.get(fullKey);
+    if (!entry || now > entry.resetTime) {
+      rateLimitMap.set(fullKey, { count: 1, resetTime: now + windowMs });
+      return next();
+    }
+    entry.count++;
+    if (entry.count > maxRequests) {
+      return res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+    }
+    next();
+  };
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_PATH = process.env.BASE_PATH || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'ai-inspection-stats-secret-key-change-me';
+
+// 强制要求 JWT_SECRET 环境变量
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 16) {
+  console.error('错误: 请设置 JWT_SECRET 环境变量（至少 16 字符）');
+  console.error('例如: JWT_SECRET=your-strong-secret docker compose up -d');
+  process.exit(1);
+}
 
 // 中间件
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(BASE_PATH, express.static('public'));
 
@@ -71,24 +97,28 @@ db.serialize(() => {
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_feedbacks_created ON feedbacks(created_at)`);
 
-  // 创建默认管理员账户（root / ai-inspection）
-  const defaultPassword = process.env.ADMIN_PASSWORD || 'ai-inspection';
-  bcrypt.hash(defaultPassword, 10, (err, hash) => {
-    if (err) {
-      console.error('密码哈希失败:', err);
-      return;
-    }
-    db.run(
-      `INSERT OR IGNORE INTO users (username, password_hash) VALUES (?, ?)`,
-      ['root', hash],
-      (err) => {
-        if (err) {
-          console.error('创建默认用户失败:', err);
-        } else {
-          console.log('默认管理员账户已创建: root / ' + defaultPassword);
+  // 创建管理员账户（必须通过环境变量设置密码）
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword.length < 6) {
+    console.error('错误: 请设置 ADMIN_PASSWORD 环境变量（至少 6 字符）');
+    console.error('例如: ADMIN_PASSWORD=your-password docker compose up -d');
+    process.exit(1);
+  }
+  // 先检查是否已有 root 用户，避免每次启动重算 bcrypt
+  db.get(`SELECT id FROM users WHERE username = 'root'`, (err, row) => {
+    if (err) { console.error('查询用户失败:', err); return; }
+    if (row) return; // 已存在，跳过
+    bcrypt.hash(adminPassword, 10, (err, hash) => {
+      if (err) { console.error('密码哈希失败:', err); return; }
+      db.run(
+        `INSERT INTO users (username, password_hash) VALUES (?, ?)`,
+        ['root', hash],
+        (err) => {
+          if (err) console.error('创建管理员失败:', err);
+          else console.log('管理员账户已创建 (root)');
         }
-      }
-    );
+      );
+    });
   });
 });
 
@@ -146,18 +176,22 @@ app.post(`${BASE_PATH}/api/login`, (req, res) => {
   );
 });
 
-// 统计上报接口（客户端调用）
-app.post(`${BASE_PATH}/api/track`, (req, res) => {
+// 统计上报接口（客户端调用，限流 + 输入校验）
+app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), (req, res) => {
   const { device_id, version, os, timestamp } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
   if (!device_id || !version || !os || !timestamp) {
     return res.status(400).json({ error: '参数不完整' });
   }
+  // 输入长度限制
+  if (String(device_id).length > 128 || String(version).length > 32 ||
+      String(os).length > 32 || String(timestamp).length > 64) {
+    return res.status(400).json({ error: '参数过长' });
+  }
 
   db.run(
-    `INSERT INTO track_records (device_id, version, os, ip, timestamp) VALUES (?, ?, ?, ?, ?)`,
-    [device_id, version, os, ip, timestamp],
+    `INSERT INTO track_records (device_id, version, os, timestamp) VALUES (?, ?, ?, ?)`,
+    [String(device_id).slice(0, 128), String(version).slice(0, 32), String(os).slice(0, 32), String(timestamp).slice(0, 64)],
     (err) => {
       if (err) {
         console.error('记录统计失败:', err);
@@ -247,34 +281,42 @@ app.get(`${BASE_PATH}/api/stats/daily`, authenticateToken, (req, res) => {
 
 // 最近记录
 app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
-  const limit = parseInt(req.query.limit) || 50;
+  const limit = Math.min(parseInt(req.query.limit) || 50, 500);
   db.all(
-    `SELECT device_id, version, os, ip, timestamp
+    `SELECT device_id, version, os, timestamp
      FROM track_records
      ORDER BY timestamp DESC
      LIMIT ?`,
     [limit],
     (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: '查询失败' });
-      }
+      if (err) { return res.status(500).json({ error: '查询失败' }); }
       res.json(rows || []);
     }
   );
 });
 
-// 提交反馈（无需认证）
-app.post(`${BASE_PATH}/api/feedback`, (req, res) => {
+// 提交反馈（无需认证，限流 + 输入校验）
+app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, res) => {
   const { device_id, feedback_type, title, content, contact, version } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
   if (!feedback_type || !title || !content) {
     return res.status(400).json({ error: '反馈类型、标题和内容不能为空' });
   }
+  // 输入长度限制
+  const validTypes = ['bug', 'feature', 'other'];
+  if (!validTypes.includes(feedback_type)) {
+    return res.status(400).json({ error: '无效的反馈类型' });
+  }
+  if (String(title).length > 200 || String(content).length > 5000 ||
+      (contact && String(contact).length > 200)) {
+    return res.status(400).json({ error: '输入内容过长' });
+  }
 
   db.run(
-    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version, ip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [device_id, feedback_type, title, content, contact || null, version, ip],
+    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version) VALUES (?, ?, ?, ?, ?, ?)`,
+    [String(device_id || '').slice(0, 128), feedback_type,
+     String(title).slice(0, 200), String(content).slice(0, 5000),
+     contact ? String(contact).slice(0, 200) : null, String(version || '').slice(0, 32)],
     (err) => {
       if (err) {
         console.error('记录反馈失败:', err);
@@ -287,9 +329,9 @@ app.post(`${BASE_PATH}/api/feedback`, (req, res) => {
 
 // 获取反馈列表（需认证）
 app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
-  const limit = parseInt(req.query.limit) || 100;
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   db.all(
-    `SELECT id, device_id, feedback_type, title, content, contact, version, ip, created_at
+    `SELECT id, device_id, feedback_type, title, content, contact, version, created_at
      FROM feedbacks
      ORDER BY created_at DESC
      LIMIT ?`,
@@ -303,14 +345,23 @@ app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
   );
 });
 
+// 健康检查（无需认证，供 docker healthcheck 用）
+app.get(`${BASE_PATH}/api/health`, (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // 验证令牌
 app.get(`${BASE_PATH}/api/verify`, authenticateToken, (req, res) => {
   res.json({ valid: true, username: req.user.username });
 });
 
+// 优雅关闭
+process.on('SIGTERM', () => { db.close(); process.exit(0); });
+process.on('SIGINT', () => { db.close(); process.exit(0); });
+
 // 启动服务器
 app.listen(PORT, () => {
   console.log(`统计服务器运行在 http://localhost:${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}`);
-  console.log(`默认账户: root / ai-inspection`);
+  console.log(`Dashboard: http://localhost:${PORT}${BASE_PATH}/`);
+  console.log(`管理员账户: root (密码见 ADMIN_PASSWORD 环境变量)`);
 });

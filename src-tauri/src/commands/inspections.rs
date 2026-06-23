@@ -656,7 +656,17 @@ pub async fn create_batch(
 pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), String> {
     tracing::info!("执行批次 #{} 开始", batch_id);
 
-    // 1. 读取批次信息和设备列表（短暂获锁）
+    // 1. 先注册取消标志再设 running，消除注册窗口竞态
+    let db = state.db.clone();
+    let batch_cancels = state.batch_cancels.clone();
+    let cancel = {
+        let mut cancels = batch_cancels.lock();
+        let flag = Arc::new(AtomicBool::new(false));
+        cancels.insert(batch_id, Arc::clone(&flag));
+        flag
+    };
+
+    // 2. 读取批次信息和设备列表（短暂获锁）
     let device_ids = {
         let conn = state.db.lock();
         let sql = format!(
@@ -691,7 +701,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         // 前置校验：设备是否配置了模板和 SSH 密码
         validate_devices_ready(&conn, &ids)?;
 
-        // 更新批次状态为 running
+        // 更新批次状态为 running（取消标志已注册，stop_batch 已可见）
         let now = now_str();
         conn.execute(
             "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
@@ -704,15 +714,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
         ids
     }; // 锁释放
 
-    // 2. 并发执行各设备（后台运行，不阻塞 run_batch 返回）
-    let db = state.db.clone();
-    let batch_cancels = state.batch_cancels.clone();
-    let cancel = {
-        let mut cancels = batch_cancels.lock();
-        let flag = Arc::new(AtomicBool::new(false));
-        cancels.insert(batch_id, Arc::clone(&flag));
-        flag
-    };
+    // 3. 并发执行各设备（后台运行，不阻塞 run_batch 返回）
 
     let handles: Vec<_> = device_ids
         .into_iter()
@@ -981,12 +983,15 @@ pub fn stop_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
 
     let now = now_str();
 
-    // Set batch status to "stopped"
-    conn.execute(
-        "UPDATE inspection_batches SET status = 'stopped', updated_at = ?1 WHERE id = ?2",
+    // Set batch status to "stopped"（仅允许停止运行中/暂停的批次）
+    let affected = conn.execute(
+        "UPDATE inspection_batches SET status = 'stopped', updated_at = ?1 WHERE id = ?2 AND status IN ('running', 'paused', 'pending')",
         rusqlite::params![now, batch_id],
     )
     .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err("批次当前状态不允许停止（仅可停止运行中/暂停/等待中的批次）".to_string());
+    }
 
     // Set any "running"/"pending" records to "stopped"
     conn.execute(

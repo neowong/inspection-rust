@@ -23,8 +23,26 @@ ssh $REMOTE_HOST "mkdir -p $REMOTE_DIR/data"
 echo "2. 复制文件..."
 scp -r $SCRIPT_DIR/server.js $SCRIPT_DIR/package.json $SCRIPT_DIR/Dockerfile $SCRIPT_DIR/docker-compose.yml $SCRIPT_DIR/public/ $REMOTE_HOST:$REMOTE_DIR/
 
-# 3. 在远程服务器上构建和启动
-echo "3. 构建并启动容器..."
+# 3. 创建 .env 文件（第一次部署时生成随机密码）
+echo "3. 检查环境变量..."
+ssh $REMOTE_HOST "
+cd $REMOTE_DIR
+if [ ! -f .env ]; then
+  JWT_SECRET=\$(openssl rand -hex 24)
+  ADMIN_PASSWORD=\$(openssl rand -hex 12)
+  cat > .env << ENVEOF
+JWT_SECRET=\$JWT_SECRET
+ADMIN_PASSWORD=\$ADMIN_PASSWORD
+ENVEOF
+  echo '=== 请保存以下凭据 ==='
+  echo \"管理员: root / \$ADMIN_PASSWORD\"
+  echo \"JWT密钥: \$JWT_SECRET\"
+  echo '========================'
+fi
+"
+
+# 4. 构建并启动容器
+echo "4. 构建并启动容器..."
 ssh $REMOTE_HOST "cd $REMOTE_DIR && docker compose up -d --build"
 
 # 4. 配置 nginx 反向代理（/stats 子路径）

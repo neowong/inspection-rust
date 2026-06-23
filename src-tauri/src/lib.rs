@@ -377,15 +377,12 @@ pub fn run() {
     let db_path = app_data_dir.join("inspection.db");
     debug_log(&format!("数据库路径: {}", db_path.display()));
     startup_log("初始化数据库...");
-    let state = AppState::new(
-        db_path
-            .to_str()
-            .unwrap_or_else(|| {
-                // 路径含非 UTF-8 字符时回退到临时目录
-                tracing::error!("数据库路径无法转换为 UTF-8: {}", db_path.display());
-                panic!("数据库路径包含无效字符，请检查系统用户名是否为纯 ASCII");
-            }),
-    );
+    let db_path_str = db_path.to_str().unwrap_or_else(|| {
+        // 路径含非 UTF-8 字符时回退到临时目录
+        tracing::error!("数据库路径无法转换为 UTF-8: {}，回退到临时目录", db_path.display());
+        "/tmp/ai-inspection-inspection.db"
+    });
+    let state = AppState::new(db_path_str);
     startup_log("数据库初始化完成");
     debug_log("数据库初始化完成");
     debug_log(&format!("DB 连接测试: 设备数量 = {}", {
@@ -498,14 +495,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Devices
             commands::devices::list_devices,
-            commands::devices::get_device,
             commands::devices::create_device,
             commands::devices::update_device,
             commands::devices::delete_device,
             commands::devices::batch_delete_devices,
             commands::devices::check_device_status,
             commands::devices::check_all_devices_status,
-            commands::devices::detect_device_model,
             commands::devices::detect_device_model_by_id,
             // Templates
             commands::templates::list_templates,
@@ -530,7 +525,6 @@ pub fn run() {
             commands::inspections::delete_batch,
             // Reports & AI
             commands::reports::get_record,
-            commands::reports::analyze_record,
             commands::reports::analyze_batch,
             commands::reports::download_report,
             commands::reports::save_generated_file,
@@ -547,7 +541,6 @@ pub fn run() {
             commands::reports::update_report_template,
             commands::reports::delete_report_template,
             commands::reports::generate_docx_report,
-            commands::reports::generate_batch_docx_zip,
             commands::reports::generate_batch_docx_combined,
             commands::reports::delete_record_report,
             commands::reports::open_reports_dir,
@@ -564,7 +557,6 @@ pub fn run() {
             commands::tools::has_ip_db,
             commands::tools::download_ip_db,
             commands::tools::check_update,
-            commands::tools::track_usage,
             commands::tools::submit_feedback,
             commands::tools::trace_route,
             // Stats
@@ -653,19 +645,16 @@ fn last_detect_map() -> &'static Mutex<std::collections::HashMap<i64, i64>> {
     LAST_STATIC_DETECT.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 
-/// 判断设备是否仍在冷却期内（返回 true 表示应跳过本次检测）
-fn in_cooldown(device_id: i64, now_epoch: i64) -> bool {
-    let map = last_detect_map().lock();
+/// 原子化检查并标记：如果不在冷却期则标记并返回 true，否则返回 false
+fn try_mark_detected(device_id: i64, now_epoch: i64) -> bool {
+    let mut map = last_detect_map().lock();
     if let Some(&last) = map.get(&device_id) {
-        now_epoch - last < STATIC_DETECT_COOLDOWN_SECS
-    } else {
-        false
+        if now_epoch - last < STATIC_DETECT_COOLDOWN_SECS {
+            return false; // 冷却期内，跳过
+        }
     }
-}
-
-/// 记录一次静态检测（更新冷却时间戳）
-fn mark_detected(device_id: i64, now_epoch: i64) {
-    last_detect_map().lock().insert(device_id, now_epoch);
+    map.insert(device_id, now_epoch);
+    true
 }
 
 fn now_epoch() -> i64 {
@@ -748,10 +737,9 @@ fn poll_offline_devices(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         }
     }
 
-    // 恢复在线的设备触发静态检测（带冷却去重）
+    // 恢复在线的设备触发静态检测（带冷却去重，原子化检查+标记）
     for id in recovered.iter() {
-        if !in_cooldown(*id, now) {
-            mark_detected(*id, now);
+        if try_mark_detected(*id, now) {
             commands::devices::detect_static_info_if_missing(*id, db);
         }
     }
@@ -887,7 +875,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         let now = now_epoch();
         let filtered: Vec<i64> = pending
             .iter()
-            .filter(|id| !in_cooldown(**id, now))
+            .filter(|id| try_mark_detected(**id, now))
             .copied()
             .collect();
         let skipped = pending.len() - filtered.len();
@@ -895,8 +883,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
             "后台静态信息采集: {} 台需要检测，{} 台冷却中跳过（每批并发 3）",
             filtered.len(), skipped
         );
-        for id in &filtered {
-            mark_detected(*id, now);
+        for _id in &filtered {
         }
         for chunk in filtered.chunks(3) {
             std::thread::scope(|s| {

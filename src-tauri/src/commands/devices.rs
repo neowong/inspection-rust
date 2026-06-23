@@ -707,7 +707,10 @@ pub async fn detect_device_model_by_id(
 
     // SSH 成功时，用兄弟设备信息补全缺失字段（特别是 memory）
     let json = if let Some((ref s_model, ref s_sysname, s_cpu, s_mem, s_kernel)) = os_info_from_sibling {
-        let mut map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        let mut map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&json).unwrap_or_else(|e| {
+            tracing::warn!("[detect] 检测结果 JSON 解析失败: {}，原始: {}", e, json.chars().take(200).collect::<String>());
+            serde_json::Map::new()
+        });
         if !map.contains_key("memory_gb") {
             if let Some(m) = s_mem { map.insert("memory_gb".into(), serde_json::Value::String(m.to_string())); }
         }
@@ -1198,26 +1201,24 @@ fn detect_db_info_sync(
     let mut db_cmds: Vec<(String, String)> = Vec::new(); // (label, raw_cmd)
 
     if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
-        let mysql_auth: Vec<String> = {
-            let mut args: Vec<String> = Vec::new();
-            if !db_username.is_empty() {
-                args.push(format!("-u{}", db_username));
-            }
-            if !db_password.is_empty() {
-                args.push(format!("-p{}", db_password));
-            }
-            args
-        };
-        let auth_str = mysql_auth.join(" ");
+        // 用 MYSQL_PWD 环境变量传密码，避免命令行参数暴露（ps 可见）
+        let mysql_auth = if !db_username.is_empty() { format!("-u{}", db_username) } else { String::new() };
+        let mysql_pwd_prefix = if !db_password.is_empty() {
+            // 转义单引号防止 shell 注入
+            let escaped = db_password.replace('\'', "'\\''");
+            format!("MYSQL_PWD='{}' ", escaped)
+        } else { String::new() };
         db_cmds.push(("db_detail".to_string(), format!(
-            "mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", auth_str)));
+            "{}mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", mysql_pwd_prefix, mysql_auth)));
     } else if vendor_lower.contains("postgres") {
         db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         if !db_username.is_empty() {
+            // 转义单引号防止 shell 注入
             let pg_env = if !db_password.is_empty() {
-                format!("PGPASSWORD='{}'", db_password)
+                let escaped = db_password.replace('\'', "'\\''");
+                format!("PGPASSWORD='{}' ", escaped)
             } else { String::new() };
-            db_cmds.push(("db_detail".to_string(), format!("{} psql -U {} -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, db_username, db_port)));
+            db_cmds.push(("db_detail".to_string(), format!("{}psql -U {} -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, db_username, db_port)));
         }
     } else if vendor_lower.contains("oracle") {
         db_cmds.push(("db_version".to_string(), "sqlplus -v".to_string()));

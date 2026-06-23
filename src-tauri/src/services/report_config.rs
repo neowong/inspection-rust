@@ -140,7 +140,11 @@ pub fn parse_config_json(s: &str) -> ReportTemplateConfig {
     if trimmed.is_empty() {
         return ReportTemplateConfig::default();
     }
-    serde_json::from_str(trimmed).unwrap_or_default()
+    serde_json::from_str(trimmed).unwrap_or_else(|e| {
+        tracing::warn!("报告模板配置 JSON 解析失败: {}，使用默认配置。原始: {}",
+            e, trimmed.chars().take(200).collect::<String>());
+        ReportTemplateConfig::default()
+    })
 }
 
 /// 序列化默认配置（用于 DB seed/migration）。
