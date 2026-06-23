@@ -216,13 +216,13 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-[hsl(var(--text-primary))]">AI巡检助手</p>
-            <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">v3.40.18</p>
+            <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">v3.40.19</p>
           </div>
           <button
             onClick={async () => {
               try {
                 const result = await invoke<{ version: string; url: string } | null>("check_update", {
-                  currentVersion: "3.40.18",
+                  currentVersion: "3.40.19",
                 });
                 if (result) {
                   window.open(result.url, "_blank");

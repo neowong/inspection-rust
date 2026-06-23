@@ -57,7 +57,7 @@ export default function AppShell() {
     const checkUpdate = async () => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const currentVersion = "3.40.18"; // TODO: 从 tauri 配置读取
+        const currentVersion = "3.40.19"; // TODO: 从 tauri 配置读取
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
           currentVersion,
         });
