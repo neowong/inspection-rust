@@ -215,7 +215,6 @@ export default function AppShell() {
             🆕 v{updateVersion}
           </button>
         )}
-        <span>v3.1</span>
       </footer>
     </div>
   );
