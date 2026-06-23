@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-shell";
 import { Network, Mail, Send, CheckCircle2, Download, RefreshCw } from "lucide-react";
 import Card from "../components/ui/Card";
 
-const CURRENT_VERSION = "3.40.20";
+let CURRENT_VERSION = "3.40.23"; // 默认值，启动后由 get_app_version 覆盖
 
 const FEEDBACK_TYPES = [
   { value: "bug", label: "问题反馈" },

@@ -980,6 +980,7 @@ pub fn pause_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> 
 /// 停止指定批次，同时将批次内所有 running 状态的记录改为 stopped。
 #[tauri::command]
 pub fn stop_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
+    // 设置批次取消标志
     if let Some(cancel) = state.batch_cancels.lock().get(&batch_id) {
         cancel.store(true, Ordering::Relaxed);
     }
@@ -1127,16 +1128,15 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         (record_id, batch_id, device, username, password, commands)
     }; // 锁释放
 
-    // 注册取消标志：若批次已有 flag（批次正在运行）则复用，否则新建。
-    // we_registered 标记是否由本次重试创建，决定收尾时是否清理 flag 与收尾批次。
-    let (cancel, we_registered) = {
+    // 注册取消标志（复用批次已有或新建）
+    let cancel = {
         let mut cancels = batch_cancels.lock();
         if let Some(existing) = cancels.get(&batch_id) {
-            (Arc::clone(existing), false)
+            Arc::clone(existing)
         } else {
             let flag = Arc::new(AtomicBool::new(false));
             cancels.insert(batch_id, Arc::clone(&flag));
-            (flag, true)
+            flag
         }
     };
 
@@ -1182,17 +1182,20 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
             }
         }
 
-        // 无论是否独占批次，重试完成后都尝试收尾：finalize 会重新统计 DB，
-        // 若仍有其他设备运行中则保持 running，否则收尾为 completed/failed。
-        // 这避免"主任务先 finalize、retry 后设 batch=running"导致批次卡 running 的竞态。
-        if let Err(e) = finalize_batch_status(&conn, batch_id) {
-            tracing::warn!("重试后批次 #{} 收尾失败: {}", batch_id, e);
+        // 防竞态：检查批次当前状态，已被用户停止则跳过 finalize
+        let current: Option<String> = conn
+            .query_row("SELECT status FROM inspection_batches WHERE id = ?1",
+                rusqlite::params![batch_id], |r| r.get(0)).ok();
+        if current.as_deref() == Some("stopped") {
+            tracing::info!("retry_device: 批次 #{} 已被停止，跳过收尾", batch_id);
+        } else {
+            if let Err(e) = finalize_batch_status(&conn, batch_id) {
+                tracing::warn!("重试后批次 #{} 收尾失败: {}", batch_id, e);
+            }
         }
     }
 
-    if we_registered {
-        batch_cancels.lock().remove(&batch_id);
-    }
+    // 复用了批次旗标则不删除（由主任务清理）
 
     Ok(())
 }

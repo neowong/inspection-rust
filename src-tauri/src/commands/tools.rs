@@ -167,6 +167,12 @@ pub struct TraceHop {
     pub rtt_ms: Option<f64>,
 }
 
+/// 获取应用版本号（编译时从 Cargo.toml 读取，前后端统一）
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// 检查离线 IP 归属地库是否已加载
 #[tauri::command]
 pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {

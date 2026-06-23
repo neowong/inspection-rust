@@ -554,6 +554,7 @@ pub fn run() {
             commands::tools::snmp_get,
             commands::tools::snmp_v3_get,
             commands::tools::check_zabbix_agent,
+            commands::tools::get_app_version,
             commands::tools::has_ip_db,
             commands::tools::download_ip_db,
             commands::tools::check_update,

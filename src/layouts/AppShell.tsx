@@ -52,13 +52,14 @@ export default function AppShell() {
     [location.pathname]
   );
 
-  // 启动时静默检查更新
+  // 启动时获取版本号并检查更新
   useEffect(() => {
     const checkUpdate = async () => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
+        const currentVersion = await invoke<string>("get_app_version");
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
-          currentVersion: "3.40.22",
+          currentVersion,
         });
         if (result) {
           setUpdateVersion(result.version);
