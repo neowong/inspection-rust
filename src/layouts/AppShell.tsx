@@ -58,7 +58,7 @@ export default function AppShell() {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
-          currentVersion: "3.40.21",
+          currentVersion: "3.40.22",
         });
         if (result) {
           setUpdateVersion(result.version);
