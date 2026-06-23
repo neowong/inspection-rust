@@ -1,6 +1,6 @@
 [package]
 name = "inspection-rust"
-version = "3.40.22"
+version = "3.40.23"
 edition = "2021"
 description = "AI巡检助手"
 
