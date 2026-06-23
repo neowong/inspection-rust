@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 ```
-inspection-rust/
+ai-inspection/
 ├── src/                          # React frontend (flat structure)
 │   ├── main.tsx                  # Entry: BrowserRouter + App
 │   ├── App.tsx                   # Routes (6 pages: templates/devices/inspection/reports/settings, AI config merged into settings)

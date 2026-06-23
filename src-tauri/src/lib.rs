@@ -145,7 +145,7 @@ fn is_webview2_installed() -> bool {
     false
 }
 
-/// 启动日志：优先写到 exe 同目录，若无权限则写到 %LOCALAPPDATA%\inspection-rust\startup.log
+/// 启动日志：优先写到 exe 同目录，若无权限则写到 %LOCALAPPDATA%\ai-inspection\startup.log
 pub fn startup_log_path() -> std::path::PathBuf {
     // 优先尝试 exe 目录（便携模式 / 有写权限时）
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
@@ -158,7 +158,7 @@ pub fn startup_log_path() -> std::path::PathBuf {
     // 回退到 %LOCALAPPDATA%\inspection-rust\
     let fallback = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("inspection-rust");
+        .join("ai-inspection");
     std::fs::create_dir_all(&fallback).ok();
     fallback.join("startup.log")
 }

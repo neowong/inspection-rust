@@ -2,7 +2,11 @@
 name = "inspection-rust"
 version = "3.40.17"
 edition = "2021"
-description = "运维巡检系统"
+description = "AI巡检助手"
+
+[[bin]]
+name = "ai-inspection"
+path = "src/main.rs"
 
 [lib]
 name = "inspection_rust_lib"
