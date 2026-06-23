@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   stats-server:
     build: .
@@ -9,6 +7,9 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./data:/app/data
+    networks:
+      - default
+      - china-travel-guide_default
     environment:
       - PORT=3000
       - BASE_PATH=/stats
@@ -19,3 +20,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+networks:
+  china-travel-guide_default:
+    external: true

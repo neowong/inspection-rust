@@ -4,7 +4,6 @@ import { open } from "@tauri-apps/plugin-shell";
 import { Network, Mail, Send, CheckCircle2, Download, RefreshCw } from "lucide-react";
 import Card from "../components/ui/Card";
 
-let CURRENT_VERSION = "3.40.23"; // 默认值，启动后由 get_app_version 覆盖
 
 const FEEDBACK_TYPES = [
   { value: "bug", label: "问题反馈" },
@@ -22,22 +21,40 @@ export default function AboutPage() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
+  // 版本号（从后端获取，编译时嵌入）
+  const [currentVersion, setCurrentVersion] = useState("");
+
   // 版本检查
   const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkDone, setCheckDone] = useState(false);
 
-  // 启动时自动检查一次
+  // 启动时获取版本号并检查更新
   useEffect(() => {
-    checkUpdate();
+    const init = async () => {
+      try {
+        const ver = await invoke<string>("get_app_version");
+        setCurrentVersion(ver);
+        const result = await invoke<{ version: string; url: string } | null>("check_update", {
+          currentVersion: ver,
+        });
+        setUpdateInfo(result);
+        setCheckDone(true);
+      } catch {
+        // 静默忽略
+      }
+    };
+    init();
   }, []);
 
   const checkUpdate = async () => {
     setChecking(true);
     setCheckDone(false);
     try {
+      const ver = currentVersion || await invoke<string>("get_app_version");
+      if (!currentVersion) setCurrentVersion(ver);
       const result = await invoke<{ version: string; url: string } | null>("check_update", {
-        currentVersion: CURRENT_VERSION,
+        currentVersion: ver,
       });
       setUpdateInfo(result);
       setCheckDone(true);
@@ -60,7 +77,7 @@ export default function AboutPage() {
         title: title.trim(),
         content: content.trim(),
         contact: contact.trim() || null,
-        version: CURRENT_VERSION,
+        version: currentVersion,
       });
       setSubmitted(true);
       setTitle("");
@@ -105,7 +122,7 @@ export default function AboutPage() {
         <div className="mt-4 pt-4 border-t border-[hsl(var(--border))] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-sm text-[hsl(var(--text-secondary))]">版本</span>
-            <span className="text-sm font-medium text-[hsl(var(--text-primary))]">v{CURRENT_VERSION}</span>
+            <span className="text-sm font-medium text-[hsl(var(--text-primary))]">v{currentVersion || "..."}</span>
           </div>
           <div className="flex items-center gap-3">
             {updateInfo && (

@@ -189,9 +189,16 @@ app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), (req, res) => 
     return res.status(400).json({ error: '参数过长' });
   }
 
+  // 提取客户端真实 IP（nginx 反向代理后）
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.headers['x-real-ip']
+    || req.socket.remoteAddress
+    || '';
+
   db.run(
-    `INSERT INTO track_records (device_id, version, os, timestamp) VALUES (?, ?, ?, ?)`,
-    [String(device_id).slice(0, 128), String(version).slice(0, 32), String(os).slice(0, 32), String(timestamp).slice(0, 64)],
+    `INSERT INTO track_records (device_id, version, os, ip, timestamp) VALUES (?, ?, ?, ?, ?)`,
+    [String(device_id).slice(0, 128), String(version).slice(0, 32), String(os).slice(0, 32),
+     String(ip).slice(0, 45), String(timestamp).slice(0, 64)],
     (err) => {
       if (err) {
         console.error('记录统计失败:', err);
@@ -283,7 +290,7 @@ app.get(`${BASE_PATH}/api/stats/daily`, authenticateToken, (req, res) => {
 app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 500);
   db.all(
-    `SELECT device_id, version, os, timestamp
+    `SELECT device_id, version, os, ip, timestamp
      FROM track_records
      ORDER BY timestamp DESC
      LIMIT ?`,
