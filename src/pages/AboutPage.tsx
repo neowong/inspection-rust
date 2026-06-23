@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Network, Mail, Send, CheckCircle2 } from "lucide-react";
+import { Network, Mail, Send, CheckCircle2, Download, RefreshCw } from "lucide-react";
 import Card from "../components/ui/Card";
+
+const CURRENT_VERSION = "3.40.20";
 
 const FEEDBACK_TYPES = [
   { value: "bug", label: "问题反馈" },
@@ -10,6 +12,7 @@ const FEEDBACK_TYPES = [
 ];
 
 export default function AboutPage() {
+  // 反馈表单
   const [feedbackType, setFeedbackType] = useState("bug");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -17,6 +20,32 @@ export default function AboutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+
+  // 版本检查
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkDone, setCheckDone] = useState(false);
+
+  // 启动时自动检查一次
+  useEffect(() => {
+    checkUpdate();
+  }, []);
+
+  const checkUpdate = async () => {
+    setChecking(true);
+    setCheckDone(false);
+    try {
+      const result = await invoke<{ version: string; url: string } | null>("check_update", {
+        currentVersion: CURRENT_VERSION,
+      });
+      setUpdateInfo(result);
+      setCheckDone(true);
+    } catch {
+      // 静默忽略
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!title.trim()) { setError("请填写标题"); return; }
@@ -30,7 +59,7 @@ export default function AboutPage() {
         title: title.trim(),
         content: content.trim(),
         contact: contact.trim() || null,
-        version: "3.40.20",
+        version: CURRENT_VERSION,
       });
       setSubmitted(true);
       setTitle("");
@@ -70,6 +99,53 @@ export default function AboutPage() {
             </div>
           </div>
         </div>
+
+        {/* 版本信息与更新检查 */}
+        <div className="mt-4 pt-4 border-t border-[hsl(var(--border))] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-[hsl(var(--text-secondary))]">版本</span>
+            <span className="text-sm font-medium text-[hsl(var(--text-primary))]">v{CURRENT_VERSION}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {updateInfo && (
+              <span className="text-xs text-[hsl(var(--accent))]">
+                🆕 v{updateInfo.version} 已发布
+              </span>
+            )}
+            {checkDone && !updateInfo && (
+              <span className="text-xs text-[hsl(var(--text-tertiary))]">已是最新版本</span>
+            )}
+            <button
+              onClick={checkUpdate}
+              disabled={checking}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--accent))] bg-[hsl(var(--accent)_/_0.1)] rounded-lg hover:bg-[hsl(var(--accent)_/_0.15)] transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={checking ? "animate-spin" : ""} />
+              {checking ? "检查中..." : "检查更新"}
+            </button>
+          </div>
+        </div>
+
+        {/* 新版本下载提示 */}
+        {updateInfo && (
+          <div className="mt-3 flex items-center justify-between rounded-lg bg-[hsl(var(--accent)_/_0.08)] border border-[hsl(var(--accent)_/_0.2)] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-[hsl(var(--text-primary))]">
+                新版本 v{updateInfo.version} 可用
+              </p>
+              <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">
+                建议更新以获取最新功能和修复
+              </p>
+            </div>
+            <button
+              onClick={() => window.open(updateInfo.url, "_blank")}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[hsl(var(--accent))] rounded-lg hover:opacity-90 transition-opacity"
+            >
+              <Download size={12} />
+              前往下载
+            </button>
+          </div>
+        )}
       </Card>
 
       {/* 问题反馈表单 */}
