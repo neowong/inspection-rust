@@ -49,3 +49,4 @@ release/
 *.docx
 !src-tauri/data/default_template.docx
 *-snapshot.txt
+src-tauri/resources/inspection-rust
