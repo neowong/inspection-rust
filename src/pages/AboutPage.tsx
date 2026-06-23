@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
 import { Network, Mail, Send, CheckCircle2, Download, RefreshCw } from "lucide-react";
 import Card from "../components/ui/Card";
 
@@ -138,7 +139,7 @@ export default function AboutPage() {
               </p>
             </div>
             <button
-              onClick={() => window.open(updateInfo.url, "_blank")}
+              onClick={() => open(updateInfo.url)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[hsl(var(--accent))] rounded-lg hover:opacity-90 transition-opacity"
             >
               <Download size={12} />
