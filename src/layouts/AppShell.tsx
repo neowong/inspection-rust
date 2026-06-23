@@ -45,11 +45,31 @@ export default function AppShell() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
 
   const activeKey = useMemo(
     () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? null,
     [location.pathname]
   );
+
+  // 启动时检查更新（静默，失败忽略）
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const currentVersion = "3.40.17"; // TODO: 从 tauri 配置读取
+        const result = await invoke<{ version: string; url: string } | null>("check_update", {
+          currentVersion,
+        });
+        if (result) {
+          setUpdateInfo(result);
+        }
+      } catch {
+        // 静默忽略
+      }
+    };
+    checkUpdate();
+  }, []);
 
   // 临时提示标签：8 秒后自动消失，level 决定颜色
   useEffect(() => {
@@ -133,6 +153,22 @@ export default function AppShell() {
               </div>
             ))}
           </nav>
+
+          {/* Update notification */}
+          {updateInfo && !collapsed && (
+            <div className="mx-3 mb-2 px-3 py-2 rounded-lg border border-[hsl(var(--accent)_/_0.3)] bg-[hsl(var(--accent)_/_0.08)]">
+              <p className="text-xs font-medium text-[hsl(var(--accent))]">🆕 有新版本</p>
+              <p className="text-[11px] text-[hsl(var(--text-secondary))] mt-0.5">
+                v{updateInfo.version} 已发布
+              </p>
+              <button
+                onClick={() => window.open(updateInfo.url, "_blank")}
+                className="mt-1.5 text-[11px] text-[hsl(var(--accent))] hover:underline"
+              >
+                前往下载 →
+              </button>
+            </div>
+          )}
 
           {/* Collapse toggle */}
           <div className="p-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>

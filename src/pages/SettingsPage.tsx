@@ -210,6 +210,35 @@ export default function SettingsPage() {
       >
         <p>确定要删除此 AI 配置吗？此操作不可恢复。</p>
       </Modal>
+
+      {/* 版本信息 */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-[hsl(var(--text-primary))]">AI巡检助手</p>
+            <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">v3.40.17</p>
+          </div>
+          <button
+            onClick={async () => {
+              try {
+                const result = await invoke<{ version: string; url: string } | null>("check_update", {
+                  currentVersion: "3.40.17",
+                });
+                if (result) {
+                  window.open(result.url, "_blank");
+                } else {
+                  alert("当前已是最新版本");
+                }
+              } catch (e: any) {
+                alert("检查更新失败: " + (typeof e === "string" ? e : e?.message || String(e)));
+              }
+            }}
+            className="px-4 py-2 text-sm font-medium text-[hsl(var(--accent))] hover:bg-[hsl(var(--accent)_/_0.1)] rounded-lg transition-colors"
+          >
+            检查更新
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }

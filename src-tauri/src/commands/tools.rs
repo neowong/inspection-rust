@@ -136,6 +136,149 @@ pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
     state.ip_db.read().is_some()
 }
 
+/// 检查 GitHub Releases 是否有新版本
+/// 返回 (最新版本号, 下载地址, 发布说明)，无更新时返回 None
+#[tauri::command]
+pub async fn check_update(
+    current_version: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let url = "https://api.github.com/repos/neowong/inspection-rust/releases/latest";
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("ai-inspection-update-check")
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client.get(url).send().await
+        .map_err(|e| format!("检查更新失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("检查更新失败，HTTP {}", resp.status()));
+    }
+
+    let release: serde_json::Value = resp.json().await
+        .map_err(|e| format!("解析更新信息失败: {}", e))?;
+
+    let latest_tag = release.get("tag_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+
+    let current = current_version.trim_start_matches('v');
+
+    // 简单版本比较：按 . 分割逐段比较
+    let latest_parts: Vec<u32> = latest_tag.split('.').filter_map(|s| s.parse().ok()).collect();
+    let current_parts: Vec<u32> = current.split('.').filter_map(|s| s.parse().ok()).collect();
+
+    let has_update = latest_parts > current_parts;
+
+    if has_update {
+        let html_url = release.get("html_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let body = release.get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok(Some(serde_json::json!({
+            "version": latest_tag,
+            "url": html_url,
+            "body": body,
+        })))
+    } else {
+        Ok(None)
+    }
+}
+
+/// 匿名使用统计上报（静默，失败忽略）
+/// 统计内容：匿名 device_id、版本号、OS、时间戳
+/// 不收集 IP、用户名、设备数据等敏感信息
+#[tauri::command]
+pub async fn track_usage(version: String) -> Result<(), String> {
+    // 生成匿名 device_id：机器名 + MAC 地址的 SHA-256 哈希，不可逆
+    let device_id = {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mac = get_mac_address().unwrap_or_default();
+        let raw = format!("{}:{}", hostname, mac);
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let os = if cfg!(target_os = "windows") { "windows" }
+        else if cfg!(target_os = "linux") { "linux" }
+        else { "unknown" };
+
+    let _payload = serde_json::json!({
+        "device_id": &device_id,
+        "version": &version,
+        "os": os,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    // 统计接口地址（后续配置化）
+    // 目前先记录日志，等服务器地址确定后再启用
+    tracing::info!("[track] device_id={}, version={}, os={}", device_id, version, os);
+
+    // TODO: 启用实际上报（取消注释并填入服务器地址）
+    // let api_url = "https://your-server.com/api/track";
+    // let client = reqwest::Client::builder()
+    //     .timeout(std::time::Duration::from_secs(5))
+    //     .build()
+    //     .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+    // let _ = client.post(api_url)
+    //     .json(&payload)
+    //     .send()
+    //     .await;
+
+    Ok(())
+}
+
+/// 获取本机 MAC 地址
+fn get_mac_address() -> Option<String> {
+    // 读取 /sys/class/net/*/address (Linux) 或通过网络接口获取
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_dir("/sys/class/net").ok()?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name != "lo" && !name.starts_with("docker") && !name.starts_with("br-")
+            })
+            .filter_map(|entry| {
+                let path = entry.path().join("address");
+                std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+            })
+            .next()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 通过 ipconfig /all 获取
+        std::process::Command::new("ipconfig")
+            .args(["/all"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout.lines()
+                    .find(|line| line.contains("Physical Address") || line.contains("物理地址"))
+                    .and_then(|line| {
+                        line.split(':').last().map(|s| s.trim().replace('-', ":"))
+                    })
+            })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 /// 静默下载 ip2region_v4.xdb 到二进制同目录，完成后自动加载到内存
 /// 前端通过 listen("ip-db-download-progress") 监听进度 {percent, downloaded, total}
 #[tauri::command]
