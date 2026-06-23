@@ -1,6 +1,6 @@
 # AI巡检助手 — 用户操作手册
 
-> 版本：v3.40.16 | 适用平台：Windows / Linux
+> 版本：v3.40.17 | 适用平台：Windows / Linux
 
 ---
 
@@ -14,6 +14,8 @@
 6. [执行巡检](#6-执行巡检)
 7. [报告管理](#7-报告管理)
 8. [工具箱](#8-工具箱)
+   - [端口扫描](#81-端口扫描)
+   - [路由跟踪](#82-路由跟踪)
 9. [日志分析](#9-日志分析)
 10. [系统设置](#10-系统设置)
 11. [常见问题排查](#11-常见问题排查)
@@ -211,15 +213,43 @@ DOCX 含封面、基本信息表、巡检结果表（序号/项目/巡检内容/
 
 | 工具 | 功能 |
 |------|------|
+| 子网计算器 | CIDR 网段计算、IP 范围、掩码转换 |
 | 存活扫描 | ICMP ping + TCP 135/445 回退，CIDR 网段扫描 |
-| TCP 端口扫描 | 指定端口范围 TCP connect 扫描 |
-| UDP 端口扫描 | UDP 探针 + ICMP Port Unreachable 检测（DNS/SNMP/NTP 协议识别）|
+| TCP 端口扫描 | 指定端口范围 TCP connect 扫描，常用服务预设标签（SMB/FTP/邮件/远程登录/数据库等）|
+| UDP 端口扫描 | UDP 探针 + ICMP Port Unreachable 检测（DNS/SNMP/NTP/NetBIOS 等协议识别）|
+| **路由跟踪** | 调用系统 traceroute/tracert，显示每跳节点 IP、延迟、归属地（离线 IP 库，一键下载）|
 | WEB 检测 | HTTP/HTTPS 连通性和响应状态码 |
 | SNMP v2c | Community + OID GET |
 | SNMP v3 | USM 认证（MD5/SHA1/SHA256）+ 加密（DES/AES128）|
 | Zabbix Agent | 被动模式探测（agent.ping/version/hostname）|
 
 > 所有 IP 输入框强制英文输入法（imeMode disabled），避免中文输入法误输入。
+
+### 8.1 端口扫描
+
+输入目标 IP，选择端口（手动输入或点击预设标签）和超时，点击"开始扫描"。
+
+**TCP 预设标签**：常用端口 / Web 端口 / 数据库端口 / SMB 文件共享 / FTP / 邮件服务 / 远程登录 / 基础设施 / 全端口范围
+
+**UDP 预设标签**：常用 UDP / DNS+DHCP+NTP / SNMP 管理 / 发现服务 / SMB NetBIOS / Syslog TFTP
+
+### 8.2 路由跟踪
+
+输入目标 IP 或域名（支持域名自动解析），设最大跳数（默认 30）和每跳超时（默认 1000ms），点击"开始跟踪"。
+
+结果表格显示：
+- **跳数**：1, 2, 3...
+- **节点 IP**：该跳路由器 IP，`*` 表示超时无响应
+- **归属地**：国家 省市 运营商（需下载 IP 库）
+- **延迟**：毫秒，`*` 表示超时
+
+**IP 归属地**：
+- 首次使用时提示"IP 归属地库未安装"，点击 **"一键下载"** 即可自动下载（~11MB）并启用，无需重启
+- 也可手动下载 `ip2region_v4.xdb` 放到程序可执行文件同目录
+- 路由跟踪本身不依赖 IP 库，未下载也能使用（归属地列显示为空）
+- Linux 需先安装 `traceroute` 命令：`sudo apt install traceroute`
+
+> **注意**：路由跟踪可能需要数十秒，视网络跳数而定。Windows 需 tracert（系统自带），Linux 需 traceroute。
 
 ---
 

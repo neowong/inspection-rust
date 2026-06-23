@@ -11,7 +11,7 @@
 - **批量巡检** — 多设备并发 SSH 执行，实时进度，支持暂停/停止/重启/重试，部分完成状态
 - **AI 分析** — 集成 OpenAI 兼容 API / DeepSeek，逐条命令评判生成分析报告
 - **报告生成** — DOCX 报告（docx-rs 直接生成，不依赖 Office），支持 AI 评判/人工评判，单设备/批量 ZIP/合并 DOCX
-- **工具箱** — 存活扫描、TCP/UDP 端口扫描、WEB 检测、SNMP v2c/v3、Zabbix Agent 探测
+- **工具箱** — 存活扫描、TCP/UDP 端口扫描（含 SMB/FTP/邮件/远程登录等常用服务预设）、路由跟踪（离线 IP 归属地解析，一键下载启用）、WEB 检测、SNMP v2c/v3、Zabbix Agent 探测
 - **日志分析** — 设备日志解析与 AI 分析，CSV 导出
 - **数据库容器部署** — 支持 Docker/Podman/K8s，按容器名直连，退出码区分"容器未运行"与"客户端未安装"
 
