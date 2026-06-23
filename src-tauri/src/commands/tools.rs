@@ -57,36 +57,42 @@ pub async fn scan_live_hosts(
 
 #[tauri::command]
 pub async fn scan_ports(
+    app: tauri::AppHandle,
     ip: String,
     ports: String,
     timeout_ms: u64,
 ) -> Result<Vec<services::port_scanner::PortScanResult>, String> {
     tracing::info!("TCP 端口扫描开始: ip={}, ports={}, timeout={}ms", ip, ports, timeout_ms);
     let start = std::time::Instant::now();
-    let result = services::port_scanner::scan_ports(&ip, &ports, timeout_ms).await;
+    let results = services::port_scanner::scan_ports_with_callback(&ip, &ports, timeout_ms, move |result| {
+        let _ = app.emit("port-scan-result", &result);
+    }).await;
     let latency = start.elapsed().as_millis();
-    match &result {
+    match &results {
         Ok(r) => tracing::info!("TCP 端口扫描完成: ip={}, ports={}, results={}, latency={}ms", ip, ports, r.len(), latency),
         Err(e) => tracing::warn!("TCP 端口扫描失败: ip={}, ports={}, latency={}ms, error={}", ip, ports, latency, e),
     }
-    result
+    results
 }
 
 #[tauri::command]
 pub async fn scan_udp_ports(
+    app: tauri::AppHandle,
     ip: String,
     ports: String,
     timeout_ms: u64,
 ) -> Result<Vec<services::port_scanner::UdpPortResult>, String> {
     tracing::info!("UDP 端口扫描开始: ip={}, ports={}, timeout={}ms", ip, ports, timeout_ms);
     let start = std::time::Instant::now();
-    let result = services::port_scanner::scan_udp_ports(&ip, &ports, timeout_ms).await;
+    let results = services::port_scanner::scan_udp_ports_with_callback(&ip, &ports, timeout_ms, move |result| {
+        let _ = app.emit("udp-scan-result", &result);
+    }).await;
     let latency = start.elapsed().as_millis();
-    match &result {
+    match &results {
         Ok(r) => tracing::info!("UDP 端口扫描完成: ip={}, ports={}, results={}, latency={}ms", ip, ports, r.len(), latency),
         Err(e) => tracing::warn!("UDP 端口扫描失败: ip={}, ports={}, latency={}ms, error={}", ip, ports, latency, e),
     }
-    result
+    results
 }
 
 #[tauri::command]
@@ -226,6 +232,7 @@ pub async fn check_update(
 /// 匿名使用统计上报（静默，失败忽略）
 /// 统计内容：匿名 device_id、版本号、OS、时间戳
 /// 不收集 IP、用户名、设备数据等敏感信息
+/// 日志不写入本地文件（仅 debug 级别，RUST_LOG=debug 时才显示）
 #[tauri::command]
 pub async fn track_usage(version: String) -> Result<(), String> {
     // 生成匿名 device_id：机器名 + MAC 地址的 SHA-256 哈希，不可逆
@@ -245,7 +252,7 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         else if cfg!(target_os = "linux") { "linux" }
         else { "unknown" };
 
-    let _payload = serde_json::json!({
+    let payload = serde_json::json!({
         "device_id": &device_id,
         "version": &version,
         "os": os,
@@ -255,7 +262,8 @@ pub async fn track_usage(version: String) -> Result<(), String> {
     // 统计接口地址
     let api_url = "https://neowong.eu.org/stats/api/track";
 
-    tracing::info!("[track] device_id={}, version={}, os={}", device_id, version, os);
+    // 仅 debug 级别日志，不写入本地日志文件
+    tracing::debug!("[track] device_id={}, version={}, os={}", device_id, version, os);
 
     // 实际上报（静默，失败忽略）
     let client = reqwest::Client::builder()
@@ -263,7 +271,7 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
     let _ = client.post(api_url)
-        .json(&_payload)
+        .json(&payload)
         .send()
         .await;
 

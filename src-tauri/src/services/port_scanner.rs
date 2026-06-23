@@ -156,6 +156,44 @@ pub async fn scan_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Result<
     Ok(results)
 }
 
+/// 扫描端口，每完成一个端口立即调用回调函数（用于实时推送结果）
+pub async fn scan_ports_with_callback<F>(ip: &str, ports_input: &str, timeout_ms: u64, callback: F) -> Result<Vec<PortScanResult>, String>
+where
+    F: Fn(&PortScanResult) + Send + Sync + 'static,
+{
+    if ip.trim().is_empty() || ip.trim().parse::<std::net::IpAddr>().is_err() {
+        return Err("请输入有效的 IP 地址".into());
+    }
+    let ports = parse_ports(ports_input)?;
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let max_concurrent = 500usize;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+    let callback = std::sync::Arc::new(callback);
+    let mut handles = Vec::with_capacity(ports.len());
+
+    let ip = ip.to_string();
+    for port in ports {
+        let ip = ip.clone();
+        let sem = semaphore.clone();
+        let cb = callback.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            let result = tokio::task::spawn_blocking(move || scan_one(&ip, port, timeout))
+                .await
+                .unwrap();
+            cb(&result);
+            result
+        }));
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for h in handles {
+        results.push(h.await.unwrap());
+    }
+    results.sort_by_key(|r| r.port);
+    Ok(results)
+}
+
 // ============================================================================
 // UDP Scanner
 // ============================================================================
@@ -305,6 +343,44 @@ pub async fn scan_udp_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Res
             tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout))
                 .await
                 .unwrap()
+        }));
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for h in handles {
+        results.push(h.await.unwrap());
+    }
+    results.sort_by_key(|r| r.port);
+    Ok(results)
+}
+
+/// 扫描 UDP 端口，每完成一个端口立即调用回调函数（用于实时推送结果）
+pub async fn scan_udp_ports_with_callback<F>(ip: &str, ports_input: &str, timeout_ms: u64, callback: F) -> Result<Vec<UdpPortResult>, String>
+where
+    F: Fn(&UdpPortResult) + Send + Sync + 'static,
+{
+    if ip.trim().is_empty() || ip.trim().parse::<std::net::IpAddr>().is_err() {
+        return Err("请输入有效的 IP 地址".into());
+    }
+    let ports = parse_ports(ports_input)?;
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let max_concurrent = 300usize;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+    let callback = std::sync::Arc::new(callback);
+    let mut handles = Vec::with_capacity(ports.len());
+
+    let ip = ip.to_string();
+    for port in ports {
+        let ip = ip.clone();
+        let sem = semaphore.clone();
+        let cb = callback.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            let result = tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout))
+                .await
+                .unwrap();
+            cb(&result);
+            result
         }));
     }
 

@@ -494,23 +494,35 @@ function PortScanner() {
 
   const results = scanType === "tcp" ? tcpResults : udpResults;
 
+  // 实时接收端口扫描结果
+  useEffect(() => {
+    const unlistenTcp = listen<PortScanResult>("port-scan-result", (e) => {
+      setTcpResults(prev => [...(prev ?? []), e.payload]);
+    });
+    const unlistenUdp = listen<UdpPortResult>("udp-scan-result", (e) => {
+      setUdpResults(prev => [...(prev ?? []), e.payload]);
+    });
+    return () => {
+      unlistenTcp.then(fn => fn());
+      unlistenUdp.then(fn => fn());
+    };
+  }, []);
+
   const handleScan = async () => {
     setError("");
-    setTcpResults(null);
-    setUdpResults(null);
+    setTcpResults([]);
+    setUdpResults([]);
     setScanning(true);
     const t = parseInt(timeout, 10) || 2000;
     try {
       if (scanType === "tcp") {
-        const data = await invoke<PortScanResult[]>("scan_ports", {
+        await invoke<void>("scan_ports", {
           ip: ip.trim(), ports: ports.trim(), timeoutMs: t,
         });
-        setTcpResults(data);
       } else {
-        const data = await invoke<UdpPortResult[]>("scan_udp_ports", {
+        await invoke<void>("scan_udp_ports", {
           ip: ip.trim(), ports: ports.trim(), timeoutMs: t,
         });
-        setUdpResults(data);
       }
     } catch (e: any) {
       setError(typeof e === "string" ? e : e?.message || String(e));
