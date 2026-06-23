@@ -50,3 +50,4 @@ release/
 !src-tauri/data/default_template.docx
 *-snapshot.txt
 src-tauri/resources/inspection-rust
+src-tauri/resources/ip2region.xdb
