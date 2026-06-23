@@ -877,7 +877,11 @@ pub fn delete_record_report(record_id: i64, state: State<AppState>) -> Result<()
     .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
 
     if let Some(ref path) = record.report_path {
-        let _ = std::fs::remove_file(path);
+        if !path.starts_with("/") && !path.contains("..") {
+            let _ = std::fs::remove_file(path);
+        } else {
+            tracing::warn!("[delete_record_report] 可疑删除路径被阻止: {}", path);
+        }
     }
     conn.execute(
         "UPDATE inspection_records SET report_path = NULL, updated_at = ?1 WHERE id = ?2",

@@ -85,15 +85,21 @@ fn read_device_inspection_data(
     let cmd_texts: std::collections::HashMap<i64, (String, bool)> = if spec_entries.is_empty() {
         std::collections::HashMap::new()
     } else {
-        let ids: Vec<String> = spec_entries.iter().map(|(id, _)| id.to_string()).collect();
+        let placeholders: Vec<String> = spec_entries.iter().enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
         let sql = format!(
             "SELECT id, command, COALESCE(needs_root, 0) FROM command_pool WHERE id IN ({})",
-            ids.join(",")
+            placeholders.join(",")
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params: Vec<Box<dyn ToSql>> = spec_entries.iter()
+            .map(|(id, _)| Box::new(*id) as Box<dyn ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
             .query_map(
-                &[] as &[&dyn rusqlite::types::ToSql],
+                param_refs.as_slice(),
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, bool>(2)?)),
             )
             .map_err(|e| e.to_string())?;
@@ -400,16 +406,23 @@ pub fn list_batches(
     let mut records_by_batch: std::collections::HashMap<i64, Vec<serde_json::Value>> =
         std::collections::HashMap::new();
     if !batches.is_empty() {
-        let batch_ids: Vec<String> = batches.iter().map(|b| b.id.to_string()).collect();
+        // 参数化 IN 查询，占位符 ?N 按动态索引生成（参照 list_devices 模式）
+        let placeholders: Vec<String> = batches.iter().enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
         let all_records_sql = format!(
             "SELECT {} FROM inspection_records WHERE batch_id IN ({}) ORDER BY batch_id, id",
             crate::db::models::RECORD_SUMMARY_COLUMNS,
-            batch_ids.join(",")
+            placeholders.join(",")
         );
+        let params: Vec<Box<dyn ToSql>> = batches.iter()
+            .map(|b| Box::new(b.id) as Box<dyn ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let all_records = crate::db::query::query_all(
             &conn,
             &all_records_sql,
-            &[] as &[&dyn rusqlite::types::ToSql],
+            &param_refs,
             crate::db::models::record_summary_from_row,
         )?;
         for r in all_records {
@@ -1252,7 +1265,12 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
 
     // 事务成功后清理磁盘上的报告文件（失败了不要紧，不影响 DB 一致性）
     for path in &report_files {
-        let _ = std::fs::remove_file(path);
+        // 防御性校验：确保路径在 reports 目录内
+        if !path.starts_with("/") && !path.contains("..") {
+            let _ = std::fs::remove_file(path);
+        } else {
+            tracing::warn!("[delete_batch] 可疑删除路径被阻止: {}", path);
+        }
     }
     if let Some(ref path) = combined_path {
         let _ = std::fs::remove_file(path);
