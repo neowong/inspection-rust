@@ -129,6 +129,12 @@ pub struct TraceHop {
     pub rtt_ms: Option<f64>,
 }
 
+/// 检查离线 IP 归属地库是否已加载
+#[tauri::command]
+pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
+    state.ip_db.read().is_some()
+}
+
 /// 路由跟踪：调用系统 traceroute/tracert，解析每跳并查归属地
 ///
 /// - Windows: `tracert -d -h <max_hops> -w <timeout> <target>`

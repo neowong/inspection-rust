@@ -542,6 +542,7 @@ pub fn run() {
             commands::tools::snmp_get,
             commands::tools::snmp_v3_get,
             commands::tools::check_zabbix_agent,
+            commands::tools::has_ip_db,
             commands::tools::trace_route,
             // Stats
             get_stats,

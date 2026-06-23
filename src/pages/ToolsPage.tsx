@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle2, XCircle, Plug, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -705,6 +705,12 @@ function Traceroute() {
   const [tracing, setTracing] = useState(false);
   const [hops, setHops] = useState<TraceHop[] | null>(null);
   const [error, setError] = useState("");
+  const [hasIpDb, setHasIpDb] = useState(true); // 默认 true，避免闪烁
+
+  // 检查离线 IP 归属地库是否已加载
+  useEffect(() => {
+    invoke<boolean>("has_ip_db").then(setHasIpDb).catch(() => setHasIpDb(false));
+  }, []);
 
   const handleTrace = async () => {
     setError("");
@@ -749,6 +755,22 @@ function Traceroute() {
           {tracing ? "跟踪中..." : "开始跟踪"}
         </button>
       </div>
+
+      {!hasIpDb && (
+        <div className="rounded-lg border border-[hsl(var(--warning)_/_0.3)] bg-[hsl(var(--warning)_/_0.08)] px-4 py-3 text-sm space-y-1">
+          <p className="font-medium text-[hsl(var(--warning))]">IP 归属地库未加载</p>
+          <p className="text-[hsl(var(--text-secondary))]">
+            路由跟踪可正常使用，但节点归属地无法解析。
+            如需归属地功能，请下载 IP 库并放到程序安装目录：
+          </p>
+          <ol className="list-decimal pl-5 text-[hsl(var(--text-secondary))] space-y-0.5">
+            <li>下载 <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" className="text-[hsl(var(--accent))] underline">ip2region_v4.xdb</a></li>
+            <li>将文件重命名为 <code className="bg-[hsl(var(--bg-hover))] px-1 rounded text-xs">ip2region.xdb</code></li>
+            <li>放到程序可执行文件（inspection-rust）同目录</li>
+            <li>重启程序</li>
+          </ol>
+        </div>
+      )}
 
       {tracing && (
         <p className="text-sm text-[hsl(var(--text-tertiary))]">路由跟踪中，最多 {maxHops} 跳，请耐心等待（可能需要数十秒）...</p>
@@ -796,8 +818,9 @@ function Traceroute() {
       )}
 
       <p className="text-xs text-[hsl(var(--text-tertiary))]">
-        调用系统 traceroute（Linux）/ tracert（Windows），归属地由离线 ip2region 库解析。
-        Linux 需先安装 traceroute：sudo apt install traceroute
+        调用系统 traceroute（Linux）/ tracert（Windows）
+        {hasIpDb && "，归属地由离线 ip2region 库解析"}
+        。Linux 需先安装 traceroute：sudo apt install traceroute
       </p>
     </div>
   );
