@@ -222,7 +222,7 @@ pub async fn track_usage(version: String) -> Result<(), String> {
     });
 
     // 统计接口地址
-    let api_url = "https://neowong.eu.org/api/track";
+    let api_url = "https://neowong.eu.org/stats/api/track";
 
     tracing::info!("[track] device_id={}, version={}, os={}", device_id, version, os);
 

@@ -7,12 +7,13 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BASE_PATH = process.env.BASE_PATH || '';
 const JWT_SECRET = process.env.JWT_SECRET || 'ai-inspection-stats-secret-key-change-me';
 
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(BASE_PATH, express.static('public'));
 
 // 数据库初始化
 const db = new sqlite3.Database('./data/stats.db', (err) => {
@@ -93,7 +94,7 @@ function authenticateToken(req, res, next) {
 }
 
 // 登录接口
-app.post('/api/login', (req, res) => {
+app.post(`${BASE_PATH}/api/login`, (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -129,7 +130,7 @@ app.post('/api/login', (req, res) => {
 });
 
 // 统计上报接口（客户端调用）
-app.post('/api/track', (req, res) => {
+app.post(`${BASE_PATH}/api/track`, (req, res) => {
   const { device_id, version, os, timestamp } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
@@ -153,7 +154,7 @@ app.post('/api/track', (req, res) => {
 // Dashboard API（需要认证）
 
 // 总览统计
-app.get('/api/stats/overview', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/stats/overview`, authenticateToken, (req, res) => {
   const queries = {
     totalUsers: `SELECT COUNT(DISTINCT device_id) as count FROM track_records`,
     todayUsers: `SELECT COUNT(DISTINCT device_id) as count FROM track_records WHERE DATE(timestamp) = DATE('now')`,
@@ -178,7 +179,7 @@ app.get('/api/stats/overview', authenticateToken, (req, res) => {
 });
 
 // 版本分布
-app.get('/api/stats/versions', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/stats/versions`, authenticateToken, (req, res) => {
   db.all(
     `SELECT version, COUNT(DISTINCT device_id) as users
      FROM track_records
@@ -195,7 +196,7 @@ app.get('/api/stats/versions', authenticateToken, (req, res) => {
 });
 
 // 操作系统分布
-app.get('/api/stats/os', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/stats/os`, authenticateToken, (req, res) => {
   db.all(
     `SELECT os, COUNT(DISTINCT device_id) as users
      FROM track_records
@@ -211,7 +212,7 @@ app.get('/api/stats/os', authenticateToken, (req, res) => {
 });
 
 // 每日活跃用户趋势（最近30天）
-app.get('/api/stats/daily', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/stats/daily`, authenticateToken, (req, res) => {
   db.all(
     `SELECT DATE(timestamp) as date, COUNT(DISTINCT device_id) as users
      FROM track_records
@@ -228,7 +229,7 @@ app.get('/api/stats/daily', authenticateToken, (req, res) => {
 });
 
 // 最近记录
-app.get('/api/stats/recent', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   db.all(
     `SELECT device_id, version, os, ip, timestamp
@@ -246,7 +247,7 @@ app.get('/api/stats/recent', authenticateToken, (req, res) => {
 });
 
 // 验证令牌
-app.get('/api/verify', authenticateToken, (req, res) => {
+app.get(`${BASE_PATH}/api/verify`, authenticateToken, (req, res) => {
   res.json({ valid: true, username: req.user.username });
 });
 
