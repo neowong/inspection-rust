@@ -17,10 +17,28 @@ pub fn lookup(db: &[u8], ip: &str) -> Option<String> {
     xdb_parse::search_ip(ip, db).ok().map(|s| s.to_string())
 }
 
+/// 检查 IP 是否为私有/局域网地址
+pub fn is_private_ip(ip: &str) -> bool {
+    let parts: Vec<u8> = match ip.split('.').map(|s| s.parse::<u8>().ok()).collect::<Option<Vec<_>>>() {
+        Some(p) if p.len() == 4 => p,
+        _ => return false,
+    };
+    // 10.0.0.0/8
+    if parts[0] == 10 { return true; }
+    // 172.16.0.0/12
+    if parts[0] == 172 && (parts[1] & 0xF0) == 16 { return true; }
+    // 192.168.0.0/16
+    if parts[0] == 192 && parts[1] == 168 { return true; }
+    // 127.0.0.0/8
+    if parts[0] == 127 { return true; }
+    false
+}
+
 /// 将原始 `国家|区域|省份|城市|ISP` 格式化为可读字符串
 /// 例：`中国|0|浙江省|杭州市|电信` → `中国 浙江省杭州市 电信`
-///     `0|0|0|0|0` → 空串（无记录）
-pub fn format_region(raw: &str) -> String {
+///     `0|0|0|0|0` + 私有IP → `局域网`
+///     `0|0|0|0|0` + 公网IP → 空串（无记录）
+pub fn format_region(raw: &str, ip: Option<&str>) -> String {
     let parts: Vec<&str> = raw.split('|').collect();
     if parts.len() < 5 {
         return raw.to_string();
@@ -36,6 +54,12 @@ pub fn format_region(raw: &str) -> String {
         .iter()
         .all(|s| *s == "0" || s.is_empty());
     if all_empty {
+        // 私有/局域网地址返回"局域网"
+        if let Some(addr) = ip {
+            if is_private_ip(addr) {
+                return "局域网".to_string();
+            }
+        }
         return String::new();
     }
 

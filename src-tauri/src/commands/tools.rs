@@ -259,12 +259,18 @@ pub async fn trace_route(
     let mut result: Vec<TraceHop> = Vec::new();
     for (hop, ip, rtt) in hops {
         let region = match (&ip_db, &ip) {
-            (Some(db), Some(ip)) => {
-                crate::services::ip_location::lookup(db, ip)
-                    .map(|raw| crate::services::ip_location::format_region(&raw))
+            (Some(db), Some(addr)) => {
+                crate::services::ip_location::lookup(db, addr)
+                    .map(|raw| crate::services::ip_location::format_region(&raw, Some(addr.as_str())))
                     .unwrap_or_default()
             }
-            _ => String::new(),
+            _ => {
+                // IP 库未加载时，私有地址仍显示"局域网"
+                ip.as_ref()
+                    .filter(|addr| crate::services::ip_location::is_private_ip(addr))
+                    .map(|_| "局域网".to_string())
+                    .unwrap_or_default()
+            }
         };
         result.push(TraceHop { hop, ip, region, rtt_ms: rtt });
     }
