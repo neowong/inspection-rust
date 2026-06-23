@@ -226,19 +226,27 @@
       </div>
     </div>
 
-    <!-- 图表 -->
-    <div class="charts-grid">
-      <div class="chart-card">
-        <h3>📈 每日活跃用户（最近30天）</h3>
+    <!-- 每日活跃用户（全宽） -->
+    <div class="chart-card" style="margin-bottom: 20px;">
+      <h3>📈 每日活跃用户（最近30天）</h3>
+      <div style="height: 200px;">
         <canvas id="dailyChart"></canvas>
       </div>
+    </div>
+
+    <!-- 版本分布 + 操作系统分布（并排） -->
+    <div class="charts-grid">
       <div class="chart-card">
         <h3>📦 版本分布</h3>
-        <canvas id="versionChart"></canvas>
+        <div style="height: 250px;">
+          <canvas id="versionChart"></canvas>
+        </div>
       </div>
       <div class="chart-card">
         <h3>💻 操作系统分布</h3>
-        <canvas id="osChart"></canvas>
+        <div style="height: 250px;">
+          <canvas id="osChart"></canvas>
+        </div>
       </div>
     </div>
 
