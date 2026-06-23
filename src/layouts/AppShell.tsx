@@ -45,11 +45,30 @@ export default function AppShell() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
 
   const activeKey = useMemo(
     () => FLAT_ITEMS.find(item => location.pathname.startsWith(item.path))?.key ?? null,
     [location.pathname]
   );
+
+  // 启动时静默检查更新
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const result = await invoke<{ version: string; url: string } | null>("check_update", {
+          currentVersion: "3.40.21",
+        });
+        if (result) {
+          setUpdateVersion(result.version);
+        }
+      } catch {
+        // 静默忽略
+      }
+    };
+    checkUpdate();
+  }, []);
 
   // 临时提示标签：8 秒后自动消失，level 决定颜色
   useEffect(() => {
@@ -186,6 +205,16 @@ export default function AppShell() {
           </span>
         )}
         <span className="flex-1" />
+        {updateVersion && (
+          <button
+            onClick={() => navigate("/about")}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium animate-in cursor-pointer hover:opacity-80 transition-opacity"
+            style={{ backgroundColor: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
+            title="点击查看详情"
+          >
+            🆕 v{updateVersion}
+          </button>
+        )}
         <span>v3.1</span>
       </footer>
     </div>
