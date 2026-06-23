@@ -36,7 +36,7 @@ pub fn run_commands_with_cancel(
     source: &SSHSessionSource,
     vendor: &str,
     commands: &[String],
-    on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    on_progress: Option<Arc<parking_lot::Mutex<String>>>,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
     tracing::info!(
@@ -59,7 +59,7 @@ fn run_commands_libssh2(
     source: &SSHSessionSource,
     vendor: &str,
     commands: &[String],
-    on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    on_progress: Option<Arc<parking_lot::Mutex<String>>>,
     cancel: Option<Arc<AtomicBool>>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
     if is_cancelled(&cancel) {
@@ -97,9 +97,8 @@ fn run_commands_libssh2(
         }
 
         if let Some(ref progress) = on_progress {
-            if let Ok(mut guard) = progress.lock() {
-                *guard = format!("[{}/{}] {}", i + 1, commands.len(), cmd);
-            }
+            let mut guard = progress.lock();
+            *guard = format!("[{}/{}] {}", i + 1, commands.len(), cmd);
         }
 
         match send_command(

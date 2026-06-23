@@ -301,7 +301,7 @@ fn execute_device_ssh(
     username: &str,
     password: &str,
     commands: &[TemplateCommandSpec],
-    on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    on_progress: Option<Arc<parking_lot::Mutex<String>>>,
     cancel: Arc<AtomicBool>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
     let port = u16::try_from(device.ssh_port)
@@ -830,7 +830,7 @@ async fn inspect_one_device(
     );
 
     // 进度共享：SSH runner 写入当前命令，poller 每隔 2 秒刷新到 DB
-    let progress = Arc::new(std::sync::Mutex::new(String::new()));
+    let progress = Arc::new(parking_lot::Mutex::new(String::new()));
     let progress_clone = Arc::clone(&progress);
     let db_clone = Arc::clone(&db);
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -843,7 +843,7 @@ async fn inspect_one_device(
             if stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let msg = progress_clone.lock().unwrap().clone();
+            let msg = progress_clone.lock().clone();
             if !msg.is_empty() {
                 let conn = db_clone.lock();
                 let _ = conn.execute(

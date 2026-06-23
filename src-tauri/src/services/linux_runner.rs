@@ -35,7 +35,7 @@ pub fn run_commands_exec(
     commands: &[String],
     needs_root_map: &HashMap<String, bool>,
     cancel: Option<Arc<AtomicBool>>,
-    on_progress: Option<Arc<std::sync::Mutex<String>>>,
+    on_progress: Option<Arc<parking_lot::Mutex<String>>>,
 ) -> Result<indexmap::IndexMap<String, String>, String> {
     let total = commands.len();
     tracing::info!(
@@ -71,13 +71,13 @@ pub fn run_commands_exec(
     }
 
     // 2. 共享结果存储：Vec<Option<String>> 按原索引下标回填，保证顺序
-    let results: Arc<std::sync::Mutex<Vec<Option<String>>>> =
-        Arc::new(std::sync::Mutex::new(vec![None; total]));
+    let results: Arc<parking_lot::Mutex<Vec<Option<String>>>> =
+        Arc::new(parking_lot::Mutex::new(vec![None; total]));
     // 完成计数（用于进度反馈）
     let done = Arc::new(AtomicUsize::new(0));
 
     // 3. spawn N 个线程，每个线程一条独立 SSH 连接
-    let errors: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let errors: Arc<parking_lot::Mutex<Vec<String>>> = Arc::new(parking_lot::Mutex::new(Vec::new()));
 
     std::thread::scope(|scope| {
         for (worker_id, shard) in shards.into_iter().enumerate() {
@@ -99,10 +99,10 @@ pub fn run_commands_exec(
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("worker #{} SSH 连接失败: {}", worker_id, e);
-                        let mut errs = errors.lock().unwrap();
+                        let mut errs = errors.lock();
                         errs.push(format!("worker {}: {}", worker_id, e));
                         // 给该分片所有命令打上连接失败标记，保证 results 不留 None
-                        let mut r = results.lock().unwrap();
+                        let mut r = results.lock();
                         for &idx in &shard {
                             r[idx] = Some(format!("[SSH 连接失败: {}]", e));
                             done.fetch_add(1, Ordering::Relaxed);
@@ -122,7 +122,7 @@ pub fn run_commands_exec(
                                 shard.len() - (shard.iter().position(|&i| i == idx).unwrap_or(0))
                             );
                             // 把该 worker 剩余位置标记为"已取消"
-                            let mut r = results.lock().unwrap();
+                            let mut r = results.lock();
                             for &remaining in shard
                                 .iter()
                                 .skip(shard.iter().position(|&i| i == idx).unwrap_or(0))
@@ -141,14 +141,13 @@ pub fn run_commands_exec(
 
                     // 进度反馈：当前正在执行的命令名（多 worker 时只反映最后一个写入的）
                     if let Some(ref progress) = on_progress {
-                        if let Ok(mut p) = progress.lock() {
-                            *p = format!(
-                                "{} ({}/{})",
-                                cmd,
-                                done.load(Ordering::Relaxed) + 1,
-                                total
-                            );
-                        }
+                        let mut p = progress.lock();
+                        *p = format!(
+                            "{} ({}/{})",
+                            cmd,
+                            done.load(Ordering::Relaxed) + 1,
+                            total
+                        );
                     }
 
                     let result = exec_single_command(&session, cmd, needs_root, &source.password);
@@ -169,13 +168,13 @@ pub fn run_commands_exec(
                                     );
                                     // 当前命令仍记录超时
                                     {
-                                        let mut r = results.lock().unwrap();
+                                        let mut r = results.lock();
                                         r[idx] = Some(timeout_msg);
                                         done.fetch_add(1, Ordering::Relaxed);
                                     }
                                     // 标记 worker 剩余位置为"前序超时已跳过"
                                     let pos = shard.iter().position(|&i| i == idx).unwrap_or(0);
-                                    let mut r = results.lock().unwrap();
+                                    let mut r = results.lock();
                                     for &remaining in shard.iter().skip(pos + 1) {
                                         r[remaining] =
                                             Some("[因前序命令超时已跳过]".to_string());
@@ -190,7 +189,7 @@ pub fn run_commands_exec(
                         }
                     };
                     {
-                        let mut r = results.lock().unwrap();
+                        let mut r = results.lock();
                         r[idx] = Some(value);
                     }
                     done.fetch_add(1, Ordering::Relaxed);
@@ -200,14 +199,14 @@ pub fn run_commands_exec(
     });
 
     // 4. 按原顺序组装 IndexMap
-    let final_results = results.lock().unwrap();
+    let final_results = results.lock();
     let mut outputs = indexmap::IndexMap::with_capacity(total);
     for (i, cmd) in commands.iter().enumerate() {
         let value = final_results[i].clone().unwrap_or_else(|| "[未执行]".to_string());
         outputs.insert(cmd.clone(), value);
     }
 
-    let errs = errors.lock().unwrap();
+    let errs = errors.lock();
     tracing::info!(
         "Linux exec 完成: {}/{} 条命令, 连接错误={}",
         done.load(Ordering::Relaxed),
