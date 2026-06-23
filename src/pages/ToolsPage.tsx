@@ -741,21 +741,33 @@ function Traceroute() {
 
   const handleTrace = async () => {
     setError("");
-    setHops(null);
+    setHops([]);
     setTracing(true);
     try {
-      const data = await invoke<TraceHop[]>("trace_route", {
+      await invoke<void>("trace_route", {
         target: target.trim(),
         maxHops: parseInt(maxHops, 10) || 30,
         timeoutMs: parseInt(timeout, 10) || 1000,
       });
-      setHops(data);
     } catch (e: any) {
       setError(typeof e === "string" ? e : e?.message || String(e));
-    } finally {
       setTracing(false);
     }
   };
+
+  // 实时接收每跳结果
+  useEffect(() => {
+    const unlistenHop = listen<TraceHop>("trace-hop", (e) => {
+      setHops(prev => [...(prev ?? []), e.payload]);
+    });
+    const unlistenDone = listen("trace-done", () => {
+      setTracing(false);
+    });
+    return () => {
+      unlistenHop.then(fn => fn());
+      unlistenDone.then(fn => fn());
+    };
+  }, []);
 
   return (
     <div className="space-y-4">
