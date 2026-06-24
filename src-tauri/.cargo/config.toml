@@ -1,3 +1,7 @@
+[build]
+# 内部版使用独立构建目录，避免覆盖 master 的编译产物
+target-dir = "target-internal"
+
 [target.x86_64-pc-windows-gnu]
 linker = "/home/neo/.local/bin/mingw-lld-wrapper"
 # BFD linker has a 16-bit export ordinal limit (65535).
