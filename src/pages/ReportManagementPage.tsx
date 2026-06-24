@@ -32,10 +32,7 @@ export default function ReportManagementPage() {
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
-  // Regenerate: per-record loading state by action
-  const [regenerating, setRegenerating] = useState<{id: number; action: "re-analyze" | "regenerate"} | null>(null);
-  // Success feedback: briefly show text after operation completes
-  const [successHint, setSuccessHint] = useState<{id: number; text: string} | null>(null);
+
   // Download / delete
   const [downloading, setDownloading] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -117,39 +114,6 @@ export default function ReportManagementPage() {
     loadBatches();
   }, [selectedBatch?.id, loadBatches]);
 
-  // 显示成功提示，2 秒后清除
-  const flashSuccess = (id: number, text: string) => {
-    setSuccessHint({ id, text });
-    setTimeout(() => setSuccessHint(null), 2000);
-  };
-
-  // 单个记录：重新 AI 评判
-  const handleReAnalyze = async (recordId: number) => {
-    setRegenerating({ id: recordId, action: "re-analyze" });
-    try {
-      await invoke("analyze_record", { recordId });
-      await refreshAfterMutation(recordId);
-      flashSuccess(recordId, "AI 已重新评判");
-    } catch (e: any) {
-      console.error(String(e));
-    } finally {
-      setRegenerating(null);
-    }
-  };
-
-  // 单个记录：重新生成报告
-  const handleRegenerateReport = async (recordId: number) => {
-    setRegenerating({ id: recordId, action: "regenerate" });
-    try {
-      await invoke("generate_docx_report", { recordId, templateId: null });
-      await refreshAfterMutation(recordId);
-      flashSuccess(recordId, "报告已重新生成");
-    } catch (e: any) {
-      console.error(String(e));
-    } finally {
-      setRegenerating(null);
-    }
-  };
 
   // 单设备：仅 AI 分析
   const refreshBatch = async (batchId: number) => {
@@ -244,6 +208,10 @@ export default function ReportManagementPage() {
     () => (selectedBatch?.records || []).some((r: any) => r.ai_status === "completed"),
     [selectedBatch?.records]
   );
+  const hasAnyReport = useMemo(
+    () => (selectedBatch?.records || []).some((r: any) => r.report_path),
+    [selectedBatch?.records]
+  );
 
   const recordColumns = useMemo(() => [
     { key: "device", header: "设备", render: (r: any) => {
@@ -326,12 +294,12 @@ export default function ReportManagementPage() {
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "ai"} disabled={!!batchGenerating}
                   onClick={handleBatchAiJudge}>
-                  AI评判
+                  {hasAnalyzedRecords ? "重新AI评判" : "AI评判"}
                 </Button>
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "manual"} disabled={!!batchGenerating}
                   onClick={handleBatchManual}>
-                  人工评判
+                  {hasAnyReport ? "重新生成" : "人工评判"}
                 </Button>
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "combined"}
@@ -368,40 +336,13 @@ export default function ReportManagementPage() {
                     </h3>
                     <div className="flex gap-1.5 flex-wrap">
                       <Button variant="ghost" size="sm" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
-                      {(fullRecord.ai_status === "completed" || fullRecord.ai_status === "failed") && (
-                        successHint?.id === fullRecord.id && successHint?.text === "AI 已重新评判" ? (
-                          <span className="text-xs text-[hsl(var(--success))] px-2 py-1 font-medium">✓ AI 已重新评判</span>
-                        ) : (
-                          <Button variant="ghost" size="sm"
-                            loading={regenerating?.id === fullRecord.id && regenerating?.action === "re-analyze"}
-                            disabled={regenerating?.id === fullRecord.id}
-                            onClick={() => handleReAnalyze(fullRecord.id)}>重新AI评判</Button>
-                        )
-                      )}
                       {fullRecord.report_path ? (
-                        successHint?.id === fullRecord.id && successHint?.text === "报告已重新生成" ? (
-                          <span className="text-xs text-[hsl(var(--success))] px-2 py-1 font-medium">✓ 报告已重新生成</span>
-                        ) : (
-                          <>
-                            <Button variant="ghost" size="sm"
-                              loading={regenerating?.id === fullRecord.id && regenerating?.action === "regenerate"}
-                              disabled={regenerating?.id === fullRecord.id}
-                              onClick={() => handleRegenerateReport(fullRecord.id)}>重新生成</Button>
-                            <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}
-                              onClick={() => handleDownload(fullRecord.id)}>下载</Button>
-                            <Button variant="ghost" size="sm" loading={deleting === fullRecord.id}
-                              onClick={() => handleDelete(fullRecord.id)}>删除</Button>
-                          </>
-                        )
-                      ) : fullRecord.ai_status === "completed" ? (
-                        successHint?.id === fullRecord.id && successHint?.text === "报告已重新生成" ? (
-                          <span className="text-xs text-[hsl(var(--success))] px-2 py-1 font-medium">✓ 报告已生成</span>
-                        ) : (
-                          <Button variant="ghost" size="sm"
-                            loading={regenerating?.id === fullRecord.id && regenerating?.action === "regenerate"}
-                            disabled={regenerating?.id === fullRecord.id}
-                            onClick={() => handleRegenerateReport(fullRecord.id)}>生成报告</Button>
-                        )
+                        <>
+                          <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}
+                            onClick={() => handleDownload(fullRecord.id)}>下载</Button>
+                          <Button variant="ghost" size="sm" loading={deleting === fullRecord.id}
+                            onClick={() => handleDelete(fullRecord.id)}>删除</Button>
+                        </>
                       ) : (
                         <Button variant="ghost" size="sm" disabled>下载</Button>
                       )}
