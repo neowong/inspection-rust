@@ -731,7 +731,7 @@ export default function TemplatesPage() {
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">分类</label>
               <Select value={cmdForm.category} onChange={(e) => setCmdForm({ ...cmdForm, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>)}
               </Select>
             </div>
           </div>
