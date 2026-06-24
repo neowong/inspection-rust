@@ -34,10 +34,21 @@ pub fn is_private_ip(ip: &str) -> bool {
     false
 }
 
+/// 判断字段值是否为空（ip2region 用 "0" / "Reserved" / "保留" / "内网IP" 等表示无值）
+fn is_field_empty(s: &str) -> bool {
+    s.is_empty()
+        || s == "0"
+        || s.eq_ignore_ascii_case("Reserved")
+        || s.eq_ignore_ascii_case("保留")
+        || s == "内网IP"
+        || s == "内网IP地址"
+}
+
 /// 将原始 `国家|区域|省份|城市|ISP` 格式化为可读字符串
 /// 例：`中国|0|浙江省|杭州市|电信` → `中国 浙江省杭州市 电信`
 ///     `0|0|0|0|0` + 私有IP → `局域网`
 ///     `0|0|0|0|0` + 公网IP → 空串（无记录）
+///     `Reserved|0|0|0|0` + 私有IP → `局域网`
 pub fn format_region(raw: &str, ip: Option<&str>) -> String {
     let parts: Vec<&str> = raw.split('|').collect();
     if parts.len() < 5 {
@@ -49,10 +60,10 @@ pub fn format_region(raw: &str, ip: Option<&str>) -> String {
     let city = parts[3].trim();
     let isp = parts[4].trim();
 
-    // 全部为 0 → 无记录
+    // 全部为空值 → 无记录
     let all_empty = [country, region, province, city, isp]
         .iter()
-        .all(|s| *s == "0" || s.is_empty());
+        .all(|s| is_field_empty(s));
     if all_empty {
         // 私有/局域网地址返回"局域网"
         if let Some(addr) = ip {
@@ -64,26 +75,26 @@ pub fn format_region(raw: &str, ip: Option<&str>) -> String {
     }
 
     let mut bits: Vec<String> = Vec::new();
-    // 国家（0 表示内网/保留，显示原始）
-    if !country.is_empty() && country != "0" {
+    // 国家
+    if !is_field_empty(country) {
         bits.push(country.to_string());
     }
     // 省+市合并（省=市时去重）
-    if !province.is_empty() && province != "0" {
-        if !city.is_empty() && city != "0" && province != city {
+    if !is_field_empty(province) {
+        if !is_field_empty(city) && province != city {
             bits.push(format!("{}{}", province, city));
         } else {
             bits.push(province.to_string());
         }
-    } else if !city.is_empty() && city != "0" {
+    } else if !is_field_empty(city) {
         bits.push(city.to_string());
     }
     // 区域（如 "华东"）
-    if !region.is_empty() && region != "0" {
+    if !is_field_empty(region) {
         bits.push(region.to_string());
     }
     // ISP
-    if !isp.is_empty() && isp != "0" {
+    if !is_field_empty(isp) {
         bits.push(isp.to_string());
     }
     bits.join(" ")
