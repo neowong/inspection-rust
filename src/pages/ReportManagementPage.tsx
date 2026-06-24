@@ -29,10 +29,9 @@ export default function ReportManagementPage() {
   const [recordLoading, setRecordLoading] = useState(false);
 
   const [batchGenerating, setBatchGenerating] = useState<"" | "ai" | "manual" | "combined">("");
-  // 记录当前正在执行操作的批次 id，切批次后回来仍能显示 loading
-  const [processingBatchId, setProcessingBatchId] = useState<number | null>(null);
+  const [processingBatches, setProcessingBatches] = useState<Record<number, "ai" | "manual">>({});
   // 批次操作完成后显示简短反馈
-  const [batchDone, setBatchDone] = useState<"" | "ai" | "manual">("");
+  const [batchDone, setBatchDone] = useState<{type: "ai" | "manual"; batchId: number} | null>(null);
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
@@ -136,9 +135,9 @@ export default function ReportManagementPage() {
 
   // 显示批次操作成功提示，仅当用户仍在该任务时显示
   const flashBatchDone = (type: "ai" | "manual", batchId: number) => {
-    if (selectedBatch?.id !== batchId) return; // 切走了就不显示了
-    setBatchDone(type);
-    setTimeout(() => setBatchDone(""), 2000);
+    if (selectedBatch?.id !== batchId) return;
+    setBatchDone({ type, batchId });
+    setTimeout(() => setBatchDone(null), 2000);
   };
 
   // 批次：AI 评判 — 先分析再生成单个报告
@@ -147,14 +146,14 @@ export default function ReportManagementPage() {
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || []; // 提前捕获，避免切批次后变成别的任务的
     setBatchGenerating("ai");
-    setProcessingBatchId(batchId);
+    setProcessingBatches(prev => ({...prev, [batchId]: "ai"}));
     try {
       await invoke("analyze_batch", { batchId, force: hasAnalyzedRecords });
       await refreshAfterMutation(expandedRecordId ?? undefined);
       await generateAllReports(batchId, records);
       flashBatchDone("ai", batchId);
     } catch (e) { console.error(String(e)); }
-    finally { setBatchGenerating(""); setProcessingBatchId(null); }
+    finally { setBatchGenerating(""); setProcessingBatches(prev => { const n = {...prev}; delete n[batchId]; return n; }); }
   };
 
   // 批次：人工评判 — 直接生成单个报告（跳过 AI）
@@ -163,12 +162,12 @@ export default function ReportManagementPage() {
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || [];
     setBatchGenerating("manual");
-    setProcessingBatchId(batchId);
+    setProcessingBatches(prev => ({...prev, [batchId]: "manual"}));
     try {
       await generateAllReports(batchId, records);
       flashBatchDone("manual", batchId);
     } catch (e) { console.error(String(e)); }
-    finally { setBatchGenerating(""); setProcessingBatchId(null); }
+    finally { setBatchGenerating(""); setProcessingBatches(prev => { const n = {...prev}; delete n[batchId]; return n; }); }
   };
 
   // 批次：下载综合报告（合并已有单报告 + 保存对话框）
@@ -311,16 +310,16 @@ export default function ReportManagementPage() {
               <div className="flex items-center gap-2 flex-wrap mb-3">
                 <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `任务 #${selectedBatch.id}`}</h2>
                 <Button size="sm" variant="ghost"
-                  loading={batchGenerating === "ai" && processingBatchId === selectedBatch?.id}
-                  disabled={!!batchGenerating}
+                  loading={processingBatches[selectedBatch?.id ?? -1] === "ai"}
+                  disabled={processingBatches[selectedBatch?.id ?? -1] !== undefined}
                   onClick={handleBatchAiJudge}>
-                  {batchDone === "ai" && selectedBatch?.id === processingBatchId ? "✓ 已重新评判" : (hasAnalyzedRecords ? "重新AI评判" : "AI评判")}
+                  {batchDone?.type === "ai" && batchDone?.batchId === selectedBatch?.id ? "✓ 已重新评判" : (hasAnalyzedRecords ? "重新AI评判" : "AI评判")}
                 </Button>
                 <Button size="sm" variant="ghost"
-                  loading={batchGenerating === "manual" && processingBatchId === selectedBatch?.id}
-                  disabled={!!batchGenerating}
+                  loading={processingBatches[selectedBatch?.id ?? -1] === "manual"}
+                  disabled={processingBatches[selectedBatch?.id ?? -1] !== undefined}
                   onClick={handleBatchManual}>
-                  {batchDone === "manual" && selectedBatch?.id === processingBatchId ? "✓ 已重新生成" : (hasAnyReport ? "重新生成" : "人工评判")}
+                  {batchDone?.type === "manual" && batchDone?.batchId === selectedBatch?.id ? "✓ 已重新生成" : (hasAnyReport ? "重新生成" : "人工评判")}
                 </Button>
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "combined"}
