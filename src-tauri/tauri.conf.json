@@ -1,6 +1,6 @@
 {
   "productName": "AI-Inspection",
-  "version": "3.50.2",
+  "version": "3.52.0",
   "identifier": "com.inspection.rust",
   "build": {
     "frontendDist": "../dist",
@@ -16,7 +16,8 @@
         "height": 900,
         "minWidth": 1024,
         "minHeight": 700,
-        "resizable": true
+        "resizable": true,
+        "visible": false
       }
     ],
     "security": {
