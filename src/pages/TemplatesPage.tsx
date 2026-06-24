@@ -101,6 +101,19 @@ export default function TemplatesPage() {
   const [cmdSaving, setCmdSaving] = useState(false);
   const [cmdSaveError, setCmdSaveError] = useState<string | null>(null);
 
+  // Dynamic vendor list: defaults + custom vendors from DB
+  const [allVendors, setAllVendors] = useState<string[]>([...VENDORS] as string[]);
+
+  // Extract unique vendors from commands and merge with defaults
+  useEffect(() => {
+    const customVendors = [...new Set(commands.map(c => c.vendor))]
+      .filter(v => !(VENDORS as readonly string[]).includes(v))
+      .sort();
+    if (customVendors.length > 0) {
+      setAllVendors([...(VENDORS as unknown as string[]), ...customVendors]);
+    }
+  }, [commands]);
+
   // Report template state
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -355,7 +368,7 @@ export default function TemplatesPage() {
             <Button onClick={openAddTemplate} size="sm">添加模板</Button>
             <Select size="sm" className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
               <option value="">全部厂商</option>
-              {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+              {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <SearchInput value={templateSearch} onChange={setTemplateSearch} placeholder="搜索模板..." />
           </Toolbar>
@@ -396,7 +409,7 @@ export default function TemplatesPage() {
             <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
           </Toolbar>
           <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
-            {["全部", ...VENDORS].map((v) => (
+            {["全部", ...allVendors].map((v) => (
               <button
                 key={v}
                 onClick={() => setCmdVendor(v === "全部" ? "" : v)}
@@ -479,11 +492,14 @@ export default function TemplatesPage() {
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">厂商</label>
-                    <Select value={templateForm.vendor} onChange={(e) => {
+                    <Input value={templateForm.vendor}
+                      list="vendor-list-tpl"
+                      onChange={(e) => {
                       setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
-                    }}>
-                      {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-                    </Select>
+                    }} />
+                    <datalist id="vendor-list-tpl">
+                      {allVendors.map((v) => <option key={v} value={v} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">型号</label>
@@ -616,9 +632,12 @@ export default function TemplatesPage() {
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
+              <Input value={cmdForm.vendor}
+                list="vendor-list-cmd"
+                onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })} />
+              <datalist id="vendor-list-cmd">
+                {allVendors.map((v) => <option key={v} value={v} />)}
+              </datalist>
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
