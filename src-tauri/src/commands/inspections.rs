@@ -254,6 +254,12 @@ fn finalize_batch_status(conn: &rusqlite::Connection, batch_id: i64) -> Result<(
         tracing::info!("批次 #{} 当前为 paused，保持暂停状态不自动收尾", batch_id);
         return Ok(());
     }
+    // 用户已主动停止：保持 stopped 状态，不按记录结果重算覆盖（与 paused 同理，
+    // 避免混合 completed/stopped 时被改成 partially_completed，丢失"主动停止"语义）
+    if current_status.as_deref() == Some("stopped") {
+        tracing::info!("批次 #{} 当前为 stopped，保持停止状态不自动收尾", batch_id);
+        return Ok(());
+    }
 
     // 无记录（空批次）视为完成
     if rows.is_empty() {
@@ -694,6 +700,7 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
 
         // 防止重复执行：已在运行中的批次不可再次启动
         if batch.status == "running" {
+            batch_cancels.lock().remove(&batch_id); // 清理刚注册的 cancel flag
             return Err(format!("巡检任务 #{} 正在运行中，请勿重复执行", batch_id));
         }
 
@@ -710,11 +717,15 @@ pub async fn run_batch(batch_id: i64, state: State<'_, AppState>) -> Result<(), 
             )
             .map_err(|e| e.to_string())?;
             tracing::info!("批次 #{} 无设备，直接标记为完成", batch_id);
+            batch_cancels.lock().remove(&batch_id); // 空批次无需保留 flag
             return Ok(());
         }
 
         // 前置校验：设备是否配置了模板和 SSH 密码
-        validate_devices_ready(&conn, &ids)?;
+        if let Err(e) = validate_devices_ready(&conn, &ids) {
+            batch_cancels.lock().remove(&batch_id); // 校验失败清理 flag
+            return Err(e);
+        }
 
         // 更新批次状态为 running（取消标志已注册，stop_batch 已可见）
         let now = now_str();
@@ -1270,15 +1281,10 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
 
     // 事务成功后清理磁盘上的报告文件（失败了不要紧，不影响 DB 一致性）
     for path in &report_files {
-        // 防御性校验：确保路径在 reports 目录内
-        if !path.starts_with("/") && !path.contains("..") {
-            let _ = std::fs::remove_file(path);
-        } else {
-            tracing::warn!("[delete_batch] 可疑删除路径被阻止: {}", path);
-        }
+        crate::commands::reports::safe_remove_report(path);
     }
     if let Some(ref path) = combined_path {
-        let _ = std::fs::remove_file(path);
+        crate::commands::reports::safe_remove_report(path);
     }
 
     Ok(())

@@ -33,6 +33,31 @@ fn ensure_reports_dir() -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+/// 安全检查：路径是否在 reports 目录内（canonicalize 后比较，防穿越/符号链接）。
+/// 返回规范化后的绝对路径，校验失败返回 Err。
+pub(crate) fn safe_report_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let reports_dir = ensure_reports_dir()?;
+    let canonical_reports = reports_dir.canonicalize().unwrap_or(reports_dir);
+    let p = std::path::PathBuf::from(path);
+    let canonical = p.canonicalize().map_err(|_| format!("报告文件不存在: {}", path))?;
+    if !canonical.starts_with(&canonical_reports) {
+        return Err(format!("不允许访问 reports 目录外的文件: {}", path));
+    }
+    Ok(canonical)
+}
+
+/// 删除单个报告文件：仅在 reports 目录内才删，失败只 warn 不影响调用方。
+pub(crate) fn safe_remove_report(path: &str) {
+    match safe_report_path(path) {
+        Ok(canonical) => {
+            if let Err(e) = std::fs::remove_file(&canonical) {
+                tracing::warn!("[safe_remove_report] 删除失败 {}: {}", canonical.display(), e);
+            }
+        }
+        Err(e) => tracing::warn!("[safe_remove_report] 可疑路径被阻止: {}", e),
+    }
+}
+
 fn report_date(record: &InspectionRecord) -> String {
     record
         .completed_at
@@ -392,10 +417,13 @@ pub async fn analyze_record(
             // 否则记录会永久卡在 processing，前端一直显示"分析中"，且不会被 analyze_batch（非 force）重试。
             let now = now_str();
             let conn = state.db.lock();
-            let _ = conn.execute(
+            if let Err(db_err) = conn.execute(
                 "UPDATE inspection_records SET ai_status = 'failed', error_message = ?1, updated_at = ?2 WHERE id = ?3",
                 rusqlite::params![e, now, record_id],
-            );
+            ) {
+                // 回写失败会导致记录永久卡 processing，必须记录日志便于排查
+                tracing::error!("AI 失败后回写 ai_status=failed 失败 record_id={}: {}", record_id, db_err);
+            }
             Err(e)
         }
     }
@@ -800,7 +828,7 @@ pub async fn download_report(
 ) -> Result<(), String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let (report_path, device_name) = {
+    let (canonical_report, device_name) = {
         let conn = state.db.lock();
         let sql = format!(
             "SELECT {} FROM inspection_records WHERE id = ?1",
@@ -817,6 +845,8 @@ pub async fn download_report(
             .report_path
             .clone()
             .ok_or_else(|| format!("记录 ID {} 尚未生成报告", record_id))?;
+        // 安全校验：确保 report_path 在 reports 目录内，防任意文件读
+        let canonical_report = safe_report_path(&path)?;
         let dev_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
         let device = crate::db::query::query_one(
             &conn,
@@ -825,11 +855,11 @@ pub async fn download_report(
             device_from_row,
         )?
         .ok_or_else(|| format!("设备 ID {} 不存在", record.device_id))?;
-        (path, device.name)
+        (canonical_report, device.name)
     };
 
     let suggested = format!("{}-巡检报告.docx", safe_filename(&device_name));
-    let report_path_clone = report_path.clone();
+    let report_path_clone = canonical_report;
     app.dialog()
         .file()
         .add_filter("Word Document", &["docx"])
@@ -870,6 +900,7 @@ pub async fn save_generated_file(
         _ => "File",
     };
     let extension_clone = extension.clone();
+    // 复制用已校验的 canonical_src，避免校验与复制之间符号链接替换（TOCTOU）
     app.dialog()
         .file()
         .add_filter(ext_label, &[extension_clone.as_str()])
@@ -877,7 +908,7 @@ pub async fn save_generated_file(
         .save_file(move |file_path| {
             if let Some(save_path) = file_path {
                 if let Some(dest) = save_path.as_path().map(|p| p.to_path_buf()) {
-                    if let Err(e) = std::fs::copy(&source_path, &dest) {
+                    if let Err(e) = std::fs::copy(&canonical_src, &dest) {
                         eprintln!("复制生成文件失败: {}", e);
                     }
                 }
@@ -903,11 +934,7 @@ pub fn delete_record_report(record_id: i64, state: State<AppState>) -> Result<()
     .ok_or_else(|| format!("巡检记录 ID {} 不存在", record_id))?;
 
     if let Some(ref path) = record.report_path {
-        if !path.starts_with("/") && !path.contains("..") {
-            let _ = std::fs::remove_file(path);
-        } else {
-            tracing::warn!("[delete_record_report] 可疑删除路径被阻止: {}", path);
-        }
+        safe_remove_report(path);
     }
     conn.execute(
         "UPDATE inspection_records SET report_path = NULL, updated_at = ?1 WHERE id = ?2",
@@ -971,7 +998,20 @@ pub fn update_report_template(
     data: crate::db::models::ReportTemplateUpdate,
     state: State<AppState>,
 ) -> Result<ReportTemplate, String> {
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
+
+    // 设为默认时，先清空其他模板的 is_default，避免出现多行默认（事务保证一致性）
+    if data.is_default == Some(1) {
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE report_templates SET is_default = 0, updated_at = ?1 WHERE id != ?2",
+            rusqlite::params![now_str(), template_id],
+        )
+        .map_err(|e| e.to_string())?;
+        // 先提交清零，再走下面的字段更新
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+
     let mut sets: Vec<&str> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 

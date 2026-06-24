@@ -6,13 +6,52 @@ use tracing::{info, warn};
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
+/// 对响应文本中的 API key 形态打码（sk-... / Bearer ...），
+/// 防止错误体或 debug 日志泄露密钥。仅做模式替换，不影响正常错误信息。
+fn redact_secrets(s: &str) -> String {
+    let mut out = s.to_string();
+    // sk- 开头的 token（OpenAI/DeepSeek 等）
+    let mut redacted = String::new();
+    let bytes: Vec<char> = out.chars().collect();
+    let mut i = 0;
+    while i < bytes.len() {
+        // 匹配 "sk-" 后接非空白字符序列
+        if i + 3 <= bytes.len() && bytes[i] == 's' && bytes[i + 1] == 'k' && bytes[i + 2] == '-' {
+            redacted.push_str("sk-***");
+            i += 3;
+            while i < bytes.len() && !bytes[i].is_whitespace() && !matches!(bytes[i], '"' | '\'' | ',' | '}' | ']') {
+                i += 1;
+            }
+            continue;
+        }
+        redacted.push(bytes[i]);
+        i += 1;
+    }
+    out = redacted;
+    // Bearer <token>
+    if out.find("Bearer ").is_some() {
+        out = out.replace("Bearer ", "Bearer ***");
+    }
+    out
+}
+
 fn get_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
+        // AI API 无需重定向；禁用后避免 307/308 把 Authorization 头带往非预期端点。
+        // 兜底也必须带超时，否则 reqwest::Client::new() 无超时，请求可能挂死卡住 UI。
         reqwest::Client::builder()
             .timeout(Duration::from_secs(180))
             .connect_timeout(Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
+            .unwrap_or_else(|_| {
+                reqwest::Client::builder()
+                    .timeout(Duration::from_secs(180))
+                    .connect_timeout(Duration::from_secs(15))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .expect("带超时的 reqwest client 必能构建")
+            })
     })
 }
 
@@ -152,11 +191,12 @@ pub async fn analyze_with_openai(
             format!("读取 OpenAI 响应失败: {}", e)
         })?;
 
-    // ── 响应日志（debug 级别记录完整响应）──
+    // ── 响应日志（debug 级别记录完整响应，对密钥打码）──
+    let safe_response = redact_secrets(&response_text);
     tracing::debug!(
         "AI 响应详情: model={}, status={}, latency={}ms, response_len={}\n--- RESPONSE (前 5000 字) ---\n{}",
         model, status, latency, response_text.len(),
-        response_text.chars().take(5000).collect::<String>()
+        safe_response.chars().take(5000).collect::<String>()
     );
 
     if !status.is_success() {
@@ -164,7 +204,8 @@ pub async fn analyze_with_openai(
             "AI 请求失败: model={}, status={}, latency={}ms, body_len={}",
             model, status, latency, response_text.len()
         );
-        return Err(format!("OpenAI API 错误 ({}): {}", status, response_text));
+        // 错误体可能被代理回显请求头（含 API key），截断并对 sk-/Bearer 打码后回传
+        return Err(format!("OpenAI API 错误 ({}): {}", status, redact_secrets(&response_text)));
     }
 
     let parsed: serde_json::Value = serde_json::from_str(&response_text)
