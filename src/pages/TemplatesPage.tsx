@@ -47,10 +47,11 @@ interface CommandForm {
   command: string;
   description: string;
   category: string;
+  expectation: string;
 }
 
 const getEmptyCommandForm = (): CommandForm => ({
-  vendor: "H3C", command: "", description: "", category: "general",
+  vendor: "H3C", command: "", description: "", category: "general", expectation: "",
 });
 
 type RptCategory = "network" | "linux" | "database";
@@ -271,7 +272,7 @@ export default function TemplatesPage() {
   const openEditCmd = (c: CommandPool) => {
     const isCustom = !(VENDORS as readonly string[]).includes(c.vendor);
     setEditingCmd(c); setCmdSaveError(null);
-    setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general" });
+    setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general", expectation: c.expectation || "" });
     setCmdVendorCustom(isCustom);
     setCustomVendorInput(isCustom ? c.vendor : "");
     setCmdModal(true);
@@ -713,6 +714,19 @@ export default function TemplatesPage() {
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">描述（可选）</label>
               <Input value={cmdForm.description} onChange={(e) => setCmdForm({ ...cmdForm, description: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">
+                AI 评判提示词
+                <span className="ml-1 text-[hsl(var(--text-tertiary))] font-normal">（可选）</span>
+              </label>
+              <textarea
+                value={cmdForm.expectation}
+                onChange={(e) => setCmdForm({ ...cmdForm, expectation: e.target.value })}
+                placeholder="描述此命令的预期输出或正常阈值，供 AI 评判时参考。&#10;例如：CPU 利用率应低于 80%；各分区磁盘使用率应低于 90%"
+                rows={3}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] outline-none transition-colors duration-150 focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] resize-none"
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">分类</label>

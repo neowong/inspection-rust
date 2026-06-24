@@ -886,6 +886,14 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 31: {}", e))?;
     }
 
+    // ── v32: command_pool 增加 expectation 字段（AI 评判提示词）──
+    if version < 32 {
+        conn.execute_batch("ALTER TABLE command_pool ADD COLUMN expectation TEXT;")
+            .map_err(|e| format!("migration 32: {}", e))?;
+        conn.execute_batch("PRAGMA user_version = 32;")
+            .map_err(|e| format!("migration 32: {}", e))?;
+    }
+
     Ok(())
 }
 

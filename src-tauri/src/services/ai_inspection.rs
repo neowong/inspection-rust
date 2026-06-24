@@ -50,7 +50,11 @@ pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程�
 - /var/log 中有 error 级别日志 → warning"#;
 
 /// Format command outputs into a readable text block for the LLM.
-fn format_command_outputs(command_outputs: &HashMap<String, String>) -> String {
+/// expectations: optional map of command → expected result description
+fn format_command_outputs(
+    command_outputs: &HashMap<String, String>,
+    expectations: &HashMap<String, String>,
+) -> String {
     let mut parts = Vec::new();
     // Sort keys for deterministic ordering
     let mut keys: Vec<&String> = command_outputs.keys().collect();
@@ -64,7 +68,12 @@ fn format_command_outputs(command_outputs: &HashMap<String, String>) -> String {
         } else {
             output.clone()
         };
-        parts.push(format!("【命令】{}\n【输出】\n{}", cmd, truncated));
+        let expectation_line = expectations
+            .get(cmd.as_str())
+            .filter(|e| !e.is_empty())
+            .map(|e| format!("\n【期望】{}", e))
+            .unwrap_or_default();
+        parts.push(format!("【命令】{}{}\n【输出】\n{}", cmd, expectation_line, truncated));
     }
     parts.join("\n\n---\n\n")
 }
@@ -80,6 +89,7 @@ pub async fn analyze_with_openai(
     model: &str,
     base_url: &str,
     command_outputs: &HashMap<String, String>,
+    expectations: &HashMap<String, String>,
 ) -> Result<serde_json::Value, String> {
     let base_url = if base_url.is_empty() {
         "https://api.openai.com"
@@ -88,7 +98,7 @@ pub async fn analyze_with_openai(
     };
 
     let url = format!("{}/v1/chat/completions", base_url);
-    let formatted_input = format_command_outputs(command_outputs);
+    let formatted_input = format_command_outputs(command_outputs, expectations);
 
     let body = serde_json::json!({
         "model": model,

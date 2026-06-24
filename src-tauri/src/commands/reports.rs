@@ -192,9 +192,36 @@ async fn analyze_record_inner(
         cmd_keys.len()
     );
 
+    // 加载命令的期望描述（AI 评判提示词）
+    let expectations: std::collections::HashMap<String, String> = {
+        let conn = app_state.db.lock();
+        let mut names: Vec<&str> = cmd_keys.iter().map(|s| s.as_str()).collect();
+        names.sort();
+        let placeholders: Vec<String> = (0..names.len()).map(|i| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT command, COALESCE(expectation, '') FROM command_pool WHERE command IN ({})",
+            placeholders.join(",")
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params: Vec<Box<dyn rusqlite::ToSql>> = names.iter().map(|s| Box::new(s.to_string()) as Box<dyn rusqlite::ToSql>).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| e.to_string())?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            if let Ok((cmd, exp)) = row {
+                if !exp.is_empty() {
+                    map.insert(cmd, exp);
+                }
+            }
+        }
+        map
+    };
+
     let analysis = match provider.as_str() {
         "openai" => {
-            ai_inspection::analyze_with_openai(&api_key, &model, &base_url, &command_outputs_map)
+            ai_inspection::analyze_with_openai(&api_key, &model, &base_url, &command_outputs_map, &expectations)
                 .await?
         }
         "deepseek" => {
@@ -208,6 +235,7 @@ async fn analyze_record_inner(
                 &model,
                 &deepseek_base,
                 &command_outputs_map,
+                &expectations,
             )
             .await?
         }
