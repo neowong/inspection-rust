@@ -109,13 +109,13 @@ export default function TemplatesPage() {
   const [tplVendorCustom, setTplVendorCustom] = useState(false);
   const [tplCustomVendorInput, setTplCustomVendorInput] = useState("");
 
-  // Extract unique vendors from commands and merge with defaults
+  // Extract unique vendors from commands, custom ones sorted to top
   useEffect(() => {
     const customVendors = [...new Set(commands.map(c => c.vendor))]
       .filter(v => !(VENDORS as readonly string[]).includes(v))
       .sort();
     if (customVendors.length > 0) {
-      setAllVendors([...(VENDORS as unknown as string[]), ...customVendors]);
+      setAllVendors([...customVendors, ...(VENDORS as unknown as string[])]);
     }
   }, [commands]);
 
