@@ -2,6 +2,6 @@ export const VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "Linux", 
 
 export const CATEGORIES = [
   "version", "clock", "performance", "hardware", "storage", "env",
-  "interface", "vlan", "log", "protocol", "vpn", "ha", "security", "wireless", "general",
+  "interface", "log", "protocol", "vpn", "ha", "security", "wireless", "general",
   "system", "disk", "network", "service", "process", "schedule",
 ] as const;

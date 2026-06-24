@@ -1706,7 +1706,7 @@ function SectionHeading({ text, color }: { text: string; color: string }) {
 const CATEGORY_LABELS: Record<string, string> = {
   version: "版本信息", clock: "系统时钟", performance: "性能",
   hardware: "硬件信息", storage: "存储", env: "运行环境",
-  interface: "接口", vlan: "VLAN", log: "日志",
+  interface: "接口", log: "日志",
   protocol: "协议", vpn: "VPN", ha: "高可用", security: "安全策略", wireless: "无线", general: "通用",
   system: "系统信息", disk: "磁盘", network: "网络", service: "服务", process: "进程", schedule: "定时任务",
 };
@@ -1731,6 +1731,7 @@ function CommandList({
   const catGroup = (cat: string) => {
     if (cat === "fan" || cat === "power") return "hardware";
     if (cat === "cpu" || cat === "memory") return "performance";
+    if (cat === "vlan") return "interface";
     return cat;
   };
 
@@ -1807,6 +1808,7 @@ function AvailableCommands({
   const catGroup = (cat: string) => {
     if (cat === "fan" || cat === "power") return "hardware";
     if (cat === "cpu" || cat === "memory") return "performance";
+    if (cat === "vlan") return "interface";
     return cat;
   };
 

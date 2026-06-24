@@ -36,8 +36,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("H3C", "display ip routing-table", "查看路由表", "protocol", 0),
         ("H3C", "display stp brief", "生成树状态", "protocol", 0),
         ("H3C", "display version", "查看系统版本", "version", 0),
-        ("H3C", "display mac-address", "查看 MAC 地址表", "vlan", 0),
-        ("H3C", "display vlan", "查看 VLAN 信息", "vlan", 0),
+        ("H3C", "display mac-address", "查看 MAC 地址表", "interface", 0),
+        ("H3C", "display vlan", "查看 VLAN 信息", "interface", 0),
         ("H3C", "display wlan ap all", "检查 AP 整体上线状态", "wireless", 0),
         ("H3C", "display wlan service-template", "无线服务模板（SSID）状态", "wireless", 0),
         // ==================== 华为 (Huawei VRP) ====================
@@ -63,8 +63,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("华为", "display ip routing-table", "查看路由表", "protocol", 0),
         ("华为", "display stp brief", "生成树状态", "protocol", 0),
         ("华为", "display version", "查看系统版本", "version", 0),
-        ("华为", "display mac-address", "查看 MAC 地址表", "vlan", 0),
-        ("华为", "display vlan", "查看 VLAN 信息", "vlan", 0),
+        ("华为", "display mac-address", "查看 MAC 地址表", "interface", 0),
+        ("华为", "display vlan", "查看 VLAN 信息", "interface", 0),
         // ==================== 思科 (Cisco IOS) ====================
         ("思科", "show clock", "查看系统时钟", "clock", 0),
         ("思科", "show ntp associations", "查看 NTP 状态", "clock", 0),
@@ -87,8 +87,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("思科", "show ip route", "查看路由表", "protocol", 0),
         ("思科", "show spanning-tree", "生成树状态", "protocol", 0),
         ("思科", "show version", "查看系统版本", "version", 0),
-        ("思科", "show mac address-table", "查看 MAC 地址表", "vlan", 0),
-        ("思科", "show vlan brief", "查看 VLAN 信息", "vlan", 0),
+        ("思科", "show mac address-table", "查看 MAC 地址表", "interface", 0),
+        ("思科", "show vlan brief", "查看 VLAN 信息", "interface", 0),
         // ==================== 锐捷 (Ruijie RGOS) ====================
         ("锐捷", "show clock", "查看系统时钟", "clock", 0),
         ("锐捷", "show ntp", "查看 NTP 状态", "clock", 0),
@@ -109,8 +109,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("锐捷", "show ip route", "查看路由表", "protocol", 0),
         ("锐捷", "show spanning-tree", "生成树状态", "protocol", 0),
         ("锐捷", "show version", "查看系统版本", "version", 0),
-        ("锐捷", "show mac-address-table", "查看 MAC 地址表", "vlan", 0),
-        ("锐捷", "show vlan", "查看 VLAN 信息", "vlan", 0),
+        ("锐捷", "show mac-address-table", "查看 MAC 地址表", "interface", 0),
+        ("锐捷", "show vlan", "查看 VLAN 信息", "interface", 0),
         // ==================== 飞塔 (Fortinet FortiGate) ====================
         ("飞塔", "get system status", "系统状态/主机名/型号/序列号", "version", 0),
         ("飞塔", "get system performance status", "查看性能状态", "performance", 0),
