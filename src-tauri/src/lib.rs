@@ -28,6 +28,13 @@ impl AppState {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .expect("Failed to set PRAGMAs");
         db::migrations::run_migrations(&mut conn).expect("Failed to run migrations");
+        // 启动时清理：上次意外退出卡在 processing 的记录重置为 failed
+        if let Err(e) = conn.execute(
+            "UPDATE inspection_records SET ai_status = 'failed', error_message = '应用意外退出导致分析中断', updated_at = datetime('now') WHERE ai_status = 'processing'",
+            [],
+        ) {
+            tracing::warn!("清理卡住的处理中记录失败（可忽略）: {}", e);
+        }
         if let Err(e) = db::seed_data::seed_command_pool(&mut conn) {
             tracing::warn!("命令池种子数据写入失败（可忽略）: {}", e);
         }
