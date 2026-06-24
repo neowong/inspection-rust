@@ -1705,7 +1705,8 @@ function SectionHeading({ text, color }: { text: string; color: string }) {
 
 const CATEGORY_LABELS: Record<string, string> = {
   version: "版本信息", clock: "系统时钟", cpu: "CPU", memory: "内存",
-  hardware: "硬件信息", storage: "存储", interface: "接口", vlan: "VLAN", log: "日志",
+  hardware: "硬件信息", storage: "存储", env: "运行环境",
+  interface: "接口", vlan: "VLAN", log: "日志",
   protocol: "协议", vpn: "VPN", ha: "高可用", security: "安全策略", wireless: "无线", general: "通用",
   system: "系统信息", disk: "磁盘", network: "网络", service: "服务", process: "进程", schedule: "定时任务",
 };
@@ -1727,12 +1728,17 @@ function CommandList({
     });
   };
 
+  const catGroup = (cat: string) => {
+    if (cat === "fan" || cat === "power") return "hardware";
+    return cat;
+  };
+
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();
     for (const cmd of commands) {
-      const cat = cmd.category || "general";
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(cmd);
+      const c = catGroup(cmd.category || "general");
+      if (!map.has(c)) map.set(c, []);
+      map.get(c)!.push(cmd);
     }
     return [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
@@ -1797,12 +1803,17 @@ function AvailableCommands({
     return next;
   });
 
+  const catGroup = (cat: string) => {
+    if (cat === "fan" || cat === "power") return "hardware";
+    return cat;
+  };
+
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();
     for (const cmd of commands) {
-      const cat = cmd.category || "general";
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(cmd);
+      const c = catGroup(cmd.category || "general");
+      if (!map.has(c)) map.set(c, []);
+      map.get(c)!.push(cmd);
     }
     return [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
