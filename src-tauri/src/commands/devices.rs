@@ -171,16 +171,6 @@ pub fn list_devices(
     crate::db::query::query_all(&conn, &sql, &param_refs, device_from_row)
 }
 
-/// 获取单个设备详情
-#[tauri::command]
-pub fn get_device(device_id: i64, state: State<AppState>) -> Result<Device, String> {
-    let conn = state.db.lock();
-
-    let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
-        .ok_or_else(|| format!("设备 ID {} 不存在", device_id))
-}
-
 // ============================================================
 // Mutate Commands
 // ============================================================
@@ -588,7 +578,7 @@ pub async fn check_all_devices_status(
 // ============================================================
 
 /// 自动检测设备型号（通过 SSH 登录执行厂商命令）
-#[tauri::command]
+/// 非前端 invoke，由 detect_device_model_by_id 内部调用
 #[allow(clippy::too_many_arguments)]
 pub async fn detect_device_model(
     ip: String,
@@ -1294,14 +1284,16 @@ fn detect_db_info_sync(
             // 防御性校验：容器名会拼入远端 shell，必须为安全字符集
             // （设备名作为兜底也校验，拦截绕过入库校验的旧数据）
             validate_shell_identifier(cname, "容器/实例名")?;
-            let escaped = raw.replace('"', "\\\"");
-            Ok(format!("{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
-                runtime, cname, escaped))
+            // 用单引号包裹命令体（单引号内一切字面值，不展开 $ ` \），
+            // 内部单引号用 '\'' 转义（经典 shell 退出-转义-重入模式）
+            let sq = raw.replace('\'', "'\\''");
+            Ok(format!("{} exec {} sh -c '{}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
+                runtime, cname, sq))
         } else if is_k8s {
             let cname = if instance_name.is_empty() { "mysql" } else { instance_name };
             validate_shell_identifier(cname, "Pod名")?;
-            let escaped = raw.replace('"', "\\\"");
-            Ok(format!("kubectl exec {} -- sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, escaped))
+            let sq = raw.replace('\'', "'\\''");
+            Ok(format!("kubectl exec {} -- sh -c '{}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, sq))
         } else {
             Ok(format!("{} 2>&1", raw))
         }

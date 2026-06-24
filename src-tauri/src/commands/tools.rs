@@ -239,7 +239,7 @@ pub async fn check_update(
 /// 统计内容：匿名 device_id、版本号、OS、时间戳
 /// 不收集 IP、用户名、设备数据等敏感信息
 /// 日志不写入本地文件（仅 debug 级别，RUST_LOG=debug 时才显示）
-#[tauri::command]
+/// 非前端 invoke，由 lib.rs 启动线程 block_on 调用
 pub async fn track_usage(version: String) -> Result<(), String> {
     // 生成匿名 device_id：机器名 + MAC 地址的 SHA-256 哈希，不可逆
     let device_id = {

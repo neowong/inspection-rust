@@ -731,44 +731,6 @@ fn load_batch_items(
     Ok(items)
 }
 
-/// 将批次中每台设备生成一份 docx 并打包为 zip。返回 zip 文件路径。
-#[tauri::command]
-pub fn generate_batch_docx_zip(
-    batch_id: i64,
-    template_id: Option<i64>,
-    state: State<AppState>,
-) -> Result<String, String> {
-    // 锁内读数据 → 锁外生成 zip → 短锁写回路径
-    let (items, cmd_descs, configs) = {
-        let conn = state.db.lock();
-        let items = load_batch_items(&conn, batch_id)?;
-        let cmd_descs = report_config::load_command_descriptions(&conn);
-        // 每台设备按其厂商/模板独立解析报告配置，避免多厂商批次套用首台模板
-        let configs: Vec<ReportTemplateConfig> = items
-            .iter()
-            .map(|(_, r)| resolve_template_config(&conn, r, template_id))
-            .collect();
-        (items, cmd_descs, configs)
-    }; // 锁释放
-
-    let reports_dir = ensure_reports_dir()?;
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("batch_{}_{}.zip", batch_id, timestamp);
-    let output_path = reports_dir.join(&filename);
-
-    crate::services::docx_engine::generate_zip_bundle(&configs, &items, &cmd_descs, &output_path)?;
-
-    let path_str = output_path.to_string_lossy().to_string();
-    {
-        let conn = state.db.lock();
-        let _ = conn.execute(
-            "UPDATE inspection_batches SET combined_report_path = ?1, updated_at = ?2 WHERE id = ?3",
-            rusqlite::params![path_str, now_str(), batch_id],
-        );
-    }
-    Ok(path_str)
-}
-
 /// 将批次合并为单个 docx，每台设备从新页开始。返回 docx 文件路径。
 #[tauri::command]
 pub fn generate_batch_docx_combined(

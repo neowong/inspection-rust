@@ -342,10 +342,10 @@ fn execute_device_ssh(
                 // 容器名拼入远端 shell，校验安全字符集防注入
                 crate::commands::devices::validate_shell_identifier(cname, "容器/实例名")?;
                 commands.iter().map(|s| {
-                    let escaped = s.command.replace('"', "\\\"");
+                    let sq = s.command.replace('\'', "'\\''");
                     format!(
-                        "{rt} exec {cn} sh -c \"{cmd}\" 2>&1; E=$?; [ $E -eq 127 ] && echo [客户端未安装] || [ $E -ne 0 ] && echo [容器命令失败]",
-                        rt = runtime, cn = cname, cmd = escaped
+                        "{rt} exec {cn} sh -c '{cmd}' 2>&1; E=$?; [ $E -eq 127 ] && echo [客户端未安装] || [ $E -ne 0 ] && echo [容器命令失败]",
+                        rt = runtime, cn = cname, cmd = sq
                     )
                 }).collect()
             } else {
