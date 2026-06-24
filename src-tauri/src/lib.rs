@@ -540,6 +540,7 @@ pub fn run() {
             commands::reports::create_report_template,
             commands::reports::update_report_template,
             commands::reports::delete_report_template,
+            commands::reports::analyze_record,
             commands::reports::generate_docx_report,
             commands::reports::generate_batch_docx_combined,
             commands::reports::delete_record_report,

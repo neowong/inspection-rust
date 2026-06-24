@@ -32,6 +32,8 @@ export default function ReportManagementPage() {
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
+  // Regenerate: per-record loading state by action
+  const [regenerating, setRegenerating] = useState<{id: number; action: "re-analyze" | "regenerate"} | null>(null);
   // Download / delete
   const [downloading, setDownloading] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -112,6 +114,32 @@ export default function ReportManagementPage() {
     }
     loadBatches();
   }, [selectedBatch?.id, loadBatches]);
+
+  // 单个记录：重新 AI 评判
+  const handleReAnalyze = async (recordId: number) => {
+    setRegenerating({ id: recordId, action: "re-analyze" });
+    try {
+      await invoke("analyze_record", { recordId });
+      await refreshAfterMutation(recordId);
+    } catch (e: any) {
+      console.error(String(e));
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
+  // 单个记录：重新生成报告
+  const handleRegenerateReport = async (recordId: number) => {
+    setRegenerating({ id: recordId, action: "regenerate" });
+    try {
+      await invoke("generate_docx_report", { recordId });
+      await refreshAfterMutation(recordId);
+    } catch (e: any) {
+      console.error(String(e));
+    } finally {
+      setRegenerating(null);
+    }
+  };
 
   // 单设备：仅 AI 分析
   const refreshBatch = async (batchId: number) => {
@@ -330,13 +358,28 @@ export default function ReportManagementPage() {
                     </h3>
                     <div className="flex gap-1.5 flex-wrap">
                       <Button variant="ghost" size="sm" loading={logAnalyzing} onClick={() => handleLogAnalyze(fullRecord.id)}>分析日志</Button>
+                      {(fullRecord.ai_status === "completed" || fullRecord.ai_status === "failed") && (
+                        <Button variant="ghost" size="sm"
+                          loading={regenerating?.id === fullRecord.id && regenerating?.action === "re-analyze"}
+                          disabled={regenerating?.id === fullRecord.id}
+                          onClick={() => handleReAnalyze(fullRecord.id)}>重新AI评判</Button>
+                      )}
                       {fullRecord.report_path ? (
                         <>
+                          <Button variant="ghost" size="sm"
+                            loading={regenerating?.id === fullRecord.id && regenerating?.action === "regenerate"}
+                            disabled={regenerating?.id === fullRecord.id}
+                            onClick={() => handleRegenerateReport(fullRecord.id)}>重新生成</Button>
                           <Button variant="ghost" size="sm" loading={downloading === fullRecord.id}
                             onClick={() => handleDownload(fullRecord.id)}>下载</Button>
                           <Button variant="ghost" size="sm" loading={deleting === fullRecord.id}
                             onClick={() => handleDelete(fullRecord.id)}>删除</Button>
                         </>
+                      ) : fullRecord.ai_status === "completed" ? (
+                        <Button variant="ghost" size="sm"
+                          loading={regenerating?.id === fullRecord.id && regenerating?.action === "regenerate"}
+                          disabled={regenerating?.id === fullRecord.id}
+                          onClick={() => handleRegenerateReport(fullRecord.id)}>生成报告</Button>
                       ) : (
                         <Button variant="ghost" size="sm" disabled>下载</Button>
                       )}
