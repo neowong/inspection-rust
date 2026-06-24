@@ -29,6 +29,8 @@ export default function ReportManagementPage() {
   const [recordLoading, setRecordLoading] = useState(false);
 
   const [batchGenerating, setBatchGenerating] = useState<"" | "ai" | "manual" | "combined">("");
+  // 批次操作完成后显示简短反馈
+  const [batchDone, setBatchDone] = useState<"" | "ai" | "manual">("");
   // Log analysis
   const [logAnalyzing, setLogAnalyzing] = useState(false);
   const [logResult, setLogResult] = useState<Record<string, unknown> | null>(null);
@@ -130,6 +132,12 @@ export default function ReportManagementPage() {
     await refreshAfterMutation(expandedRecordId ?? undefined);
   };
 
+  // 显示批次操作成功提示，2 秒后清除
+  const flashBatchDone = (type: "ai" | "manual") => {
+    setBatchDone(type);
+    setTimeout(() => setBatchDone(""), 2000);
+  };
+
   // 批次：AI 评判 — 先分析再生成单个报告
   const handleBatchAiJudge = async () => {
     if (!selectedBatch) return;
@@ -138,6 +146,7 @@ export default function ReportManagementPage() {
       await invoke("analyze_batch", { batchId: selectedBatch.id, force: hasAnalyzedRecords });
       await refreshAfterMutation(expandedRecordId ?? undefined);
       await generateAllReports(selectedBatch.id);
+      flashBatchDone("ai");
     } catch (e) { console.error(String(e)); }
     finally { setBatchGenerating(""); }
   };
@@ -146,8 +155,10 @@ export default function ReportManagementPage() {
   const handleBatchManual = async () => {
     if (!selectedBatch) return;
     setBatchGenerating("manual");
-    try { await generateAllReports(selectedBatch.id); }
-    catch (e) { console.error(String(e)); }
+    try {
+      await generateAllReports(selectedBatch.id);
+      flashBatchDone("manual");
+    } catch (e) { console.error(String(e)); }
     finally { setBatchGenerating(""); }
   };
 
@@ -293,12 +304,12 @@ export default function ReportManagementPage() {
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "ai"} disabled={!!batchGenerating}
                   onClick={handleBatchAiJudge}>
-                  {hasAnalyzedRecords ? "重新AI评判" : "AI评判"}
+                  {batchDone === "ai" ? "✓ 已重新评判" : (hasAnalyzedRecords ? "重新AI评判" : "AI评判")}
                 </Button>
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "manual"} disabled={!!batchGenerating}
                   onClick={handleBatchManual}>
-                  {hasAnyReport ? "重新生成" : "人工评判"}
+                  {batchDone === "manual" ? "✓ 已重新生成" : (hasAnyReport ? "重新生成" : "人工评判")}
                 </Button>
                 <Button size="sm" variant="ghost"
                   loading={batchGenerating === "combined"}
