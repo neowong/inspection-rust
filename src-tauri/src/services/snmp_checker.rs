@@ -310,6 +310,8 @@ macro_rules! localize_key {
             let mut remaining = 1_048_576usize;
             while remaining > 0 {
                 let chunk = remaining.min($password.len());
+                // 空密码会导致 chunk=0 → remaining 永不递减 → 死循环
+                if chunk == 0 { break; }
                 Digest::update(&mut hasher, &$password[..chunk]);
                 remaining -= chunk;
             }

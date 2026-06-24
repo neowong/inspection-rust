@@ -333,6 +333,8 @@ fn execute_device_ssh(
                 let container_name = device.instance_name.clone()
                     .unwrap_or_default();
                 let cname = if container_name.is_empty() { &device.name } else { &container_name };
+                // 容器名拼入远端 shell，校验安全字符集防注入
+                crate::commands::devices::validate_shell_identifier(cname, "容器/实例名")?;
                 commands.iter().map(|s| {
                     let escaped = s.command.replace('"', "\\\"");
                     format!(

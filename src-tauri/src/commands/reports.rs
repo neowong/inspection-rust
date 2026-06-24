@@ -209,11 +209,9 @@ async fn analyze_record_inner(
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         }).map_err(|e| e.to_string())?;
         let mut map = std::collections::HashMap::new();
-        for row in rows {
-            if let Ok((cmd, exp)) = row {
-                if !exp.is_empty() {
-                    map.insert(cmd, exp);
-                }
+        for (cmd, exp) in rows.flatten() {
+            if !exp.is_empty() {
+                map.insert(cmd, exp);
             }
         }
         map

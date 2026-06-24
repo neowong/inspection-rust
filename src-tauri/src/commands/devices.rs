@@ -39,6 +39,43 @@ fn port_u16(port: i64) -> Option<u16> {
     u16::try_from(port).ok().filter(|&p| p > 0)
 }
 
+/// 校验会被拼入远端 shell 的标识符（容器名/Pod名/DB用户名）。
+/// 只允许 [A-Za-z0-9_.:-]，防止 `;` `$()` `|` 等造成命令注入。
+/// 空串允许（由调用方走默认值兜底）。
+pub(crate) fn validate_shell_identifier(field: &str, label: &str) -> Result<(), String> {
+    if field.is_empty() {
+        return Ok(());
+    }
+    let ok = field.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} 只能包含字母、数字和 _ . : - ，不能包含空格或特殊符号（防止命令注入）",
+            label
+        ))
+    }
+}
+
+/// 对双引号上下文转义：外层 `sh -c "..."` 的双引号会展开 `$` `` ` `` `\` `"`，
+/// 密码含这些字符需转义，否则被外层 shell 提前解释/执行。
+fn shell_escape_dq(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' | '$' | '`' | '\\' => out.push('\\'),
+            _ => {}
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// 单引号包裹并转义内部单引号（用于 sh -c 内层 `'...'` 段）。
+fn shell_quote_single(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
 /// 检查设备名称或 IP 是否唯一
 fn check_unique(
     conn: &rusqlite::Connection,
@@ -154,6 +191,14 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
     // 1. 验证 IP 地址
     validate_ip(&data.ip)?;
 
+    // 1b. 校验会被拼入远端 shell 的标识符（防止命令注入）
+    if let Some(ref n) = data.instance_name {
+        validate_shell_identifier(n, "容器/实例名")?;
+    }
+    if let Some(ref u) = data.db_username {
+        validate_shell_identifier(u, "数据库用户名")?;
+    }
+
     let conn = state.db.lock();
 
     // 2. 检查名称和 IP 唯一性
@@ -235,6 +280,14 @@ pub fn update_device(
     // 验证 SSH 端口（如果提供）
     if let Some(port) = data.ssh_port {
         validate_port(port)?;
+    }
+
+    // 校验会被拼入远端 shell 的标识符（防止命令注入）
+    if let Some(ref n) = data.instance_name {
+        validate_shell_identifier(n, "容器/实例名")?;
+    }
+    if let Some(ref u) = data.db_username {
+        validate_shell_identifier(u, "数据库用户名")?;
     }
 
     // 检查唯一性（如果名称或 IP 变更）
@@ -1202,10 +1255,12 @@ fn detect_db_info_sync(
 
     if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
         // 用 MYSQL_PWD 环境变量传密码，避免命令行参数暴露（ps 可见）
-        let mysql_auth = if !db_username.is_empty() { format!("-u{}", db_username) } else { String::new() };
+        // db_username 已在入库时校验为安全字符集，单引号包裹防注入
+        let mysql_auth = if !db_username.is_empty() { format!("-u'{}'", shell_quote_single(db_username)) } else { String::new() };
         let mysql_pwd_prefix = if !db_password.is_empty() {
-            // 转义单引号防止 shell 注入
-            let escaped = db_password.replace('\'', "'\\''");
+            // 外层 sh -c "..." 用双引号，需先对双引号上下文转义 $ ` " \，
+            // 再对内层单引号转义，保证密码原样进入 MYSQL_PWD
+            let escaped = shell_quote_single(&shell_escape_dq(db_password));
             format!("MYSQL_PWD='{}' ", escaped)
         } else { String::new() };
         db_cmds.push(("db_detail".to_string(), format!(
@@ -1213,12 +1268,11 @@ fn detect_db_info_sync(
     } else if vendor_lower.contains("postgres") {
         db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         if !db_username.is_empty() {
-            // 转义单引号防止 shell 注入
             let pg_env = if !db_password.is_empty() {
-                let escaped = db_password.replace('\'', "'\\''");
+                let escaped = shell_quote_single(&shell_escape_dq(db_password));
                 format!("PGPASSWORD='{}' ", escaped)
             } else { String::new() };
-            db_cmds.push(("db_detail".to_string(), format!("{}psql -U {} -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, db_username, db_port)));
+            db_cmds.push(("db_detail".to_string(), format!("{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, shell_quote_single(db_username), db_port)));
         }
     } else if vendor_lower.contains("oracle") {
         db_cmds.push(("db_version".to_string(), "sqlplus -v".to_string()));
@@ -1234,18 +1288,22 @@ fn detect_db_info_sync(
         db_cmds.push(("db_version".to_string(), "echo unknown_db_vendor".to_string()));
     }
 
-    let wrap_cmd = |raw: &str| -> String {
+    let wrap_cmd = |raw: &str| -> Result<String, String> {
         if is_container {
             let cname = if instance_name.is_empty() { device_name } else { instance_name };
+            // 防御性校验：容器名会拼入远端 shell，必须为安全字符集
+            // （设备名作为兜底也校验，拦截绕过入库校验的旧数据）
+            validate_shell_identifier(cname, "容器/实例名")?;
             let escaped = raw.replace('"', "\\\"");
-            format!("{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
-                runtime, cname, escaped)
+            Ok(format!("{} exec {} sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
+                runtime, cname, escaped))
         } else if is_k8s {
             let cname = if instance_name.is_empty() { "mysql" } else { instance_name };
+            validate_shell_identifier(cname, "Pod名")?;
             let escaped = raw.replace('"', "\\\"");
-            format!("kubectl exec {} -- sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, escaped)
+            Ok(format!("kubectl exec {} -- sh -c \"{}\" 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, escaped))
         } else {
-            format!("{} 2>&1", raw)
+            Ok(format!("{} 2>&1", raw))
         }
     };
 
@@ -1259,7 +1317,7 @@ fn detect_db_info_sync(
         "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
     for (_, raw_cmd) in &db_cmds {
-        commands.push(wrap_cmd(raw_cmd));
+        commands.push(wrap_cmd(raw_cmd)?);
     }
 
     let mut needs_root_map = HashMap::new();
@@ -1331,7 +1389,7 @@ fn detect_db_info_sync(
 
     // ── 数据库信息解析 ──
     for (label, raw_cmd) in &db_cmds {
-        let key = wrap_cmd(raw_cmd);
+        let key = wrap_cmd(raw_cmd)?;
         if let Some(output) = outputs.get(&key) {
             let trimmed = output.trim();
             if trimmed.is_empty()
@@ -1380,7 +1438,7 @@ fn detect_db_info_sync(
     let mut db_error: Option<String> = None;
     if !has_db_result {
         for (_label, raw_cmd) in &db_cmds {
-            let key = wrap_cmd(raw_cmd);
+            let key = wrap_cmd(raw_cmd)?;
             if let Some(output) = outputs.get(&key) {
                 let trimmed = output.trim();
                 if trimmed.is_empty() { continue; }
