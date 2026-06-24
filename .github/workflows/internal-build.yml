@@ -36,22 +36,12 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        id: tauri_build
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "AI巡检助手 内部版 ${{ github.ref_name }}"
-          releaseDraft: true
-          prerelease: true
+        working-directory: src-tauri
+        run: npx tauri build --bundles msi
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: internal-windows-installer
-          path: |
-            src-tauri/target-internal/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/msi/*.msi
+          path: src-tauri/target-internal/release/bundle/**/*.msi
           if-no-files-found: warn
