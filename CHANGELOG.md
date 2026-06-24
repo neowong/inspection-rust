@@ -1,5 +1,36 @@
 # 更新日志
 
+## v3.52.0 (2026-06-24)
+
+### ✨ 新功能
+- **新建巡检任务 UI 改进**：去掉「创建后自动执行」复选框，改为「仅创建」+「创建并执行」两个按钮
+
+### 🔒 安全修复
+- **sh-c 命令注入防护**：容器名/DB用户名入库白名单校验 `[A-Za-z0-9_.:-]`；`db_username` 单引号包裹；`db_password` 双引号层转义（修复 `$`/反引号被外层 shell 展开）
+- **sh-c 转义改为单引号**：`docker exec`/`kubectl exec` 内层命令从双引号 `sh -c "..."` 改为单引号 `sh -c '...'`，避免 `$`/反引号注入（L8）
+- **路径删除/复制统一校验**：`canonicalize()` + `starts_with(reports_dir)` 覆盖所有路径操作（H5/M2/M3/M5/L1）
+- **AI base_url scheme 校验**：`create`/`update_ai_config` 校验 `http://`/`https://`（L6）
+- **AI 客户端禁重定向** + 兜底带超时（L7/M11）
+- **AI 错误体/debug 日志打码**：`redact_secrets` 对 `sk-*`/`Bearer` 替换（L4/L5）
+- **ip2region 下载 30MB 上限**（L11）
+- **AboutPage open() 限 github.com 前缀**（L9）
+- **ToolsPage 外链 rel=noopener**（L10）
+
+### 🐛 Bug 修复
+- **SNMP 空密码死循环**：`localize_key!` 宏 `chunk=0` 时 `while remaining > 0` 死循环，加 `break`（H3）
+- **SSH EAGAIN 命令丢失**：新增 `write_all_nb` WouldBlock 重试循环，覆盖命令写入/密码写入/分页符写入（H4）
+- **finalize 覆盖 stopped 状态**：用户停止后子记录重算成 `partially_completed`，加 stopped 保留守卫（逻辑 H1）
+- **多默认模板**：`update_report_template` 设 `is_default=1` 时先事务清空旧默认（H6）
+- **cancel flag 泄漏**：`run_batch` early-return 清理注册的 cancel flag（M1）
+- **analyze_record 静默吞错**：DB 回写失败改 `tracing::error!`（M3）
+- **LiveScanner 监听器泄漏**：unlistenRef + 卸载清理（H8）
+- **useShakeValidation 定时器泄漏**：useEffect 卸载清理（M13）
+
+### 🧹 死代码清理
+- 删除 `get_device`（未注册、前端无调用）
+- 删除 `generate_batch_docx_zip`（历史残留，已被 combined 替代）
+- `detect_device_model` / `track_usage` 去掉冗余 `#[tauri::command]`
+
 ## v3.51.0 (2026-06-24)
 
 ### ✨ 新功能
