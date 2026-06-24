@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock, Plus, X } from "lucide-react";
 import type {
   InspectionTemplate, CommandPool, ReportTemplate, TemplateCommandConfig,
   ReportTemplateConfig, TableColumn, DeviceField,
@@ -103,6 +103,11 @@ export default function TemplatesPage() {
 
   // Dynamic vendor list: defaults + custom vendors from DB
   const [allVendors, setAllVendors] = useState<string[]>([...VENDORS] as string[]);
+  // Custom vendor input toggles
+  const [cmdVendorCustom, setCmdVendorCustom] = useState(false);
+  const [customVendorInput, setCustomVendorInput] = useState("");
+  const [tplVendorCustom, setTplVendorCustom] = useState(false);
+  const [tplCustomVendorInput, setTplCustomVendorInput] = useState("");
 
   // Extract unique vendors from commands and merge with defaults
   useEffect(() => {
@@ -199,9 +204,12 @@ export default function TemplatesPage() {
   const openAddTemplate = () => {
     setEditingTemplate(null);
     setTemplateForm(getEmptyTemplateForm());
+    setTplVendorCustom(false);
+    setTplCustomVendorInput("");
     setTemplateModal(true);
   };
   const openEditTemplate = (t: InspectionTemplate) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(t.vendor);
     setEditingTemplate(t);
     setTemplateForm({
       name: t.name, vendor: t.vendor, model: t.model || "",
@@ -209,9 +217,12 @@ export default function TemplatesPage() {
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
+    setTplVendorCustom(isCustom);
+    setTplCustomVendorInput(isCustom ? t.vendor : "");
     setTemplateModal(true);
   };
   const duplicateTemplate = (t: InspectionTemplate) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(t.vendor);
     setEditingTemplate(null);   // 走创建流程
     setTemplateForm({
       name: `${t.name} (副本)`,
@@ -221,6 +232,8 @@ export default function TemplatesPage() {
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
+    setTplVendorCustom(isCustom);
+    setTplCustomVendorInput(isCustom ? t.vendor : "");
     setTemplateModal(true);
   };
   const handleSaveTemplate = () => {
@@ -250,10 +263,17 @@ export default function TemplatesPage() {
   };
 
   // ----- Command handlers -----
-  const openAddCmd = () => { setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null); setCmdModal(true); };
+  const openAddCmd = () => {
+    setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null);
+    setCmdVendorCustom(false); setCustomVendorInput("");
+    setCmdModal(true);
+  };
   const openEditCmd = (c: CommandPool) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(c.vendor);
     setEditingCmd(c); setCmdSaveError(null);
     setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general" });
+    setCmdVendorCustom(isCustom);
+    setCustomVendorInput(isCustom ? c.vendor : "");
     setCmdModal(true);
   };
   const handleSaveCommand = () => {
@@ -492,14 +512,36 @@ export default function TemplatesPage() {
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">厂商</label>
-                    <Input value={templateForm.vendor}
-                      list="vendor-list-tpl"
-                      onChange={(e) => {
-                      setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
-                    }} />
-                    <datalist id="vendor-list-tpl">
-                      {allVendors.map((v) => <option key={v} value={v} />)}
-                    </datalist>
+                    <div className="flex gap-1">
+                      <Select value={templateForm.vendor}
+                        onChange={(e) => {
+                          if (e.target.value === "__add__") return;
+                          setTplVendorCustom(false);
+                          setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
+                        }}
+                        className="flex-1">
+                        {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
+                        <option value="__add__" disabled style={{fontStyle:"italic",color:"hsl(var(--text-tertiary))"}}>── 已有厂商 ──</option>
+                      </Select>
+                      <button type="button" onClick={() => setTplVendorCustom(true)}
+                        className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] transition-colors"
+                        title="新增自定义厂商">
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                    {tplVendorCustom && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <Input className="flex-1" placeholder="输入自定义厂商名称" value={tplCustomVendorInput}
+                          onChange={(e) => setTplCustomVendorInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}} />
+                        <Button size="sm"
+                          onClick={() => { if (tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}}>确定</Button>
+                        <button type="button" onClick={() => setTplVendorCustom(false)}
+                          className="h-7 w-7 flex items-center justify-center text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">型号</label>
@@ -632,12 +674,31 @@ export default function TemplatesPage() {
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Input value={cmdForm.vendor}
-                list="vendor-list-cmd"
-                onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })} />
-              <datalist id="vendor-list-cmd">
-                {allVendors.map((v) => <option key={v} value={v} />)}
-              </datalist>
+              <div className="flex gap-1">
+                <Select value={cmdForm.vendor}
+                  onChange={(e) => { if (e.target.value === "__add__") return; setCmdVendorCustom(false); setCmdForm({ ...cmdForm, vendor: e.target.value }); }}
+                  className="flex-1">
+                  {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
+                </Select>
+                <button type="button" onClick={() => setCmdVendorCustom(true)}
+                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] transition-colors"
+                  title="新增自定义厂商">
+                  <Plus size={15} />
+                </button>
+              </div>
+              {cmdVendorCustom && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Input className="flex-1" placeholder="输入自定义厂商名称" value={customVendorInput}
+                    onChange={(e) => setCustomVendorInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && customVendorInput.trim()) { setCmdForm({ ...cmdForm, vendor: customVendorInput.trim() }); setCmdVendorCustom(false); }}} />
+                  <Button size="sm"
+                    onClick={() => { if (customVendorInput.trim()) { setCmdForm({ ...cmdForm, vendor: customVendorInput.trim() }); setCmdVendorCustom(false); }}}>确定</Button>
+                  <button type="button" onClick={() => setCmdVendorCustom(false)}
+                    className="h-7 w-7 flex items-center justify-center text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
