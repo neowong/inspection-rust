@@ -332,6 +332,33 @@ pub fn run() {
     // 初始化全局数据目录，供其他模块读取
     let _ = APP_DATA_DIR.set(app_data_dir.clone());
 
+    // Windows 日志行尾修复：tracing 写 \n，记事本需要 \r\n
+    #[cfg(windows)]
+    struct CrlfWriter<W: std::io::Write>(W);
+    #[cfg(windows)]
+    impl<W: std::io::Write> std::io::Write for CrlfWriter<W> {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut written = 0;
+            for &b in buf {
+                if b == b'\n' {
+                    self.0.write_all(b"\r\n")?;
+                } else if b != b'\r' {
+                    self.0.write_all(&[b])?;
+                }
+                written += 1;
+            }
+            Ok(written)
+        }
+        fn flush(&mut self) -> std::io::Result<()> { self.0.flush() }
+    }
+    #[cfg(windows)]
+    struct CrlfMakeWriter<M>(M);
+    #[cfg(windows)]
+    impl<'a, M: tracing_subscriber::fmt::MakeWriter<'a>> tracing_subscriber::fmt::MakeWriter<'a> for CrlfMakeWriter<M> {
+        type Writer = CrlfWriter<M::Writer>;
+        fn make_writer(&'a self) -> Self::Writer { CrlfWriter(self.0.make_writer()) }
+    }
+
     // Logging: stdout + rolling daily file
     // 优先 exe_dir/logs/（与二进制同目录），不可写时 fallback 到 app_data_dir/logs/
     let preferred_log_dir = exe_dir.join("logs");
@@ -362,8 +389,13 @@ pub fn run() {
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stdout)
         .with_ansi(true);
+    // Windows 日志文件行尾修复：tracing 默认写 \n，Windows 记事本需要 \r\n
+    #[cfg(windows)]
+    let file_writer = CrlfMakeWriter(non_blocking);
+    #[cfg(not(windows))]
+    let file_writer = non_blocking;
     let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
+        .with_writer(file_writer)
         .with_ansi(false);
     tracing_subscriber::registry()
         .with(env_filter)
