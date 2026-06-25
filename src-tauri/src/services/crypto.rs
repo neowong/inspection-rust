@@ -11,7 +11,7 @@ fn key_file_path() -> Result<PathBuf, String> {
         .cloned()
         .unwrap_or_else(|| {
             dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
+                .unwrap_or_else(std::env::temp_dir)
                 .join("inspection-rust")
         });
     Ok(dir.join(".key"))
@@ -49,6 +49,7 @@ fn load_or_create_key() -> Result<String, String> {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
                 .map_err(|e| format!("设置密钥文件权限失败: {}", e))?;
         }
+        // TODO: Windows 上可通过 icacls 限制 ACL，但调用外部命令风险较高，暂不处理
 
         Ok(key)
     }

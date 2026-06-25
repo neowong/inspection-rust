@@ -198,7 +198,7 @@ export default function ReportManagementPage() {
     setDownloading(recordId);
     invoke("download_report", { recordId })
       .catch((e) => console.error(String(e)))
-      .finally(() => setDownloading(null));
+      .finally(() => setDownloading(prev => prev === recordId ? null : prev));
   };
 
   const handleDelete = async (recordId: number) => {
@@ -214,7 +214,7 @@ export default function ReportManagementPage() {
     } catch (e: any) {
       console.error(String(e));
     } finally {
-      setDeleting(null);
+      setDeleting(prev => prev === recordId ? null : prev);
     }
   };
 
