@@ -157,7 +157,7 @@ npm run build:release         # frontend + Rust 一步编译
 npm run build:win
 
 # Production desktop bundle (installer)
-npx tauri build               # produces .deb
+npx tauri build               # produces .msi / .deb
 
 # Frontend build only
 npm run build
