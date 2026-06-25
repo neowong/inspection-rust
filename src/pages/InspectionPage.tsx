@@ -15,7 +15,7 @@ import { batchStatusColor } from "../lib/status";
 interface BatchForm {
   name: string;
   device_ids: number[];
-  auto_start: boolean;
+  auto_start?: boolean;
 }
 
 function getDefaultBatchForm(): BatchForm {
@@ -149,7 +149,31 @@ export default function InspectionPage() {
           name: batchForm.name,
           device_ids: JSON.stringify(batchForm.device_ids),
         },
-        autoStart: batchForm.auto_start,
+        autoStart: false,
+      });
+      setModalOpen(false);
+      loadBatches();
+    } catch (e: any) {
+      console.error(typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateAndRun = async () => {
+    if (!batchForm.name.trim()) { triggerShake("template_name"); return; }
+    if (batchForm.device_ids.length === 0) {
+      triggerShake("devices");
+      return;
+    }
+    setCreating(true);
+    try {
+      await invoke("create_batch", {
+        data: {
+          name: batchForm.name,
+          device_ids: JSON.stringify(batchForm.device_ids),
+        },
+        autoStart: true,
       });
       setModalOpen(false);
       loadBatches();
@@ -434,14 +458,11 @@ export default function InspectionPage() {
               })}
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={batchForm.auto_start} onChange={(e) => setBatchForm({ ...batchForm, auto_start: e.target.checked })} />
-            创建后自动执行
-          </label>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => setModalOpen(false)}>取消</Button>
-          <Button onClick={handleCreate} loading={creating}>创建</Button>
+          <Button variant="secondary" onClick={handleCreate} loading={creating} disabled={creating}>仅创建</Button>
+          <Button onClick={handleCreateAndRun} loading={creating} disabled={creating}>创建并执行</Button>
         </div>
       </Modal>
 

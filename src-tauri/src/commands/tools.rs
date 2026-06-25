@@ -235,7 +235,6 @@ pub async fn check_update(
     }
 }
 
-
 /// 静默下载 ip2region_v4.xdb 到二进制同目录，完成后自动加载到内存
 /// 前端通过 listen("ip-db-download-progress") 监听进度 {percent, downloaded, total}
 #[tauri::command]
@@ -290,6 +289,13 @@ pub async fn download_ip_db(
             format!("写入文件失败: {}", e)
         })?;
         downloaded += chunk.len() as u64;
+
+        // 大小上限：ip2region.xdb 正常约 11MB，给 30MB 余量，超出视为异常中止
+        const MAX_IPDB_SIZE: u64 = 30 * 1024 * 1024;
+        if downloaded > MAX_IPDB_SIZE {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("下载文件超过最大限制 ({}MB)，已中止", MAX_IPDB_SIZE / 1024 / 1024));
+        }
 
         // 发进度事件（每 256KB 或完成时）
         if total > 0 && (downloaded % 262144 < chunk.len() as u64 || downloaded == total) {

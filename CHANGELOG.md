@@ -1,5 +1,55 @@
 # 更新日志
 
+## v3.52.0 (2026-06-24)
+
+### ✨ 新功能
+- **新建巡检任务 UI 改进**：去掉「创建后自动执行」复选框，改为「仅创建」+「创建并执行」两个按钮
+
+### 🔒 安全修复
+- **sh-c 命令注入防护**：容器名/DB用户名入库白名单校验 `[A-Za-z0-9_.:-]`；`db_username` 单引号包裹；`db_password` 双引号层转义（修复 `$`/反引号被外层 shell 展开）
+- **sh-c 转义改为单引号**：`docker exec`/`kubectl exec` 内层命令从双引号 `sh -c "..."` 改为单引号 `sh -c '...'`，避免 `$`/反引号注入（L8）
+- **路径删除/复制统一校验**：`canonicalize()` + `starts_with(reports_dir)` 覆盖所有路径操作（H5/M2/M3/M5/L1）
+- **AI base_url scheme 校验**：`create`/`update_ai_config` 校验 `http://`/`https://`（L6）
+- **AI 客户端禁重定向** + 兜底带超时（L7/M11）
+- **AI 错误体/debug 日志打码**：`redact_secrets` 对 `sk-*`/`Bearer` 替换（L4/L5）
+- **ip2region 下载 30MB 上限**（L11）
+- **AboutPage open() 限 github.com 前缀**（L9）
+- **ToolsPage 外链 rel=noopener**（L10）
+
+### 🐛 Bug 修复
+- **SNMP 空密码死循环**：`localize_key!` 宏 `chunk=0` 时 `while remaining > 0` 死循环，加 `break`（H3）
+- **SSH EAGAIN 命令丢失**：新增 `write_all_nb` WouldBlock 重试循环，覆盖命令写入/密码写入/分页符写入（H4）
+- **finalize 覆盖 stopped 状态**：用户停止后子记录重算成 `partially_completed`，加 stopped 保留守卫（逻辑 H1）
+- **多默认模板**：`update_report_template` 设 `is_default=1` 时先事务清空旧默认（H6）
+- **cancel flag 泄漏**：`run_batch` early-return 清理注册的 cancel flag（M1）
+- **analyze_record 静默吞错**：DB 回写失败改 `tracing::error!`（M3）
+- **LiveScanner 监听器泄漏**：unlistenRef + 卸载清理（H8）
+- **useShakeValidation 定时器泄漏**：useEffect 卸载清理（M13）
+
+### 🧹 死代码清理
+- 删除 `get_device`（未注册、前端无调用）
+- 删除 `generate_batch_docx_zip`（历史残留，已被 combined 替代）
+- `detect_device_model` / `track_usage` 去掉冗余 `#[tauri::command]`
+
+## v3.51.0 (2026-06-24)
+
+### ✨ 新功能
+- **AI 评判提示词**：命令库新增「AI 评判提示词」字段，填写期望阈值/判断标准后，AI 评判时自动拼入 prompt 作为 `【期望】`，使结果更准确
+- **自定义厂商**：命令库新增 `+` 按钮，支持添加内置列表之外的厂商；自定义厂商自动出现在 Tab 栏和下拉框，排在其它之上
+- **报告重生成**：批次工具栏按钮根据状态动态切换文案，「AI评判」已有结果时变为「重新AI评判」，「人工评判」已有报告时变为「重新生成」；多任务并发不互锁；操作完成后显示绿色反馈提示
+- **启动清理**：意外退出后重新打开，卡在「分析中」的记录自动置为 failed，可重新分析
+
+### 🔧 改进
+- **命令分类整理**：`cpu`/`memory` 合并为「性能」；`fan`/`power` 归入「硬件信息」；`vlan` 归入「接口」；`env` 改名为「运行环境」
+- **分类下拉中文同步**：命令分类 Select 选项改为中文标签，与 CommandList 展示一致
+- **IP 归属地修复**：ip2region 对私有 IP 返回 "Reserved" 时正确显示为「局域网」
+
+### 🐛 Bug 修复
+- **切批次状态丢失**：切换批次后回来仍保留原任务的加载状态和反馈提示
+- **generateAllReports 闭包引用**：操作开始时提前捕获 records，避免切批次后引用别的任务
+- **flashBatchDone 串到别的任务**：加批次 ID 校验，切走后不显示反馈
+- **多任务互锁**：Task A 运行时 Task B 的按钮仍然可用（processingBatches 独立追踪）
+
 ## v3.50.1 (2026-06-23)
 
 ### 🐛 Bug 修复

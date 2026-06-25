@@ -116,7 +116,12 @@ export default function AboutPage() {
               </p>
             </div>
             <button
-              onClick={() => open(updateInfo.url)}
+              onClick={() => {
+                // 仅允许打开 GitHub releases 链接，防止被劫持的 API 响应导向钓鱼页
+                if (updateInfo.url.startsWith("https://github.com/")) {
+                  open(updateInfo.url);
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[hsl(var(--accent))] rounded-lg hover:opacity-90 transition-opacity"
             >
               <Download size={12} />

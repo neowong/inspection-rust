@@ -62,6 +62,7 @@ export interface CommandPool {
   category: string | null;
   model: string | null;
   needs_root: boolean;
+  expectation: string | null;
   created_at: string;
   updated_at: string;
 }

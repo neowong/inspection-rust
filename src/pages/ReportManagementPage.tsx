@@ -116,6 +116,7 @@ export default function ReportManagementPage() {
     loadBatches();
   }, [selectedBatch?.id, loadBatches]);
 
+
   // 单设备：仅 AI 分析
   const refreshBatch = async (batchId: number) => {
     const full = await invoke<any>("get_batch", { batchId });

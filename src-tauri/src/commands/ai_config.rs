@@ -15,6 +15,21 @@ const AI_CONFIG_COLUMNS: &str =
 // Helpers
 // ============================================================
 
+/// 校验 base_url：空串允许（走默认端点），非空必须是 http/https，
+/// 防止恶意配置把带 Authorization 头的请求导向非预期协议/端点。
+fn validate_base_url(url: &Option<String>) -> Result<(), String> {
+    let Some(url) = url else { return Ok(()); };
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        Ok(())
+    } else {
+        Err(format!("API 地址必须以 http:// 或 https:// 开头，当前为: {}", url))
+    }
+}
+
 fn config_from_row(row: &rusqlite::Row) -> rusqlite::Result<AiModelConfig> {
     Ok(AiModelConfig {
         id: row.get(0)?,
@@ -57,6 +72,7 @@ pub fn create_ai_config(
 ) -> Result<AiModelConfig, String> {
     let conn = state.db.lock();
 
+    validate_base_url(&data.base_url)?;
     // Encrypt the API key before storing
     let encrypted_key = CryptoService::encrypt(&data.api_key_encrypted)?;
     let is_active = data.is_active.unwrap_or(0);
@@ -108,6 +124,7 @@ pub fn update_ai_config(
     .ok_or_else(|| format!("AI 配置 ID {} 不存在", config_id))?;
 
     // Build dynamic UPDATE
+    validate_base_url(&data.base_url)?;
     let mut updater = crate::db::db_helpers::DynamicUpdate::new();
     updater.push_opt("name", &data.name);
     updater.push_opt("provider", &data.provider);

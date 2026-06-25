@@ -237,8 +237,8 @@ pub fn create_command(data: CommandCreate, state: State<AppState>) -> Result<Com
     }
 
     conn.execute(
-        "INSERT INTO command_pool (vendor, command, description, category, model, needs_root) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO command_pool (vendor, command, description, category, model, needs_root, expectation) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
             data.vendor,
             data.command,
@@ -246,6 +246,7 @@ pub fn create_command(data: CommandCreate, state: State<AppState>) -> Result<Com
             data.category,
             data.model,
             data.needs_root.unwrap_or(false) as i64,
+            data.expectation,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -296,6 +297,7 @@ pub fn update_command(
     push_field!(description, "description");
     push_field!(category, "category");
     push_field!(model, "model");
+    push_field!(expectation, "expectation");
 
     if let Some(val) = data.needs_root {
         set_parts.push(format!("needs_root = ?{}", idx));

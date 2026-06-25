@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock } from "lucide-react";
+import { ChevronRight, ChevronDown, Pencil, Trash2, Copy, Star, GripVertical, Lock, Plus, X } from "lucide-react";
 import type {
   InspectionTemplate, CommandPool, ReportTemplate, TemplateCommandConfig,
   ReportTemplateConfig, TableColumn, DeviceField,
@@ -47,10 +47,11 @@ interface CommandForm {
   command: string;
   description: string;
   category: string;
+  expectation: string;
 }
 
 const getEmptyCommandForm = (): CommandForm => ({
-  vendor: "H3C", command: "", description: "", category: "general",
+  vendor: "H3C", command: "", description: "", category: "general", expectation: "",
 });
 
 type RptCategory = "network" | "linux" | "database";
@@ -100,6 +101,24 @@ export default function TemplatesPage() {
   const [confirmDeleteCmd, setConfirmDeleteCmd] = useState<number | null>(null);
   const [cmdSaving, setCmdSaving] = useState(false);
   const [cmdSaveError, setCmdSaveError] = useState<string | null>(null);
+
+  // Dynamic vendor list: defaults + custom vendors from DB
+  const [allVendors, setAllVendors] = useState<string[]>([...VENDORS] as string[]);
+  // Custom vendor input toggles
+  const [cmdVendorCustom, setCmdVendorCustom] = useState(false);
+  const [customVendorInput, setCustomVendorInput] = useState("");
+  const [tplVendorCustom, setTplVendorCustom] = useState(false);
+  const [tplCustomVendorInput, setTplCustomVendorInput] = useState("");
+
+  // Extract unique vendors from commands, custom ones sorted to top
+  useEffect(() => {
+    const customVendors = [...new Set(commands.map(c => c.vendor))]
+      .filter(v => !(VENDORS as readonly string[]).includes(v))
+      .sort();
+    if (customVendors.length > 0) {
+      setAllVendors([...customVendors, ...(VENDORS as unknown as string[])]);
+    }
+  }, [commands]);
 
   // Report template state
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([]);
@@ -186,9 +205,12 @@ export default function TemplatesPage() {
   const openAddTemplate = () => {
     setEditingTemplate(null);
     setTemplateForm(getEmptyTemplateForm());
+    setTplVendorCustom(false);
+    setTplCustomVendorInput("");
     setTemplateModal(true);
   };
   const openEditTemplate = (t: InspectionTemplate) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(t.vendor);
     setEditingTemplate(t);
     setTemplateForm({
       name: t.name, vendor: t.vendor, model: t.model || "",
@@ -196,9 +218,12 @@ export default function TemplatesPage() {
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
+    setTplVendorCustom(isCustom);
+    setTplCustomVendorInput(isCustom ? t.vendor : "");
     setTemplateModal(true);
   };
   const duplicateTemplate = (t: InspectionTemplate) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(t.vendor);
     setEditingTemplate(null);   // 走创建流程
     setTemplateForm({
       name: `${t.name} (副本)`,
@@ -208,6 +233,8 @@ export default function TemplatesPage() {
       commands: t.config?.commands || [],
       report_template_id: t.report_template_id ?? null,
     });
+    setTplVendorCustom(isCustom);
+    setTplCustomVendorInput(isCustom ? t.vendor : "");
     setTemplateModal(true);
   };
   const handleSaveTemplate = () => {
@@ -237,10 +264,17 @@ export default function TemplatesPage() {
   };
 
   // ----- Command handlers -----
-  const openAddCmd = () => { setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null); setCmdModal(true); };
+  const openAddCmd = () => {
+    setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null);
+    setCmdVendorCustom(false); setCustomVendorInput("");
+    setCmdModal(true);
+  };
   const openEditCmd = (c: CommandPool) => {
+    const isCustom = !(VENDORS as readonly string[]).includes(c.vendor);
     setEditingCmd(c); setCmdSaveError(null);
-    setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general" });
+    setCmdForm({ vendor: c.vendor, command: c.command, description: c.description || "", category: c.category || "general", expectation: c.expectation || "" });
+    setCmdVendorCustom(isCustom);
+    setCustomVendorInput(isCustom ? c.vendor : "");
     setCmdModal(true);
   };
   const handleSaveCommand = () => {
@@ -355,7 +389,7 @@ export default function TemplatesPage() {
             <Button onClick={openAddTemplate} size="sm">添加模板</Button>
             <Select size="sm" className="w-28" value={templateVendor} onChange={(e) => setTemplateVendor(e.target.value)}>
               <option value="">全部厂商</option>
-              {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
+              {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <SearchInput value={templateSearch} onChange={setTemplateSearch} placeholder="搜索模板..." />
           </Toolbar>
@@ -396,7 +430,7 @@ export default function TemplatesPage() {
             <SearchInput value={cmdSearch} onChange={setCmdSearch} placeholder="搜索命令..." />
           </Toolbar>
           <div className="flex gap-1 mb-3 border-b border-[hsl(var(--border))] pb-0">
-            {["全部", ...VENDORS].map((v) => (
+            {["全部", ...allVendors].map((v) => (
               <button
                 key={v}
                 onClick={() => setCmdVendor(v === "全部" ? "" : v)}
@@ -479,11 +513,36 @@ export default function TemplatesPage() {
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">厂商</label>
-                    <Select value={templateForm.vendor} onChange={(e) => {
-                      setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
-                    }}>
-                      {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-                    </Select>
+                    <div className="flex gap-1">
+                      <Select value={templateForm.vendor}
+                        onChange={(e) => {
+                          if (e.target.value === "__add__") return;
+                          setTplVendorCustom(false);
+                          setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
+                        }}
+                        className="flex-1">
+                        {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
+                        <option value="__add__" disabled style={{fontStyle:"italic",color:"hsl(var(--text-tertiary))"}}>── 已有厂商 ──</option>
+                      </Select>
+                      <button type="button" onClick={() => setTplVendorCustom(true)}
+                        className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] transition-colors"
+                        title="新增自定义厂商">
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                    {tplVendorCustom && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <Input className="flex-1" placeholder="输入自定义厂商名称" value={tplCustomVendorInput}
+                          onChange={(e) => setTplCustomVendorInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}} />
+                        <Button size="sm"
+                          onClick={() => { if (tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}}>确定</Button>
+                        <button type="button" onClick={() => setTplVendorCustom(false)}
+                          className="h-7 w-7 flex items-center justify-center text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-0.5">型号</label>
@@ -616,9 +675,31 @@ export default function TemplatesPage() {
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
-              <Select value={cmdForm.vendor} onChange={(e) => setCmdForm({ ...cmdForm, vendor: e.target.value })}>
-                {VENDORS.map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
+              <div className="flex gap-1">
+                <Select value={cmdForm.vendor}
+                  onChange={(e) => { if (e.target.value === "__add__") return; setCmdVendorCustom(false); setCmdForm({ ...cmdForm, vendor: e.target.value }); }}
+                  className="flex-1">
+                  {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
+                </Select>
+                <button type="button" onClick={() => setCmdVendorCustom(true)}
+                  className="shrink-0 h-8 w-8 flex items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--accent))] hover:border-[hsl(var(--accent))] transition-colors"
+                  title="新增自定义厂商">
+                  <Plus size={15} />
+                </button>
+              </div>
+              {cmdVendorCustom && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Input className="flex-1" placeholder="输入自定义厂商名称" value={customVendorInput}
+                    onChange={(e) => setCustomVendorInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && customVendorInput.trim()) { setCmdForm({ ...cmdForm, vendor: customVendorInput.trim() }); setCmdVendorCustom(false); }}} />
+                  <Button size="sm"
+                    onClick={() => { if (customVendorInput.trim()) { setCmdForm({ ...cmdForm, vendor: customVendorInput.trim() }); setCmdVendorCustom(false); }}}>确定</Button>
+                  <button type="button" onClick={() => setCmdVendorCustom(false)}
+                    className="h-7 w-7 flex items-center justify-center text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">命令文本</label>
@@ -635,9 +716,22 @@ export default function TemplatesPage() {
               <Input value={cmdForm.description} onChange={(e) => setCmdForm({ ...cmdForm, description: e.target.value })} />
             </div>
             <div>
+              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">
+                AI 评判提示词
+                <span className="ml-1 text-[hsl(var(--text-tertiary))] font-normal">（可选）</span>
+              </label>
+              <textarea
+                value={cmdForm.expectation}
+                onChange={(e) => setCmdForm({ ...cmdForm, expectation: e.target.value })}
+                placeholder="描述此命令的预期输出或正常阈值，供 AI 评判时参考。&#10;例如：CPU 利用率应低于 80%；各分区磁盘使用率应低于 90%"
+                rows={3}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-card))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-tertiary))] outline-none transition-colors duration-150 focus:border-[hsl(var(--accent))] focus:ring-2 focus:ring-[hsl(var(--accent)/0.2)] resize-none"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">分类</label>
               <Select value={cmdForm.category} onChange={(e) => setCmdForm({ ...cmdForm, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c] || c}</option>)}
               </Select>
             </div>
           </div>
@@ -1610,8 +1704,9 @@ function SectionHeading({ text, color }: { text: string; color: string }) {
 // ============================================================
 
 const CATEGORY_LABELS: Record<string, string> = {
-  version: "版本信息", clock: "系统时钟", cpu: "CPU", memory: "内存",
-  hardware: "硬件信息", storage: "存储", interface: "接口", vlan: "VLAN", log: "日志",
+  version: "版本信息", clock: "系统时钟", performance: "性能",
+  hardware: "硬件信息", storage: "存储", env: "运行环境",
+  interface: "接口", log: "日志",
   protocol: "协议", vpn: "VPN", ha: "高可用", security: "安全策略", wireless: "无线", general: "通用",
   system: "系统信息", disk: "磁盘", network: "网络", service: "服务", process: "进程", schedule: "定时任务",
 };
@@ -1633,12 +1728,19 @@ function CommandList({
     });
   };
 
+  const catGroup = (cat: string) => {
+    if (cat === "fan" || cat === "power") return "hardware";
+    if (cat === "cpu" || cat === "memory") return "performance";
+    if (cat === "vlan") return "interface";
+    return cat;
+  };
+
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();
     for (const cmd of commands) {
-      const cat = cmd.category || "general";
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(cmd);
+      const c = catGroup(cmd.category || "general");
+      if (!map.has(c)) map.set(c, []);
+      map.get(c)!.push(cmd);
     }
     return [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
@@ -1703,12 +1805,19 @@ function AvailableCommands({
     return next;
   });
 
+  const catGroup = (cat: string) => {
+    if (cat === "fan" || cat === "power") return "hardware";
+    if (cat === "cpu" || cat === "memory") return "performance";
+    if (cat === "vlan") return "interface";
+    return cat;
+  };
+
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();
     for (const cmd of commands) {
-      const cat = cmd.category || "general";
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(cmd);
+      const c = catGroup(cmd.category || "general");
+      if (!map.has(c)) map.set(c, []);
+      map.get(c)!.push(cmd);
     }
     return [...map.entries()].sort(([a], [b]) => {
       const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);

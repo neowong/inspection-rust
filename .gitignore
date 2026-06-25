@@ -52,6 +52,3 @@ release/
 src-tauri/resources/ai-inspection
 src-tauri/resources/ip2region.xdb
 src-tauri/resources/ip2region_v4.xdb
-ip2region_v4.xdb
-src-tauri/target-internal/
-internal-win64.zip

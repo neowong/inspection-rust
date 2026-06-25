@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CheckCircle2, XCircle, Plug, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -319,6 +319,10 @@ function LiveScanner() {
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState<LiveHostResult[] | null>(null);
   const [error, setError] = useState("");
+  // 保存当前监听器的 unlisten，组件卸载时清理，防止事件监听器泄漏
+  const unlistenRef = useRef<(() => void) | null>(null);
+  // 组件卸载时若仍有未结束的扫描，清理监听器，避免向已卸载组件 setState
+  useEffect(() => () => { unlistenRef.current?.(); }, []);
 
   const handleScan = async () => {
     setError("");
@@ -329,6 +333,7 @@ function LiveScanner() {
     const unlisten = await listen<LiveHostResult>("live-scan-result", (event) => {
       setResults(prev => [...(prev ?? []), event.payload]);
     });
+    unlistenRef.current = unlisten;
 
     try {
       const data = await invoke<LiveHostResult[]>("scan_live_hosts", {
@@ -341,6 +346,7 @@ function LiveScanner() {
       setError(typeof e === "string" ? e : e?.message || String(e));
     } finally {
       unlisten();
+      unlistenRef.current = null;
       setScanning(false);
     }
   };
@@ -832,7 +838,7 @@ function Traceroute() {
           )}
           <p className="text-xs text-[hsl(var(--text-tertiary))]">
             自动下载 ip2region_v4.xdb（~11MB）到程序目录。也可手动下载：
-            <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" className="text-[hsl(var(--accent))] underline ml-1">GitHub</a>
+            <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" rel="noopener noreferrer" className="text-[hsl(var(--accent))] underline ml-1">GitHub</a>
           </p>
         </div>
       )}
