@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, FolderTree, Server, Play, Settings, ChevronLeft, FileSearch, FileText, Wrench, Info } from "lucide-react";
+import { LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info, MessageSquare, PanelLeftClose, PanelLeft } from "lucide-react";
 
-type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings" | "about";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings" | "about" | "chat";
 
 interface NavItem {
   key: PageKey;
@@ -43,7 +43,10 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   },
 ];
 
-const FLAT_ITEMS = NAV_GROUPS.flatMap(g => g.items);
+const FLAT_ITEMS = [
+  ...NAV_GROUPS.flatMap(g => g.items),
+  { key: "chat" as PageKey, label: "对话模式", path: "/chat", icon: MessageSquare },
+];
 
 export default function AppShell() {
   const navigate = useNavigate();
@@ -159,15 +162,27 @@ export default function AppShell() {
             ))}
           </nav>
 
-          {/* Collapse toggle */}
-          <div className="p-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
+          {/* 底部：对话模式 + 收起按钮 */}
+          <div className="px-2 pb-2 space-y-1" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
+            {/* 对话模式 */}
             <button
-              onClick={() => setCollapsed(!collapsed)}
-              className={`w-full flex items-center gap-2 rounded-lg transition-colors hover:bg-[hsl(var(--sidebar-hover))] ${collapsed ? "justify-center h-10" : "px-3 h-9"}`}
+              onClick={() => navigate("/chat")}
+              title={collapsed ? "对话模式" : undefined}
+              className={`flex items-center gap-3 w-full select-none transition-all duration-150 rounded-lg hover:bg-[hsl(var(--sidebar-hover))]
+                ${collapsed ? "px-0 justify-center h-10" : "px-3 h-9 mt-2"}`}
               style={{ color: "hsl(var(--sidebar-text-muted))" }}
             >
-              <ChevronLeft size={14} style={{ transform: collapsed ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
-              {!collapsed && <span className="text-[12px]">收起菜单</span>}
+              <MessageSquare size={18} className="shrink-0" />
+              {!collapsed && <span className="text-[13px] truncate">对话模式</span>}
+            </button>
+            {/* 收起/展开 */}
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              title={collapsed ? "展开菜单" : "收起菜单"}
+              className="flex items-center justify-center w-full h-7 rounded-md transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
+              style={{ color: "hsl(var(--sidebar-text-muted))" }}
+            >
+              {collapsed ? <PanelLeft size={15} /> : <PanelLeftClose size={15} />}
             </button>
           </div>
         </aside>

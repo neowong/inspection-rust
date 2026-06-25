@@ -9,6 +9,7 @@ import SettingsPage from "./pages/SettingsPage";
 import LogAnalysisPage from "./pages/LogAnalysisPage";
 import ToolsPage from "./pages/ToolsPage";
 import AboutPage from "./pages/AboutPage";
+import ChatPage from "./pages/ChatPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/logs" element={<LogAnalysisPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="*" element={
           <div className="flex flex-col items-center justify-center h-64 text-[hsl(var(--text-tertiary))]">
             <p className="text-lg font-medium">404 — 页面不存在</p>

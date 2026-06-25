@@ -35,7 +35,7 @@ fn redact_secrets(s: &str) -> String {
     out
 }
 
-fn get_client() -> &'static reqwest::Client {
+pub fn get_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         // AI API 无需重定向；禁用后避免 307/308 把 Authorization 头带往非预期端点。
         // 兜底也必须带超时，否则 reqwest::Client::new() 无超时，请求可能挂死卡住 UI。
