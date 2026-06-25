@@ -225,6 +225,87 @@ pub fn activate_ai_config(config_id: i64, state: State<AppState>) -> Result<(), 
     Ok(())
 }
 
+/// 测试 AI 配置连通性：发一条简单 prompt，返回 AI 回复的前 100 字
+#[tauri::command]
+pub async fn test_ai_config(config_id: i64, state: State<'_, AppState>) -> Result<String, String> {
+    let (_provider, model_id, api_key_encrypted, base_url) = {
+        let conn = state.db.lock();
+        let sql = "SELECT provider, model_id, api_key_encrypted, base_url FROM ai_model_configs WHERE id = ?1";
+        let config: (String, String, String, Option<String>) = crate::db::query::query_one(
+            &conn,
+            sql,
+            rusqlite::params![config_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            )),
+        )?
+        .ok_or_else(|| format!("AI 配置 ID {} 不存在", config_id))?;
+        config
+    };
+
+    let api_key = CryptoService::decrypt(&api_key_encrypted)?;
+    let base = base_url.unwrap_or_default();
+
+    // 简单测试请求：让 AI 回复 "OK"
+    let base_url_trimmed = if base.is_empty() {
+        "https://api.openai.com".to_string()
+    } else {
+        base.trim_end_matches('/').to_string()
+    };
+    let url = if base_url_trimmed.ends_with("/v1") {
+        format!("{}/chat/completions", base_url_trimmed)
+    } else {
+        format!("{}/v1/chat/completions", base_url_trimmed)
+    };
+
+    let body = serde_json::json!({
+        "model": model_id,
+        "messages": [
+            {"role": "user", "content": "请只回复 OK 两个字母，不要加任何其他内容。"}
+        ],
+        "max_tokens": 10,
+        "temperature": 0
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client.post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    let status = resp.status();
+    let resp_text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!("API 返回错误 ({}): {}", status, &resp_text[..resp_text.len().min(200)]));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&resp_text)
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
+    let content = parsed["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .trim();
+
+    if content.is_empty() {
+        Err("API 返回空内容，请检查模型名称是否正确".to_string())
+    } else {
+        Ok(format!("连接成功！模型回复: {}", &content[..content.len().min(100)]))
+    }
+}
+
 /// 反激活 AI 模型配置
 #[tauri::command]
 pub fn deactivate_ai_config(config_id: i64, state: State<AppState>) -> Result<(), String> {

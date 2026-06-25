@@ -33,6 +33,8 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<{id: number; ok: boolean; msg: string} | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
 
   // Load AI configs
@@ -108,6 +110,15 @@ export default function SettingsPage() {
     invoke<void>("deactivate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
   };
 
+  const handleTest = (id: number) => {
+    setTesting(id);
+    setTestResult(null);
+    invoke<string>("test_ai_config", { configId: id })
+      .then((msg) => setTestResult({ id, ok: true, msg }))
+      .catch((e) => setTestResult({ id, ok: false, msg: typeof e === "string" ? e : e?.message || "测试失败" }))
+      .finally(() => setTesting(null));
+  };
+
   return (
     <div className="space-y-6">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
@@ -137,8 +148,12 @@ export default function SettingsPage() {
               ),
             },
             {
-              key: "actions", header: "操作", width: "180px", render: (r) => (
+              key: "actions", header: "操作", width: "220px", render: (r) => (
                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost"
+                    loading={testing === r.id}
+                    disabled={testing !== null}
+                    onClick={() => handleTest(r.id)}>测试</Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button>
                   {r.is_active
                     ? <Button size="sm" variant="ghost" onClick={() => handleDeactivate(r.id)}>停用</Button>
@@ -153,6 +168,17 @@ export default function SettingsPage() {
           rowKey={(r) => r.id}
           emptyText="暂无 AI 配置，点击上方按钮添加"
         />
+        {testResult && (
+          <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+            testResult.ok
+              ? "bg-[hsl(var(--success)_/_0.1)] border border-[hsl(var(--success)_/_0.3)] text-[hsl(var(--success))]"
+              : "bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] text-[hsl(var(--danger))]"
+          }`}>
+            <span className="font-medium">{testResult.ok ? "✓" : "✗"}</span>
+            {testResult.msg}
+            <button onClick={() => setTestResult(null)} className="ml-auto text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">✕</button>
+          </div>
+        )}
       </Card>
 
       {/* AI Config Modal */}
