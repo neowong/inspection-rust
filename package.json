@@ -1,6 +1,6 @@
 {
   "name": "inspection-rust",
-  "version": "3.50.2",
+  "version": "3.52.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:release": "npm run build && cd src-tauri && cargo build --release",
-    "build:win": "npm run build && cd src-tauri && cargo build --target x86_64-pc-windows-gnu --release"
+    "build:win": "npm run build && cd src-tauri && cargo build --target x86_64-pc-windows-gnu --release",
+    "version": "node scripts/set-version.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
