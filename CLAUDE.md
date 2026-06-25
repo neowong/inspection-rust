@@ -120,6 +120,9 @@ ai-inspection/
 - **SNMP v3**: Self-implemented ASN.1 BER codec. Key localization: 1MB password hashing → Ku → Kul = Hash(Ku||engineID||Ku). Auth key lengths: MD5=16, SHA1=20, SHA256=32. MAC always 12 bytes. msgData is SEQUENCE (0x30) unencrypted, OCTET STRING (0x04) when encrypted. Engine discovery via empty GET → REPORT, auto-retry on `notInTimeWindow`.
 - **Zabbix protocol**: Frame format `ZBXD\x01` + LE64 length + JSON. Response read in two phases: header (13 bytes) → parse length → read rest. Shows raw hex on parse failure for debugging.
 - **Batch creation non-blocking**: `create_batch`(auto_start) and `run_batch` spawn `tokio::spawn` background tasks and return immediately — frontend shows batch instantly, 3s polling updates progress. Helper `await_handles_and_finalize()` updates final status.
+- **Window initialization**: `visible: true` + `transparent: true` + `decorations: true` in `tauri.conf.json`. Never use `visible: false` + `window.show()` — Linux WebKitGTK 下标题栏装饰不会正确初始化，导致关闭按钮失效。body 内联 `background-color` 减少闪烁。
+- **Windows 日志 CRLF**: tracing_subscriber 默认写 `\n`，Windows 记事本需要 `\r\n`。`CrlfWriter<W>` + `CrlfMakeWriter<M>` 包装器在 `#[cfg(windows)]` 下自动转换。
+- **版本检测 internal- 前缀兼容**: `check_update` 的 GitHub API 可能返回 `internal-vx.y.z` tag。需先 `trim_start_matches("internal-")` 再 `trim_start_matches('v')`，避免解析错误导致误报更新。
 
 ## Windows 交叉编译注意事项
 
@@ -154,7 +157,7 @@ npm run build:release         # frontend + Rust 一步编译
 npm run build:win
 
 # Production desktop bundle (installer)
-npx tauri build               # produces .deb / .AppImage
+npx tauri build               # produces .deb
 
 # Frontend build only
 npm run build
