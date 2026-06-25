@@ -107,16 +107,28 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app (Universal)
-        run: npx tauri build --target universal-apple-darwin
+        run: npx tauri build --target universal-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      - name: Find DMG
+        id: find-dmg
+        run: |
+          DMG=$(find src-tauri/target -name "*.dmg" | head -1)
+          echo "dmg_path=$DMG" >> $GITHUB_OUTPUT
+          echo "Found DMG: $DMG"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          path: src-tauri/target/**/bundle/dmg/*.dmg
           if-no-files-found: warn
 
       - name: Upload to Release
+        if: steps.find-dmg.outputs.dmg_path != ''
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          files: ${{ steps.find-dmg.outputs.dmg_path }}
