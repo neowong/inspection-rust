@@ -166,6 +166,7 @@ export default function SettingsPage() {
           ]}
           data={configs}
           rowKey={(r) => r.id}
+          onRowDoubleClick={(r) => openEdit(r)}
           emptyText="暂无 AI 配置，点击上方按钮添加"
         />
         {testResult && (
