@@ -136,7 +136,13 @@ pub async fn analyze_with_openai(
         base_url.trim_end_matches('/')
     };
 
-    let url = format!("{}/v1/chat/completions", base_url);
+    // 兼容用户填了完整路径（如 .../compatible-mode/v1）或仅域名（如 api.openai.com）
+    // 避免重复拼接 /v1
+    let url = if base_url.ends_with("/v1") {
+        format!("{}/chat/completions", base_url)
+    } else {
+        format!("{}/v1/chat/completions", base_url)
+    };
     let formatted_input = format_command_outputs(command_outputs, expectations);
 
     let body = serde_json::json!({
