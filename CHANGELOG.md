@@ -6,6 +6,8 @@
 - **AI 配置测试连接**：新增「测试连接」按钮，验证 API Key 和 URL 是否可用
 
 ### 🐛 Bug 修复
+- **Linux 关闭按钮失效**：`visible:false` + `window.show()` 在 WebKitGTK 下导致标题栏装饰未初始化，改为 `visible:true` + `transparent:true`
+- **启动闪烁优化**：WebView 背景透明 + body 内联背景色，替代窗口隐藏方案，兼容所有平台
 - **Windows 日志文件行尾修复**：tracing 默认写 LF，Windows 记事本不识别，添加 CRLF 转换器
 - **版本检测 internal- 前缀兼容**：`internal-v3.53.0` tag 去掉 `internal-` 前缀后再比较，避免误报更新
 - **DeepSeek 响应兼容**：修复 `content` 为 `null` 或空串时的解析错误
@@ -16,6 +18,7 @@
 
 ### 🔧 改进
 - **发版流程优化**：master 全平台发布，internal 只发 Windows 版
+- **构建目标精简**：去掉 AppImage，只保留 NSIS + DEB
 
 ## v3.52.0 (2026-06-25)
 
