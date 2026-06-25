@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis",
+      "msi",
       "deb"
     ],
     "icon": [
@@ -41,11 +41,6 @@
     "resources": [
       "WebView2Loader.dll",
       "MicrosoftEdgeWebview2Setup.exe"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "both"
-      }
-    }
+    ]
   }
 }
