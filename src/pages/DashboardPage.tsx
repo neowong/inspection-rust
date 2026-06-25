@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Monitor, Wifi, WifiOff, FileText, Zap, Package, Clock, CheckCircle2,
-  Server, Router, ShieldCheck, Database, FileCheck, ArrowRight,
+  Server, Router, ShieldCheck, Database, FileCheck, ArrowRight, MoreHorizontal,
 } from "lucide-react";
 import type { Stats } from "../types";
 
@@ -92,6 +92,7 @@ export default function DashboardPage() {
           <StatRow label="安全设备" value={v("security_device_count")} icon={ShieldCheck} color="warning" onClick={() => navigate("/devices?type=firewall,loadbalancer")} />
           <StatRow label="服务器" value={v("server_count")} icon={Server} color="success" onClick={() => navigate("/devices?type=server")} />
           <StatRow label="数据库" value={v("database_count")} icon={Database} color="accent" onClick={() => navigate("/devices?type=database")} />
+          <StatRow label="其它" value={v("other_device_count")} icon={MoreHorizontal} color="info" onClick={() => navigate("/devices?type=other")} />
         </Section>
 
         <Section title="巡检任务">
