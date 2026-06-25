@@ -205,6 +205,7 @@ pub async fn check_update(
     let latest_tag = release.get("tag_name")
         .and_then(|v| v.as_str())
         .unwrap_or("")
+        .trim_start_matches("internal-")
         .trim_start_matches('v')
         .to_string();
 
