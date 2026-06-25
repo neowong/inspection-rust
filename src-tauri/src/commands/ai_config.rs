@@ -251,6 +251,7 @@ pub async fn test_ai_config(config_id: i64, state: State<'_, AppState>) -> Resul
 
     // 简单测试请求：让 AI 回复 "OK"
     let url = crate::services::ai_inspection::build_chat_url(&base);
+    tracing::info!("[test_ai] 开始测试: model={}, url={}", model_id, url);
 
     let body = serde_json::json!({
         "model": model_id,
@@ -278,7 +279,9 @@ pub async fn test_ai_config(config_id: i64, state: State<'_, AppState>) -> Resul
     let status = resp.status();
     let resp_text = resp.text().await.unwrap_or_default();
 
+    tracing::info!("[test_ai] 响应: status={}, body_len={}", status, resp_text.len());
     if !status.is_success() {
+        tracing::warn!("[test_ai] 失败: status={}, body={}", status, &resp_text[..resp_text.len().min(500)]);
         return Err(format!("API 返回错误 ({}): {}", status, &resp_text[..resp_text.len().min(200)]));
     }
 

@@ -55,17 +55,19 @@ fn get_client() -> &'static reqwest::Client {
     })
 }
 
-/// 统一构建 OpenAI 兼容 API 的 chat/completions 端点 URL。
-/// 兼容所有填法：`https://api.deepseek.com` / `https://api.deepseek.com/v1` / `.../compatible-mode/v1` 等。
+/// 统一构建 AI API 的 chat/completions 端点 URL。
+/// base_url 即为完整的 endpoint 前缀（不含 /chat/completions），用户按官方文档填：
+/// - OpenAI:  https://api.openai.com/v1
+/// - DeepSeek: https://api.deepseek.com          （无 /v1）
+/// - Qwen:    https://dashscope.aliyuncs.com/compatible-mode/v1
+/// - 空值默认 OpenAI
 pub fn build_chat_url(base_url: &str) -> String {
     let base = if base_url.is_empty() {
-        "https://api.openai.com".to_string()
+        "https://api.openai.com/v1"
     } else {
-        base_url.trim_end_matches('/').to_string()
+        base_url.trim_end_matches('/')
     };
-    // 去掉末尾的 /v1（如果有），统一后再拼 /v1/chat/completions
-    let normalized = base.strip_suffix("/v1").unwrap_or(&base);
-    format!("{}/v1/chat/completions", normalized)
+    format!("{}/chat/completions", base)
 }
 
 pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程师，负责分析设备巡检命令输出，判断设备运行状态是否正常。

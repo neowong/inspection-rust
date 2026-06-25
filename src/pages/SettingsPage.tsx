@@ -21,7 +21,7 @@ interface ConfigForm {
 const EMPTY_FORM: ConfigForm = { name: "", provider: "openai", model_id: "", api_key: "", base_url: "" };
 const API_FORMATS = [
   { value: "openai", label: "OpenAI 兼容", placeholder: "https://api.openai.com/v1" },
-  { value: "deepseek", label: "DeepSeek", placeholder: "https://api.deepseek.com" },
+  { value: "deepseek", label: "DeepSeek", placeholder: "https://api.deepseek.com（官方 API 无 /v1）" },
 ];
 
 export default function SettingsPage() {
