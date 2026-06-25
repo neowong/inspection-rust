@@ -288,19 +288,23 @@ pub async fn test_ai_config(config_id: i64, state: State<'_, AppState>) -> Resul
     let parsed: serde_json::Value = serde_json::from_str(&resp_text)
         .map_err(|e| format!("解析响应失败: {}", e))?;
 
-    // 兼容 DeepSeek 等厂商：content 可能为 null，实际内容在 reasoning_content 等字段
+    // 兼容 DeepSeek 等厂商：content 可能为 null 或空字符串，
+    // 实际内容在 reasoning_content（thinking 模型）等字段
     let msg = &parsed["choices"][0]["message"];
-    let content = msg["content"].as_str()
-        .or_else(|| msg["reasoning_content"].as_str())
-        .unwrap_or("")
-        .trim();
+    let raw_content = msg["content"].as_str().unwrap_or("").trim();
+    let content = if raw_content.is_empty() {
+        msg["reasoning_content"].as_str().unwrap_or("").trim()
+    } else {
+        raw_content
+    };
 
     // 调试日志：记录 choices 结构（方便排查厂商格式差异）
     tracing::debug!("[test_ai] choices[0].message = {}", msg);
 
     if content.is_empty() {
-        // 尝试取 usage 里的模型名作为确认
         let model_resp = parsed.get("model").and_then(|v| v.as_str()).unwrap_or("unknown");
+        // 打印完整响应便于排查
+        tracing::warn!("[test_ai] 内容为空: model={}, message={}", model_resp, msg);
         Err(format!("API 返回空内容（模型: {}），请检查模型名称是否正确", model_resp))
     } else {
         Ok(format!("连接成功！模型回复: {}", &content[..content.len().min(100)]))

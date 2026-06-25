@@ -246,12 +246,19 @@ pub async fn analyze_with_openai(
         model, latency, prompt_tokens, completion_tokens, total_tokens, cmd_count
     );
 
-    let content = parsed["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| {
-            warn!("AI 响应格式异常: 缺少 choices[0].message.content, response_len={}", response_text.len());
-            "OpenAI 响应格式异常: 未找到分析结果".to_string()
-        })?;
+    // 兼容 DeepSeek 等厂商：content 可能为 null 或空字符串，
+    // 实际内容在 reasoning_content（thinking 模型）等字段
+    let msg = &parsed["choices"][0]["message"];
+    let raw_content = msg["content"].as_str().unwrap_or("").trim();
+    let content = if raw_content.is_empty() {
+        msg["reasoning_content"].as_str().unwrap_or("").trim()
+    } else {
+        raw_content
+    };
+    if content.is_empty() {
+        warn!("AI 响应内容为空: model={}, message={}", model, msg);
+        return Err("AI 响应内容为空，请检查模型名称是否正确".to_string());
+    }
 
     let finish_reason = parsed["choices"][0]["finish_reason"].as_str().unwrap_or("");
 
