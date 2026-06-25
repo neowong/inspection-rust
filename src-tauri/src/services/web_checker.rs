@@ -124,8 +124,19 @@ pub async fn check_urls(raw_urls: &[String], timeout_secs: u64) -> Vec<WebCheckR
     }
 
     let mut results = Vec::with_capacity(tasks.len());
-    for t in tasks {
-        results.push(t.await.unwrap_or_else(|_| { tracing::warn!("URL 检测任务异常退出"); Default::default() }));
+    for (i, t) in tasks.into_iter().enumerate() {
+        results.push(match t.await {
+            Ok(r) => r,
+            Err(e) => {
+                let url = raw_urls.get(i).cloned().unwrap_or_default();
+                tracing::warn!("URL 检测任务 panic (url={}): {}", url, e);
+                WebCheckResult {
+                    url,
+                    error: Some(format!("检测任务异常: {}", e)),
+                    ..Default::default()
+                }
+            }
+        });
     }
     results
 }

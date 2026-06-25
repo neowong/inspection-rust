@@ -315,6 +315,9 @@ pub fn update_device(
         if !pass.is_empty() {
             let enc = CryptoService::encrypt(pass)?;
             updater.push_raw("db_password_encrypted", enc);
+            // 数据库密码变更后旧的 auth_status 失效，重置为 unknown 等待重新验证
+            updater.push_raw("auth_status", "unknown".to_string());
+            updater.push_raw("auth_message", Option::<String>::None);
         }
     }
 
@@ -533,15 +536,19 @@ pub async fn check_all_devices_status(
                 let conn = db.lock();
                 // 仅在状态变更时记录日志，避免状态日志表无限增长
                 if device.status.as_str() != new_status {
-                    let _ = conn.execute(
+                    if let Err(e) = conn.execute(
                         "INSERT INTO device_status_logs (device_id, old_status, new_status, checked_at) VALUES (?1, ?2, ?3, ?4)",
                         rusqlite::params![device.id, device.status, new_status, now],
-                    );
+                    ) {
+                        tracing::error!("设备状态日志写入失败 (device_id={}): {}", device.id, e);
+                    }
                 }
-                let _ = conn.execute(
+                if let Err(e) = conn.execute(
                     "UPDATE devices SET status = ?1, last_checked_at = ?2, updated_at = ?3 WHERE id = ?4",
                     rusqlite::params![new_status, now, now, device.id],
-                );
+                ) {
+                    tracing::error!("设备状态更新失败 (device_id={}): {}", device.id, e);
+                }
             }
             (device.id, device.name.clone(), new_status.to_string())
         })

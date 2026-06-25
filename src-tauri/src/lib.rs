@@ -384,11 +384,15 @@ pub fn run() {
     let db_path = app_data_dir.join("inspection.db");
     debug_log(&format!("数据库路径: {}", db_path.display()));
     startup_log("初始化数据库...");
-    let db_path_str = db_path.to_str().unwrap_or_else(|| {
-        // 路径含非 UTF-8 字符时回退到临时目录
-        tracing::error!("数据库路径无法转换为 UTF-8: {}，回退到临时目录", db_path.display());
-        "/tmp/ai-inspection-inspection.db"
-    });
+    let db_path_str = match db_path.to_str() {
+        Some(s) => s,
+        None => {
+            // 路径含非 UTF-8 字符时回退到系统临时目录（跨平台兼容）
+            tracing::error!("数据库路径无法转换为 UTF-8: {}，回退到临时目录", db_path.display());
+            let temp_db = std::env::temp_dir().join("ai-inspection-inspection.db");
+            &*Box::leak(temp_db.to_string_lossy().into_owned().into_boxed_str())
+        }
+    };
     let state = AppState::new(db_path_str);
     startup_log("数据库初始化完成");
     debug_log("数据库初始化完成");

@@ -112,21 +112,19 @@ pub fn run_commands_exec(
                 };
 
                 let mut consecutive_timeouts = 0usize;
-                for &idx in &shard {
+                for (shard_pos, &idx) in shard.iter().enumerate() {
                     // 取消检查
                     if let Some(ref flag) = cancel {
                         if flag.load(Ordering::Relaxed) {
+                            let remaining_count = shard.len() - shard_pos;
                             tracing::info!(
                                 "worker #{} 取消，剩余 {} 条未执行",
                                 worker_id,
-                                shard.len() - (shard.iter().position(|&i| i == idx).unwrap_or(0))
+                                remaining_count
                             );
                             // 把该 worker 剩余位置标记为"已取消"
                             let mut r = results.lock();
-                            for &remaining in shard
-                                .iter()
-                                .skip(shard.iter().position(|&i| i == idx).unwrap_or(0))
-                            {
+                            for &remaining in shard.iter().skip(shard_pos) {
                                 if r[remaining].is_none() {
                                     r[remaining] = Some("[已取消]".to_string());
                                     done.fetch_add(1, Ordering::Relaxed);
@@ -173,9 +171,8 @@ pub fn run_commands_exec(
                                         done.fetch_add(1, Ordering::Relaxed);
                                     }
                                     // 标记 worker 剩余位置为"前序超时已跳过"
-                                    let pos = shard.iter().position(|&i| i == idx).unwrap_or(0);
                                     let mut r = results.lock();
-                                    for &remaining in shard.iter().skip(pos + 1) {
+                                    for &remaining in shard.iter().skip(shard_pos + 1) {
                                         r[remaining] =
                                             Some("[因前序命令超时已跳过]".to_string());
                                         done.fetch_add(1, Ordering::Relaxed);

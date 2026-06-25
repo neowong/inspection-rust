@@ -11,6 +11,7 @@ pub struct PortScanResult {
     pub port: u16,
     pub open: bool,
     pub service: String,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -20,6 +21,7 @@ pub struct UdpPortResult {
     pub filtered: bool,     // true = no response (could be open or filtered)
     pub service: String,
     pub detail: String,     // "响应数据" | "端口关闭(ICMP)" | "无响应(开放或被过滤)"
+    pub error: Option<String>,
 }
 
 // ============================================================================
@@ -77,13 +79,14 @@ fn scan_one(ip: &str, port: u16, timeout: std::time::Duration) -> PortScanResult
     let addr = format!("{}:{}", ip, port);
     let sock_addr = match addr.parse::<std::net::SocketAddr>() {
         Ok(a) => a,
-        Err(_) => return PortScanResult { port, open: false, service: service_name(port) },
+        Err(_) => return PortScanResult { port, open: false, service: service_name(port), error: None },
     };
     let open = std::net::TcpStream::connect_timeout(&sock_addr, timeout).is_ok();
     PortScanResult {
         port,
         open,
         service: service_name(port),
+        error: None,
     }
 }
 
@@ -142,15 +145,23 @@ pub async fn scan_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Result<
         let sem = semaphore.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            tokio::task::spawn_blocking(move || scan_one(&ip, port, timeout))
-                .await
-                .unwrap()
+            match tokio::task::spawn_blocking(move || scan_one(&ip, port, timeout)).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("端口扫描任务 panic (port={}): {}", port, e);
+                    PortScanResult { port, open: false, service: service_name(port), error: Some(e.to_string()) }
+                }
+            }
         }));
     }
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
+        let port_hint = 0u16; // outer JoinError — port unknown, but result has port=0 default
+        results.push(match h.await {
+            Ok(r) => r,
+            Err(e) => { tracing::warn!("扫描任务异常退出: {}", e); PortScanResult { port: port_hint, error: Some(e.to_string()), ..Default::default() } }
+        });
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -178,9 +189,13 @@ where
         let cb = callback.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            let result = tokio::task::spawn_blocking(move || scan_one(&ip, port, timeout))
-                .await
-                .unwrap();
+            let result = match tokio::task::spawn_blocking(move || scan_one(&ip, port, timeout)).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("端口扫描任务 panic (port={}): {}", port, e);
+                    PortScanResult { port, open: false, service: service_name(port), error: Some(e.to_string()) }
+                }
+            };
             cb(&result);
             result
         }));
@@ -188,7 +203,10 @@ where
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
+        results.push(match h.await {
+            Ok(r) => r,
+            Err(e) => { tracing::warn!("扫描任务异常退出: {}", e); PortScanResult { port: 0, error: Some(e.to_string()), ..Default::default() } }
+        });
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -269,6 +287,7 @@ fn scan_udp_one(ip: &str, port: u16, timeout: std::time::Duration) -> UdpPortRes
             return UdpPortResult {
                 port, open: false, filtered: true, service,
                 detail: "无法创建套接字".into(),
+                error: None,
             }
         }
     };
@@ -279,6 +298,7 @@ fn scan_udp_one(ip: &str, port: u16, timeout: std::time::Duration) -> UdpPortRes
         return UdpPortResult {
             port, open: false, filtered: true, service,
             detail: "连接失败".into(),
+            error: None,
         };
     }
     socket.set_read_timeout(Some(timeout)).ok();
@@ -290,6 +310,7 @@ fn scan_udp_one(ip: &str, port: u16, timeout: std::time::Duration) -> UdpPortRes
         return UdpPortResult {
             port, open: false, filtered: true, service,
             detail: "发送失败".into(),
+            error: None,
         };
     }
 
@@ -307,19 +328,19 @@ fn scan_udp_one(ip: &str, port: u16, timeout: std::time::Duration) -> UdpPortRes
             } else {
                 format!("响应数据 ({} 字节)", len)
             };
-            UdpPortResult { port, open: true, filtered: false, service, detail }
+            UdpPortResult { port, open: true, filtered: false, service, detail, error: None }
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
             // ICMP Port Unreachable delivered via connected socket → definitely closed
-            UdpPortResult { port, open: false, filtered: false, service, detail: "端口关闭 (ICMP)".into() }
+            UdpPortResult { port, open: false, filtered: false, service, detail: "端口关闭 (ICMP)".into(), error: None }
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
             // No response, no ICMP error → port is open (service didn't respond to probe)
             // or very rarely filtered by a firewall that silently drops
-            UdpPortResult { port, open: false, filtered: true, service, detail: "开放 (服务未响应探针)".into() }
+            UdpPortResult { port, open: false, filtered: true, service, detail: "开放 (服务未响应探针)".into(), error: None }
         }
         Err(e) => {
-            UdpPortResult { port, open: false, filtered: true, service, detail: format!("错误: {}", e) }
+            UdpPortResult { port, open: false, filtered: true, service, detail: format!("错误: {}", e), error: None }
         }
     }
 }
@@ -340,15 +361,22 @@ pub async fn scan_udp_ports(ip: &str, ports_input: &str, timeout_ms: u64) -> Res
         let sem = semaphore.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout))
-                .await
-                .unwrap()
+            match tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout)).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("UDP 扫描任务 panic (port={}): {}", port, e);
+                    UdpPortResult { port, open: false, filtered: true, service: udp_service_name(port), detail: String::new(), error: Some(e.to_string()) }
+                }
+            }
         }));
     }
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
+        results.push(match h.await {
+            Ok(r) => r,
+            Err(e) => { tracing::warn!("UDP 扫描任务异常退出: {}", e); UdpPortResult { port: 0, error: Some(e.to_string()), ..Default::default() } }
+        });
     }
     results.sort_by_key(|r| r.port);
     Ok(results)
@@ -376,9 +404,13 @@ where
         let cb = callback.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await;
-            let result = tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout))
-                .await
-                .unwrap();
+            let result = match tokio::task::spawn_blocking(move || scan_udp_one(&ip, port, timeout)).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("UDP 扫描任务 panic (port={}): {}", port, e);
+                    UdpPortResult { port, open: false, filtered: true, service: udp_service_name(port), detail: String::new(), error: Some(e.to_string()) }
+                }
+            };
             cb(&result);
             result
         }));
@@ -386,7 +418,10 @@ where
 
     let mut results = Vec::with_capacity(handles.len());
     for h in handles {
-        results.push(h.await.unwrap_or_else(|_| { tracing::warn!("扫描任务异常退出"); Default::default() }));
+        results.push(match h.await {
+            Ok(r) => r,
+            Err(e) => { tracing::warn!("UDP 扫描任务异常退出: {}", e); UdpPortResult { port: 0, error: Some(e.to_string()), ..Default::default() } }
+        });
     }
     results.sort_by_key(|r| r.port);
     Ok(results)

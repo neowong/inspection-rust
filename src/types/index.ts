@@ -71,11 +71,11 @@ type BatchStatusType =
   | "pending" | "running" | "completed" | "failed"
   | "stopped" | "paused" | "waiting" | "in_progress" | "partially_completed";
 
-export type RecordStatusType =
+type RecordStatusType =
   | "pending" | "running" | "completed" | "failed"
   | "stopped" | "skipped";
 
-export type AiStatusType =
+type AiStatusType =
   | "none" | "pending" | "processing" | "completed" | "failed";
 
 export interface InspectionBatch {
@@ -154,14 +154,14 @@ export interface ReportTemplateConfig {
   footer: string;
 }
 
-export interface CoverConfig {
+interface CoverConfig {
   title: string;
   subtitle: string;
   logo_path: string;
   primary_color: string;
 }
 
-export interface DeviceInfoConfig {
+interface DeviceInfoConfig {
   enabled: boolean;
   fields: DeviceField[];
   layout: "two_column" | "table";
@@ -188,7 +188,7 @@ export interface DeviceField {
   visible: boolean;
 }
 
-export interface CommandTableConfig {
+interface CommandTableConfig {
   columns: TableColumn[];
   output_max_lines: number;
 }
@@ -200,7 +200,7 @@ export interface TableColumn {
   visible: boolean;
 }
 
-export interface SummaryConfig {
+interface SummaryConfig {
   enabled: boolean;
   title: string;
   show_problem_table: boolean;
