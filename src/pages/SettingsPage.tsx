@@ -195,7 +195,10 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div className="space-y-3">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+        >
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
             <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
@@ -203,7 +206,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API 格式</label>
-            <Select value={form.provider} onChange={(e) => {
+            <Select value={form.provider} tabIndex={-1} onChange={(e) => {
               const provider = e.target.value;
               const updates: Partial<ConfigForm> = { provider };
               // 切换到 DeepSeek 时自动填入正确的 base_url（用户未手动改过才自动填）
@@ -227,7 +230,9 @@ export default function SettingsPage() {
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Base URL（可选）</label>
             <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={API_FORMATS.find(f => f.value === form.provider)?.placeholder || ""} />
           </div>
-        </div>
+          {/* 隐藏提交按钮，Enter 在最后一个 Input 自动触发 form submit */}
+          <button type="submit" className="hidden" />
+        </form>
       </Modal>
 
       {/* Delete Confirm Modal */}

@@ -61,11 +61,19 @@ fn get_client() -> &'static reqwest::Client {
 /// - DeepSeek: https://api.deepseek.com          （无 /v1）
 /// - Qwen:    https://dashscope.aliyuncs.com/compatible-mode/v1
 /// - 空值默认 OpenAI
+///
+/// 兼容旧配置：DeepSeek 的 base_url 若存了 /v1 后缀会自动去除（旧代码曾强制加 /v1）。
 pub fn build_chat_url(base_url: &str) -> String {
     let base = if base_url.is_empty() {
-        "https://api.openai.com/v1"
+        "https://api.openai.com/v1".to_string()
     } else {
-        base_url.trim_end_matches('/')
+        let trimmed = base_url.trim_end_matches('/').to_string();
+        // DeepSeek API 不含 /v1，旧配置可能误带 /v1 后缀，自动去除
+        if trimmed.contains("deepseek.com") {
+            trimmed.strip_suffix("/v1").unwrap_or(&trimmed).to_string()
+        } else {
+            trimmed
+        }
     };
     format!("{}/chat/completions", base)
 }
