@@ -107,7 +107,11 @@ ai-inspection/
 - **中国输入法兼容**: All toolbox IP input fields use `style={{ imeMode: "disabled" }}` to force English mode, avoiding manual IME switching.
 - **Sticky headers**: All page headers use `sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative`
 - **Dashboard cards**: Clickable with `cursor-pointer` + `navigate(path)`. Summary + detail cards both have path field.
-- **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover.
+- **Command pool UI**: Vendor tabs + collapsible category groups (ChevronDown/Right). Each command shows edit/delete icons on hover. Custom vendors supported via `+` button in Select; custom vendors auto-appear in tabs and sort before built-in vendors. Category groups: `performance` (cpu+memory), `hardware` (fan+power+hardware), `interface` (interface+vlan), `env` (运行环境). Commands have `expectation` field for AI judgment hints.
+- **AI judgment with expectations**: `command_pool.expectation` stores per-command AI hints (e.g., "CPU usage should be < 80%"). During AI analysis, expectations are loaded and injected as `【期望】` into the prompt alongside `【命令】` and `【输出】`.
+- **Report regeneration**: Batch toolbar buttons dynamically change text based on state: no AI result → "AI评判", has result → "重新AI评判"; no report → "人工评判", has report → "重新生成". `processingBatches` map tracks per-batch loading independently.
+- **Shell injection prevention**: `instance_name`/`db_username` validated at create/update boundary with `validate_shell_identifier()` (whitelist `[A-Za-z0-9_.:-]`). `wrap_cmd` uses single-quote `sh -c '...'` wrapping (double-quote inner `$`/backtick survived). `write_all_nb` handles WouldBlock retries in SSH non-blocking mode.
+- **Path safety**: `safe_report_path()` uses `canonicalize().starts_with(reports_dir)` for all file delete/copy operations. `safe_remove_report()` is the unified delete helper used by `delete_record_report` and `delete_batch`.
 - **DOCX report engine**: Uses `docx-rs` (0.4) to generate Word reports directly from `ReportTemplateConfig` (stored in `report_templates.config_json`), not from uploaded `.docx` templates. Report columns default to `序号 / 项目 / 巡检内容 / 评判结论`; command outputs are rendered as `<sysname>command` plus original output (first bare command echo stripped). Device static info comes from `inspection_records.static_info` first, then `devices.sysname`/device fallback. Header/footer use Word paragraph borders for single separator lines.
 - **Command order / static info commands**: `inspection_runner::run_commands` returns `IndexMap<String, String>` to preserve execution order. Inspection template config uses `commands[{command_id,purpose,show_in_report,extract_fields}]`; commands with `purpose: "static_info"` can extract `sysname`, `model`, `serial_number`, `manufacturing_date` into `inspection_records.static_info` and are hidden from report details when `show_in_report=false`. Template editor supports drag-and-drop command reordering.
 - **SpinInput component**: Custom number input with hidden native spinners + ChevronUp/Down buttons. Use `<SpinInput>` instead of `<input type="number">` for timeout/port fields.
@@ -154,6 +158,9 @@ npx tauri build               # produces .deb / .AppImage
 
 # Frontend build only
 npm run build
+
+# Version sync (updates Cargo.toml + tauri.conf.json + package.json)
+npm run version 3.53.0
 ```
 
 ### Release profile 优化
@@ -176,7 +183,7 @@ panic = "abort"        # 移除展开表
 - Data dirs: `reports/`, `report_templates/`, `uploads/`, `logs/`
 - Seed commands: `seed_command_pool` uses `INSERT OR IGNORE` (relies on `UNIQUE(vendor, command)`), runs **every launch** and is idempotent — new vendors are added incrementally. Never gate seeding on `COUNT > 0` (that caused a fresh-install bug where migration 17's fortigate rows made seed skip all other vendors).
 - **Pause/stop/retry cancellation**: `pause_batch`/`stop_batch` set the `batch_cancels` AtomicBool flag so running SSH tasks stop at the next command boundary; `finalize_batch_status` preserves a `paused` batch (won't auto-overwrite to completed/stopped). `retry_device` registers a cancel flag under the batch_id and finalizes the batch when it owns the batch; `restart_batch` cancels in-flight tasks and clears stale flags before resetting.
-- Fernet key (`MASTER_PASSWORD`) hardcoded in `crypto.rs` — encrypted data compatible with Python predecessor
+- Fernet key: first launch auto-generates random key via `Fernet::generate_key()` and stores in `~/.local/share/inspection-rust/.key` (permissions 0o600). NOT hardcoded — legacy `MASTER_PASSWORD` references are outdated.
 - Release binary is standalone (frontend embedded, no devUrl)
 - **数据库容器部署**: 用户直接在表单填容器名（`instance_name` 字段），`docker exec <容器名> sh -c "mysql ..."` 直连执行。通过退出码区分错误：127=客户端未安装，其他非0=容器未运行。不再用端口发现（docker-compose 内部网络不映射端口时失效）
 - **IP 唯一性按设备类型**: DB 层无 UNIQUE 约束（v31 迁移移除），应用层 `check_unique()` 按 `device_type` 检查。同 IP 可以加 Linux 设备和数据库设备
