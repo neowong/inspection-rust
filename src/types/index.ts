@@ -264,6 +264,7 @@ export interface Stats {
   security_device_count: number;
   server_count: number;
   database_count: number;
+  other_device_count: number;
   report_count: number;
 }
 

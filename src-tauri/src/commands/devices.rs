@@ -150,13 +150,18 @@ pub fn list_devices(
         params.push(Box::new(v.clone()));
     }
     if let Some(ref dt) = device_type {
-        // 支持逗号分隔的多值过滤，如 "switch,router"
-        let types: Vec<&str> = dt.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if !types.is_empty() {
-            let placeholders: Vec<String> = types.iter().enumerate().map(|(i, _)| format!("?{}", params.len() + i + 1)).collect();
-            sql.push_str(&format!(" AND device_type IN ({})", placeholders.join(",")));
-            for t in types {
-                params.push(Box::new(t.to_string()));
+        if dt == "other" {
+            // "其它"：排除已知类型
+            sql.push_str(" AND device_type NOT IN ('switch','router','firewall','loadbalancer','server','database')");
+        } else {
+            // 支持逗号分隔的多值过滤，如 "switch,router"
+            let types: Vec<&str> = dt.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+            if !types.is_empty() {
+                let placeholders: Vec<String> = types.iter().enumerate().map(|(i, _)| format!("?{}", params.len() + i + 1)).collect();
+                sql.push_str(&format!(" AND device_type IN ({})", placeholders.join(",")));
+                for t in types {
+                    params.push(Box::new(t.to_string()));
+                }
             }
         }
     }

@@ -626,7 +626,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
     // 合并为单次查询，减少锁内 prepare/往返开销
     let (device_count, online_count, offline_count, template_count, command_count,
          batch_count, pending_batch_count, completed_batch_count,
-         network_device_count, security_device_count, server_count, database_count, report_count) = db
+         network_device_count, security_device_count, server_count, database_count, other_device_count, report_count) = db
         .query_row(
             "SELECT \
                 (SELECT COUNT(*) FROM devices), \
@@ -641,6 +641,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                 (SELECT COUNT(*) FROM devices WHERE device_type IN ('firewall','loadbalancer')), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'server'), \
                 (SELECT COUNT(*) FROM devices WHERE device_type = 'database'), \
+                (SELECT COUNT(*) FROM devices WHERE device_type NOT IN ('switch','router','firewall','loadbalancer','server','database')), \
                 ((SELECT COUNT(*) FROM inspection_records WHERE report_path IS NOT NULL AND report_path != '') \
                + (SELECT COUNT(*) FROM inspection_batches WHERE combined_report_path IS NOT NULL AND combined_report_path != ''))",
             [],
@@ -659,10 +660,11 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                     r.get::<_, i64>(10)?,
                     r.get::<_, i64>(11)?,
                     r.get::<_, i64>(12)?,
+                    r.get::<_, i64>(13)?,
                 ))
             },
         )
-        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
 
     Ok(serde_json::json!({
         "device_count": device_count,
@@ -677,6 +679,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
         "security_device_count": security_device_count,
         "server_count": server_count,
         "database_count": database_count,
+        "other_device_count": other_device_count,
         "report_count": report_count,
     }))
 }

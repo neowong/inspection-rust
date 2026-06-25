@@ -477,6 +477,7 @@ export default function DevicesPage() {
           <option value="firewall,loadbalancer">安全设备</option>
           <option value="server">服务器</option>
           <option value="database">数据库</option>
+          <option value="other">其它</option>
         </Select>
         <Select
           size="sm"
