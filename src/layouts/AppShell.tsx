@@ -13,9 +13,14 @@ interface NavItem {
 
 const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   {
-    label: "巡检工作流",
+    label: "信息概览",
     items: [
       { key: "dashboard",  label: "仪表盘",   path: "/dashboard",  icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "巡检工作流",
+    items: [
       { key: "templates",  label: "巡检模板", path: "/templates",  icon: FolderTree },
       { key: "devices",    label: "设备管理", path: "/devices",    icon: Server },
       { key: "inspection", label: "执行巡检", path: "/inspection", icon: Play },
