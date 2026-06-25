@@ -1,6 +1,6 @@
 {
   "productName": "AI-Inspection",
-  "version": "3.53.0",
+  "version": "3.50.3",
   "identifier": "com.inspection.rust",
   "build": {
     "frontendDist": "../dist",
@@ -17,7 +17,9 @@
         "minWidth": 1024,
         "minHeight": 700,
         "resizable": true,
-        "visible": false
+        "visible": true,
+        "decorations": true,
+        "transparent": true
       }
     ],
     "security": {
@@ -28,8 +30,7 @@
     "active": true,
     "targets": [
       "nsis",
-      "deb",
-      "appimage"
+      "deb"
     ],
     "icon": [
       "icons/32x32.png",

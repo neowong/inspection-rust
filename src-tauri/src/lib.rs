@@ -523,10 +523,6 @@ pub fn run() {
                     );
                 }
             }
-            // 窗口默认隐藏（tauri.conf.json visible:false），WebView 加载完成后显示，避免黑色方块闪烁
-            if let Some(window) = app.get_webview_window("main") {
-                window.show().ok();
-            }
             Ok(())
         })
         .manage(state)
