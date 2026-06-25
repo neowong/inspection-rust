@@ -55,6 +55,19 @@ fn get_client() -> &'static reqwest::Client {
     })
 }
 
+/// 统一构建 OpenAI 兼容 API 的 chat/completions 端点 URL。
+/// 兼容所有填法：`https://api.deepseek.com` / `https://api.deepseek.com/v1` / `.../compatible-mode/v1` 等。
+pub fn build_chat_url(base_url: &str) -> String {
+    let base = if base_url.is_empty() {
+        "https://api.openai.com".to_string()
+    } else {
+        base_url.trim_end_matches('/').to_string()
+    };
+    // 去掉末尾的 /v1（如果有），统一后再拼 /v1/chat/completions
+    let normalized = base.strip_suffix("/v1").unwrap_or(&base);
+    format!("{}/v1/chat/completions", normalized)
+}
+
 pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程师，负责分析设备巡检命令输出，判断设备运行状态是否正常。
 
 对于每台设备，你会收到一组命令及其输出。你的任务是：
@@ -130,19 +143,7 @@ pub async fn analyze_with_openai(
     command_outputs: &HashMap<String, String>,
     expectations: &HashMap<String, String>,
 ) -> Result<serde_json::Value, String> {
-    let base_url = if base_url.is_empty() {
-        "https://api.openai.com"
-    } else {
-        base_url.trim_end_matches('/')
-    };
-
-    // 兼容用户填了完整路径（如 .../compatible-mode/v1）或仅域名（如 api.openai.com）
-    // 避免重复拼接 /v1
-    let url = if base_url.ends_with("/v1") {
-        format!("{}/chat/completions", base_url)
-    } else {
-        format!("{}/v1/chat/completions", base_url)
-    };
+    let url = build_chat_url(base_url);
     let formatted_input = format_command_outputs(command_outputs, expectations);
 
     let body = serde_json::json!({

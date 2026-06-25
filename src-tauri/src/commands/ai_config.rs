@@ -250,16 +250,7 @@ pub async fn test_ai_config(config_id: i64, state: State<'_, AppState>) -> Resul
     let base = base_url.unwrap_or_default();
 
     // 简单测试请求：让 AI 回复 "OK"
-    let base_url_trimmed = if base.is_empty() {
-        "https://api.openai.com".to_string()
-    } else {
-        base.trim_end_matches('/').to_string()
-    };
-    let url = if base_url_trimmed.ends_with("/v1") {
-        format!("{}/chat/completions", base_url_trimmed)
-    } else {
-        format!("{}/v1/chat/completions", base_url_trimmed)
-    };
+    let url = crate::services::ai_inspection::build_chat_url(&base);
 
     let body = serde_json::json!({
         "model": model_id,
