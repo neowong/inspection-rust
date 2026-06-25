@@ -541,6 +541,7 @@ pub fn run() {
             commands::ai_config::delete_ai_config,
             commands::ai_config::activate_ai_config,
             commands::ai_config::deactivate_ai_config,
+            commands::ai_config::test_ai_config,
             // Report Templates
             commands::reports::list_report_templates,
             commands::reports::create_report_template,

@@ -33,6 +33,8 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [testing, setTesting] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<{id: number; ok: boolean; msg: string} | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
 
   // Load AI configs
@@ -104,8 +106,18 @@ export default function SettingsPage() {
     invoke<void>("activate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
   };
 
+
   const handleDeactivate = (id: number) => {
     invoke<void>("deactivate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
+  };
+
+  const handleTest = (id: number) => {
+    setTesting(id);
+    setTestResult(null);
+    invoke<string>("test_ai_config", { configId: id })
+      .then((msg) => setTestResult({ id, ok: true, msg }))
+      .catch((e) => setTestResult({ id, ok: false, msg: typeof e === "string" ? e : e?.message || "测试失败" }))
+      .finally(() => setTesting(null));
   };
 
   return (
@@ -137,8 +149,12 @@ export default function SettingsPage() {
               ),
             },
             {
-              key: "actions", header: "操作", width: "180px", render: (r) => (
+              key: "actions", header: "操作", width: "220px", render: (r) => (
                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost"
+                    loading={testing === r.id}
+                    disabled={testing !== null}
+                    onClick={() => handleTest(r.id)}>测试</Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button>
                   {r.is_active
                     ? <Button size="sm" variant="ghost" onClick={() => handleDeactivate(r.id)}>停用</Button>
@@ -151,8 +167,20 @@ export default function SettingsPage() {
           ]}
           data={configs}
           rowKey={(r) => r.id}
+          onRowDoubleClick={(r) => openEdit(r)}
           emptyText="暂无 AI 配置，点击上方按钮添加"
         />
+        {testResult && (
+          <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+            testResult.ok
+              ? "bg-[hsl(var(--success)_/_0.1)] border border-[hsl(var(--success)_/_0.3)] text-[hsl(var(--success))]"
+              : "bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] text-[hsl(var(--danger))]"
+          }`}>
+            <span className="font-medium">{testResult.ok ? "✓" : "✗"}</span>
+            {testResult.msg}
+            <button onClick={() => setTestResult(null)} className="ml-auto text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">✕</button>
+          </div>
+        )}
       </Card>
 
       {/* AI Config Modal */}
@@ -176,13 +204,21 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API 格式</label>
-            <Select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
+            <Select value={form.provider} onChange={(e) => {
+              const provider = e.target.value;
+              const updates: Partial<ConfigForm> = { provider };
+              // 切换到 DeepSeek 时自动填入正确的 base_url（用户未手动改过才自动填）
+              if (provider === "deepseek" && !form.base_url) {
+                updates.base_url = "https://api.deepseek.com";
+              }
+              setForm({ ...form, ...updates });
+            }}>
               {API_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </Select>
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模型名称</label>
-            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat" />
+            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat, deepseek-v4-flash" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>

@@ -55,6 +55,29 @@ fn get_client() -> &'static reqwest::Client {
     })
 }
 
+/// 统一构建 AI API 的 chat/completions 端点 URL。
+/// base_url 即为完整的 endpoint 前缀（不含 /chat/completions），用户按官方文档填：
+/// - OpenAI:  https://api.openai.com/v1
+/// - DeepSeek: https://api.deepseek.com          （无 /v1）
+/// - Qwen:    https://dashscope.aliyuncs.com/compatible-mode/v1
+/// - 空值默认 OpenAI
+///
+/// 兼容旧配置：DeepSeek 的 base_url 若存了 /v1 后缀会自动去除（旧代码曾强制加 /v1）。
+pub fn build_chat_url(base_url: &str) -> String {
+    let base = if base_url.is_empty() {
+        "https://api.openai.com/v1".to_string()
+    } else {
+        let trimmed = base_url.trim_end_matches('/').to_string();
+        // DeepSeek API 不含 /v1，旧配置可能误带 /v1 后缀，自动去除
+        if trimmed.contains("deepseek.com") {
+            trimmed.strip_suffix("/v1").unwrap_or(&trimmed).to_string()
+        } else {
+            trimmed
+        }
+    };
+    format!("{}/chat/completions", base)
+}
+
 pub const SYSTEM_PROMPT: &str = r#"你是一位专业的 IT 运维巡检工程师，负责分析设备巡检命令输出，判断设备运行状态是否正常。
 
 对于每台设备，你会收到一组命令及其输出。你的任务是：
@@ -130,13 +153,7 @@ pub async fn analyze_with_openai(
     command_outputs: &HashMap<String, String>,
     expectations: &HashMap<String, String>,
 ) -> Result<serde_json::Value, String> {
-    let base_url = if base_url.is_empty() {
-        "https://api.openai.com"
-    } else {
-        base_url.trim_end_matches('/')
-    };
-
-    let url = format!("{}/v1/chat/completions", base_url);
+    let url = build_chat_url(base_url);
     let formatted_input = format_command_outputs(command_outputs, expectations);
 
     let body = serde_json::json!({
@@ -229,12 +246,19 @@ pub async fn analyze_with_openai(
         model, latency, prompt_tokens, completion_tokens, total_tokens, cmd_count
     );
 
-    let content = parsed["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| {
-            warn!("AI 响应格式异常: 缺少 choices[0].message.content, response_len={}", response_text.len());
-            "OpenAI 响应格式异常: 未找到分析结果".to_string()
-        })?;
+    // 兼容 DeepSeek 等厂商：content 可能为 null 或空字符串，
+    // 实际内容在 reasoning_content（thinking 模型）等字段
+    let msg = &parsed["choices"][0]["message"];
+    let raw_content = msg["content"].as_str().unwrap_or("").trim();
+    let content = if raw_content.is_empty() {
+        msg["reasoning_content"].as_str().unwrap_or("").trim()
+    } else {
+        raw_content
+    };
+    if content.is_empty() {
+        warn!("AI 响应内容为空: model={}, message={}", model, msg);
+        return Err("AI 响应内容为空，请检查模型名称是否正确".to_string());
+    }
 
     let finish_reason = parsed["choices"][0]["finish_reason"].as_str().unwrap_or("");
 
