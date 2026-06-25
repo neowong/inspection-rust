@@ -597,6 +597,8 @@ pub fn run() {
             commands::tools::trace_route,
             // Stats
             get_stats,
+            // Chat
+            chat_with_ai,
         ])
         .run(tauri::generate_context!())
         .map_err(|e| {
@@ -672,6 +674,70 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
         "other_device_count": other_device_count,
         "report_count": report_count,
     }))
+}
+
+/// 对话模式：发送消息到 AI 并返回回复
+#[tauri::command]
+async fn chat_with_ai(
+    system_prompt: String,
+    messages: Vec<serde_json::Value>,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    // 获取激活的 AI 配置
+    let (api_key, model, base_url) = {
+        let db = state.db.lock();
+        db.query_row(
+            "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+            [],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+        )
+        .map_err(|_| "未找到激活的 AI 配置，请先在系统设置中配置并激活一个 AI 模型".to_string())?
+    };
+
+    let decrypted_key = crate::services::crypto::CryptoService::decrypt(&api_key)
+        .map_err(|e| format!("解密 API Key 失败: {}", e))?;
+
+    let url = crate::services::ai_inspection::build_chat_url(&base_url);
+
+    // 构建消息数组：system + 用户传入的历史消息
+    let mut api_messages = vec![serde_json::json!({"role": "system", "content": system_prompt})];
+    api_messages.extend(messages);
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": api_messages,
+        "temperature": 0.7,
+        "max_tokens": 4096
+    });
+
+    let client = crate::services::ai_inspection::get_client();
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", decrypted_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("AI 请求失败: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("读取 AI 响应失败: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("AI 返回错误 ({}): {}", status, &response_text[..response_text.len().min(200)]));
+    }
+
+    // 解析响应
+    let json: serde_json::Value = serde_json::from_str(&response_text)
+        .map_err(|e| format!("解析 AI 响应失败: {}", e))?;
+
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("AI 未返回有效回复")
+        .to_string();
+
+    Ok(content)
 }
 
 /// 静态信息检测冷却：同一设备 10 分钟内不重复触发（防止状态抖动反复 SSH）
