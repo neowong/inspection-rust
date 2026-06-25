@@ -21,7 +21,7 @@ interface ConfigForm {
 const EMPTY_FORM: ConfigForm = { name: "", provider: "openai", model_id: "", api_key: "", base_url: "" };
 const API_FORMATS = [
   { value: "openai", label: "OpenAI 兼容", placeholder: "https://api.openai.com/v1" },
-  { value: "deepseek", label: "DeepSeek", placeholder: "https://api.deepseek.com（官方 API 无 /v1）" },
+  { value: "deepseek", label: "DeepSeek", placeholder: "https://api.deepseek.com" },
 ];
 
 export default function SettingsPage() {
@@ -203,7 +203,15 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API 格式</label>
-            <Select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
+            <Select value={form.provider} onChange={(e) => {
+              const provider = e.target.value;
+              const updates: Partial<ConfigForm> = { provider };
+              // 切换到 DeepSeek 时自动填入正确的 base_url（用户未手动改过才自动填）
+              if (provider === "deepseek" && !form.base_url) {
+                updates.base_url = "https://api.deepseek.com";
+              }
+              setForm({ ...form, ...updates });
+            }}>
               {API_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </Select>
           </div>
