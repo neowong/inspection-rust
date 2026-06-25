@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiModelConfig } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
+import { useEnterNavigation } from "../hooks/useEnterNavigation";
 import { friendlyError } from "../lib/utils";
 import Card from "../components/ui/Card";
 import Input, { Select } from "../components/ui/Input";
@@ -106,6 +107,8 @@ export default function SettingsPage() {
     invoke<void>("activate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
   };
 
+  const { onInputKeyDown, containerRef } = useEnterNavigation(handleSave);
+
   const handleDeactivate = (id: number) => {
     invoke<void>("deactivate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
   };
@@ -195,10 +198,10 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-3" ref={containerRef}>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">名称</label>
-            <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} placeholder="例如: OpenAI GPT-4" />
+            <Input value={form.name} className={shakeFields.has("name") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, name: e.target.value }); setSaveError(null); }} onKeyDown={onInputKeyDown} placeholder="例如: OpenAI GPT-4" />
             {saveError && <p className="mt-1 text-xs text-[hsl(var(--danger))]">{saveError}</p>}
           </div>
           <div>
@@ -217,15 +220,15 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">模型名称</label>
-            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} placeholder="例如: gpt-4o, deepseek-chat, deepseek-v4-flash" />
+            <Input value={form.model_id} className={shakeFields.has("model_id") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, model_id: e.target.value }); setSaveError(null); }} onKeyDown={onInputKeyDown} placeholder="例如: gpt-4o, deepseek-chat, deepseek-v4-flash" />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">API Key</label>
-            <Input type="password" value={form.api_key} className={shakeFields.has("api_key") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, api_key: e.target.value }); setSaveError(null); }} placeholder={editing ? "留空则不修改" : "输入 API Key"} />
+            <Input type="password" value={form.api_key} className={shakeFields.has("api_key") ? "animate-shake" : ""} onChange={(e) => { setForm({ ...form, api_key: e.target.value }); setSaveError(null); }} onKeyDown={onInputKeyDown} placeholder={editing ? "留空则不修改" : "输入 API Key"} />
           </div>
           <div>
             <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] mb-1">Base URL（可选）</label>
-            <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={API_FORMATS.find(f => f.value === form.provider)?.placeholder || ""} />
+            <Input value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} onKeyDown={onInputKeyDown} placeholder={API_FORMATS.find(f => f.value === form.provider)?.placeholder || ""} />
           </div>
         </div>
       </Modal>
