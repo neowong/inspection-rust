@@ -415,13 +415,13 @@ fn page_break(docx: Docx) -> Docx {
 fn build_device_catalog(
     mut docx: Docx,
     config: &ReportTemplateConfig,
-    items: &[(Device, InspectionRecord)],
+    _items: &[(Device, InspectionRecord)],
 ) -> Docx {
     let color = config.cover.primary_color.trim_start_matches('#');
     docx = docx.add_paragraph(
         Paragraph::new().align(AlignmentType::Center).add_run(
             Run::new()
-                .add_text("设备目录")
+                .add_text("目录")
                 .bold()
                 .size(36)
                 .color(color)
@@ -429,36 +429,15 @@ fn build_device_catalog(
         ),
     );
     docx = docx.add_paragraph(Paragraph::new());
-
-    if items.is_empty() {
-        return docx;
-    }
-
-    // 构建手动设备目录表（序号 + 设备名 + 厂商 + IP）
-    let cell = |text: &str, bold: bool| -> TableCell {
-        let mut run = Run::new().add_text(text).size(22).fonts(zh_fonts());
-        if bold { run = run.bold(); }
-        TableCell::new().add_paragraph(Paragraph::new().add_run(run))
-    };
-    let header_cell = |text: &str| -> TableCell {
-        cell(text, true).shading(Shading::new().fill("E8E8E8"))
-    };
-    let mut rows: Vec<TableRow> = Vec::new();
-    rows.push(TableRow::new(vec![header_cell("序号"), header_cell("设备名称"), header_cell("厂商"), header_cell("IP 地址")]));
-    for (index, (device, _record)) in items.iter().enumerate() {
-        rows.push(TableRow::new(vec![
-            cell(&format!("{}", index + 1), false),
-            cell(&device.name, false),
-            cell(&device.vendor, false),
-            cell(&device.ip, false),
-        ]));
-    }
-
-    docx = docx.add_table(
-        Table::new(rows)
-            .set_grid(vec![800, 3000, 2000, 2000])
+    docx = docx.add_paragraph(
+        Paragraph::new().align(AlignmentType::Center).add_run(
+            Run::new()
+                .add_text("在 WPS 中点击「引用 → 更新目录」自动生成带页码的目录")
+                .size(20)
+                .color("999999")
+                .fonts(zh_fonts()),
+        ),
     );
-
     docx
 }
 
