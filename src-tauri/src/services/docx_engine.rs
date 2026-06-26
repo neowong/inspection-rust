@@ -7,7 +7,7 @@ use docx_rs::{
     AlignmentType, BorderType, BreakType, Docx, Footer, Header, HeightRule, LineSpacing, NumPages,
     PageMargin, PageNum, Paragraph, ParagraphBorder, ParagraphBorderPosition, ParagraphBorders,
     Run, RunFonts, Shading, Table, TableBorder, TableBorderPosition, TableBorders, TableCell,
-    TableCellMargins, TableLayoutType, TableOfContents, TableRow, VAlignType, WidthType,
+    TableCellMargins, TableLayoutType, TableRow, VAlignType, WidthType,
 };
 
 use super::json_util::{parse_json_map, parse_json_object};
@@ -70,8 +70,23 @@ pub fn generate_combined_docx(
         .iter()
         .find(|c| !c.cover.title.is_empty())
         .unwrap_or(&configs[0]);
-    // 封面
-    let mut docx = init_docx_with_vars(project_config, "", &cover.project_name);
+    // 初始化文档，封面页不显示页眉页脚
+    let mut vars: HashMap<&str, String> = HashMap::new();
+    vars.insert("vendor", String::new());
+    vars.insert("device_name", cover.project_name.clone());
+    let header = replace_simple_vars(&project_config.header, &vars);
+    let footer = replace_simple_vars(&project_config.footer, &vars);
+    let mut docx = Docx::new()
+        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
+        .title_pg();
+    // 封面（首页）无页眉页脚 — first_header/first_footer 不设即不显示
+    // 正文页沿用模板的页眉页脚
+    if !header.trim().is_empty() {
+        docx = docx.header(build_header(&header));
+    }
+    if !footer.trim().is_empty() {
+        docx = docx.footer(build_footer(&footer));
+    }
     docx = build_cover(docx, project_config, None, cover);
 
     // 每台设备从新页开始
