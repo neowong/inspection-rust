@@ -88,6 +88,12 @@ pub fn generate_combined_docx(
     }
     docx = build_cover(docx, project_config, None, cover);
 
+    // 目录（启用时，在封面之后、设备报告之前）
+    if project_config.cover.include_toc {
+        docx = page_break(docx);
+        docx = build_device_catalog(docx, project_config, items);
+    }
+
     // 每台设备从新页开始
     for (index, (device, record)) in items.iter().enumerate() {
         let cfg = configs.get(index).unwrap_or(project_config);
@@ -99,12 +105,6 @@ pub fn generate_combined_docx(
             cfg.cover.primary_color.trim_start_matches('#'),
         );
         docx = append_record_body(docx, cfg, device, record, cmd_descs);
-    }
-
-    // 目录在所有设备之后生成（启用时）
-    if project_config.cover.include_toc {
-        docx = page_break(docx);
-        docx = build_device_catalog(docx, project_config, items);
     }
 
     let result = write_docx(docx, output_path);
