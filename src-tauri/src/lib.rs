@@ -848,11 +848,18 @@ fn execute_tool(
                 db_port: None,
                 kernel_version: None,
             };
+            tracing::info!("execute_tool update_device: device_id={}, name={:?}, parsed_args={}", device_id, data.name, args);
             match commands::devices::update_device(device_id, data, state) {
-                Ok(d) => Ok(serde_json::json!({
-                    "id": d.id, "name": d.name, "ip": d.ip, "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
-                }).to_string()),
-                Err(e) => Err(e),
+                Ok(d) => {
+                    tracing::info!("execute_tool update_device 成功: id={}, name={}", d.id, d.name);
+                    Ok(serde_json::json!({
+                        "id": d.id, "name": d.name, "ip": d.ip, "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
+                    }).to_string())
+                }
+                Err(e) => {
+                    tracing::error!("execute_tool update_device 失败: {}", e);
+                    Err(e)
+                }
             }
         }
         "create_device" => {
@@ -1069,6 +1076,30 @@ async fn chat_with_ai(
         let choice = &json["choices"][0];
         let message = &choice["message"];
         let finish_reason = choice["finish_reason"].as_str().unwrap_or("");
+        let has_tool_calls = message.get("tool_calls").is_some();
+
+        tracing::debug!(
+            "chat_with_ai 响应: round={}, finish_reason={}, has_tool_calls={}, content={}",
+            round + 1, finish_reason, has_tool_calls,
+            message["content"].as_str().unwrap_or("").chars().take(50).collect::<String>()
+        );
+
+        // 记录 API 响应头几行用于诊断
+        if has_tool_calls {
+            let tc_count = message["tool_calls"].as_array().map(|a| a.len()).unwrap_or(0);
+            tracing::info!("AI 返回 tool_calls: count={}", tc_count);
+            for (ti, tc) in message["tool_calls"].as_array().unwrap_or(&vec![]).iter().enumerate() {
+                tracing::info!("  tool_call[{}]: name={}, args={}",
+                    ti,
+                    tc["function"]["name"].as_str().unwrap_or(""),
+                    tc["function"]["arguments"].as_str().unwrap_or("")
+                );
+            }
+        } else {
+            tracing::info!("AI 文本回复: finish_reason={}, text={}", finish_reason,
+                message["content"].as_str().unwrap_or("").chars().take(100).collect::<String>()
+            );
+        }
 
         if finish_reason == "tool_calls" {
             let tool_calls = message["tool_calls"].as_array()
