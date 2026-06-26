@@ -75,13 +75,7 @@ pub fn generate_combined_docx(
     vars.insert("vendor", String::new());
     vars.insert("device_name", cover.project_name.clone());
     let header = replace_simple_vars(&project_config.header, &vars);
-    // 组合报告封面占 1 页，去掉页码标记避免正文从第 2 页开始
-    let footer = replace_simple_vars(&project_config.footer, &vars)
-        .replace("第 {{page}} 页 / 共 {{total}} 页", "")
-        .replace("{{page}}", "")
-        .replace("{{total}}", "")
-        .trim()
-        .to_string();
+    let footer = replace_simple_vars(&project_config.footer, &vars);
     let mut docx = Docx::new()
         .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
         .title_pg();
@@ -1304,6 +1298,20 @@ fn inject_toc_styles(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
     xml
 }
 
+/// 正文页从 1 开始编号：在 sectPr 中注入 pgNumType start="1"
+fn inject_page_restart_xml(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
+    let doc_str = String::from_utf8_lossy(&xml.document).into_owned();
+    let marker = "</w:sectPr>";
+    if let Some(pos) = doc_str.rfind(marker) {
+        let mut out = String::with_capacity(doc_str.len() + 100);
+        out.push_str(&doc_str[..pos]);
+        out.push_str(r#"<w:pgNumType w:start="1" />"#);
+        out.push_str(&doc_str[pos..]);
+        xml.document = out.into_bytes();
+    }
+    xml
+}
+
 fn write_docx(docx: Docx, output_path: &Path) -> Result<(), String> {
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
@@ -1311,7 +1319,8 @@ fn write_docx(docx: Docx, output_path: &Path) -> Result<(), String> {
         }
     }
     let f = fs::File::create(output_path).map_err(|e| format!("创建 docx 文件失败: {}", e))?;
-    let xml = inject_toc_styles(docx.build());
+    let mut xml = inject_toc_styles(docx.build());
+    xml = inject_page_restart_xml(xml);
     inject_update_fields(xml)
         .pack(f)
         .map_err(|e| format!("写入 docx 失败: {:?}", e))?;
