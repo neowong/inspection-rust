@@ -17,6 +17,7 @@ import AuthBadge from "../components/AuthBadge";
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
 const DB_VENDORS = ["MySQL", "PostgreSQL", "Oracle", "SQL Server", "达梦", "Redis", "MongoDB", "其它"];
+const ALL_VENDORS = [...NETWORK_VENDORS, ...SERVER_VENDORS.filter(v => !NETWORK_VENDORS.includes(v)), ...DB_VENDORS.filter(v => !NETWORK_VENDORS.includes(v) && !SERVER_VENDORS.includes(v))];
 
 interface DeviceForm {
   name: string;
@@ -626,7 +627,9 @@ export default function DevicesPage() {
                       updated.vendor = "Linux";
                     } else if (dt === "database" && !DB_VENDORS.includes(form.vendor)) {
                       updated.vendor = "MySQL";
-                    } else if (dt !== "server" && dt !== "database" && !NETWORK_VENDORS.includes(form.vendor)) {
+                    } else if (dt === "other" && !ALL_VENDORS.includes(form.vendor)) {
+                      updated.vendor = "其它";
+                    } else if (dt !== "server" && dt !== "database" && dt !== "other" && !NETWORK_VENDORS.includes(form.vendor)) {
                       updated.vendor = "H3C";
                     }
                     setForm({ ...form, ...updated });
@@ -637,6 +640,7 @@ export default function DevicesPage() {
                     <option value="loadbalancer">负载均衡</option>
                     <option value="server">服务器</option>
                     <option value="database">数据库</option>
+                    <option value="other">其它</option>
                   </Select>
                 </div>
                 <div>
@@ -646,7 +650,11 @@ export default function DevicesPage() {
                     const defaultPort = v === "PostgreSQL" ? 5432 : v === "Oracle" ? 1521 : v === "SQL Server" ? 1433 : v === "达梦" ? 5236 : v === "Redis" ? 6379 : v === "MongoDB" ? 27017 : 3306;
                     setForm({ ...form, vendor: v, db_port: defaultPort });
                   }}>
-                    {(form.device_type === "server" ? SERVER_VENDORS : form.device_type === "database" ? DB_VENDORS : NETWORK_VENDORS).map((v) => <option key={v} value={v}>{v}</option>)}
+                    {(form.device_type === "server" ? SERVER_VENDORS
+                      : form.device_type === "database" ? DB_VENDORS
+                      : form.device_type === "other" ? ALL_VENDORS
+                      : NETWORK_VENDORS
+                    ).map((v) => <option key={v} value={v}>{v}</option>)}
                   </Select>
                 </div>
               </div>
