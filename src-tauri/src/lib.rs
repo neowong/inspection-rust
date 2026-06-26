@@ -736,6 +736,24 @@ fn build_tools() -> Vec<serde_json::Value> {
                 }
             }
         }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "update_template",
+                "description": "修改巡检模板（名称、厂商、设备类型等），需先查询模板 ID",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "template_id": {"type": "integer", "description": "模板 ID（必需）"},
+                        "name": {"type": "string", "description": "新模板名称"},
+                        "vendor": {"type": "string", "description": "厂商"},
+                        "device_type": {"type": "string", "description": "设备类型"},
+                        "description": {"type": "string", "description": "描述"}
+                    },
+                    "required": ["template_id"]
+                }
+            }
+        }),
     ]
 }
 
@@ -895,6 +913,30 @@ async fn execute_tool(
                     }).collect();
                     Ok(serde_json::to_string(&simplified).unwrap_or_default())
                 }
+                Err(e) => Err(e),
+            }
+        }
+        "update_template" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let template_id = parsed.get("template_id")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(0);
+            let data = crate::db::models::TemplateUpdate {
+                name: parsed.get("name").and_then(|v| v.as_str().map(|s| s.to_string())),
+                vendor: parsed.get("vendor").and_then(|v| v.as_str().map(|s| s.to_string())),
+                device_type: parsed.get("device_type").and_then(|v| v.as_str().map(|s| s.to_string())),
+                description: parsed.get("description").and_then(|v| v.as_str().map(|s| s.to_string())),
+                model: None,
+                config: None,
+                report_template_id: None,
+                template_type: None,
+            };
+            tracing::info!("update_template: id={}, name={:?}", template_id, data.name);
+            match commands::templates::update_template(template_id, data, state) {
+                Ok(t) => Ok(serde_json::json!({
+                    "id": t.id, "name": t.name, "vendor": t.vendor, "device_type": t.device_type
+                }).to_string()),
                 Err(e) => Err(e),
             }
         }
