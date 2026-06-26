@@ -396,15 +396,6 @@ fn page_break(docx: Docx) -> Docx {
     docx.add_paragraph(Paragraph::new().add_run(Run::new().add_break(BreakType::Page)))
 }
 
-fn cover_info_line(label: &str, value: &str) -> Paragraph {
-    Paragraph::new().align(AlignmentType::Center).add_run(
-        Run::new()
-            .add_text(format!("{}：{}", label, value))
-            .size(26)
-            .fonts(zh_fonts()),
-    )
-}
-
 fn build_device_catalog(
     mut docx: Docx,
     config: &ReportTemplateConfig,
