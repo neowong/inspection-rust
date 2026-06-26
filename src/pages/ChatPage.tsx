@@ -150,6 +150,11 @@ function getDateLabel(dateStr: string): string {
   return "更早";
 }
 
+function initSession(id: string): ChatSession {
+  if (id) return loadSessionById(id) || { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  return { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+}
+
 // ── 暴露给 AppShell 的 API ──
 
 export { loadSessions, deleteSession, getDateLabel };
@@ -159,10 +164,18 @@ export default function ChatPage() {
   const chatId = searchParams.get("id") || "";
 
   // 当前会话
-  const [session, setSession] = useState<ChatSession>(() => {
-    if (chatId) return loadSessionById(chatId) || { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    return { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-  });
+  const [session, setSession] = useState<ChatSession>(() => initSession(chatId));
+
+  // chatId 变化时重新加载会话
+  useEffect(() => {
+    if (chatId) {
+      const saved = loadSessionById(chatId);
+      if (saved) setSession(saved);
+      else setSession(initSession(""));
+    } else {
+      setSession(initSession(""));
+    }
+  }, [chatId]);
 
   const messages = session.messages;
 

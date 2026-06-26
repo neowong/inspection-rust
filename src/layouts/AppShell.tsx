@@ -85,7 +85,7 @@ export default function AppShell() {
 
   // 刷新会话列表
   const refreshSessions = () => setSessions(loadSessions());
-  useEffect(() => { refreshSessions(); }, [location.pathname]);
+  useEffect(() => { refreshSessions(); }, [location.pathname, location.search]);
 
   // 版本更新检查
   useEffect(() => {
