@@ -777,7 +777,6 @@ fn execute_tool(
 /// get_stats 内部函数（供工具调用和原有 #[tauri::command] 共用）
 fn get_stats_inner(state: &tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     let db = state.db.lock();
-    let db = state.db.lock();
     let (device_count, online_count, offline_count, template_count, command_count,
          batch_count, pending_batch_count, completed_batch_count,
          network_device_count, security_device_count, server_count, database_count, other_device_count, report_count) = db
