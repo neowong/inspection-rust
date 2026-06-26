@@ -614,8 +614,160 @@ pub fn run() {
 
 #[tauri::command]
 fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    get_stats_inner(&state)
+}
+
+/// 构建工具定义列表
+fn build_tools() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "scan_live_hosts",
+                "description": "扫描指定网段的存活主机（ICMP ping + TCP fallback）",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subnet": {"type": "string", "description": "CIDR 网段，如 192.168.1.0/24"},
+                        "timeout_ms": {"type": "number", "description": "每台主机超时毫秒", "default": 3000}
+                    },
+                    "required": ["subnet"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "list_devices",
+                "description": "查询设备列表，支持按类型、状态、厂商筛选",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "device_type": {"type": "string", "description": "设备类型过滤，如 switch,router（逗号分隔），other 表示其他"},
+                        "status": {"type": "string", "description": "设备状态过滤，如 online,offline"},
+                        "vendor": {"type": "string", "description": "厂商过滤"}
+                    }
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "get_stats",
+                "description": "获取系统统计概览（设备数量、在线率、任务状态、报告数等）",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "check_device_status",
+                "description": "检测指定设备的在线状态",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "device_id": {"type": "number", "description": "设备 ID"}
+                    },
+                    "required": ["device_id"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "check_all_devices_status",
+                "description": "批量检测所有设备的在线状态",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+    ]
+}
+
+/// 执行工具调用并返回 JSON 字符串结果
+fn execute_tool(
+    name: &str,
+    args: &str,
+    state: tauri::State<'_, AppState>,
+    app_handle: &tauri::AppHandle,
+) -> String {
+    tracing::info!("工具调用: name={}, args={}", name, args);
+    let result: Result<String, String> = match name {
+        "get_stats" => {
+            get_stats_inner(&state).map(|v| v.to_string())
+        }
+        "list_devices" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let vendor = parsed.get("vendor").and_then(|v| v.as_str().map(|s| s.to_string()));
+            let device_type = parsed.get("device_type").and_then(|v| v.as_str().map(|s| s.to_string()));
+            let status = parsed.get("status").and_then(|v| v.as_str().map(|s| s.to_string()));
+            match commands::devices::list_devices(vendor, device_type, status, state) {
+                Ok(devices) => {
+                    let simplified: Vec<serde_json::Value> = devices.into_iter().map(|d| {
+                        serde_json::json!({
+                            "id": d.id, "name": d.name, "ip": d.ip,
+                            "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
+                        })
+                    }).collect();
+                    Ok(serde_json::to_string(&simplified).unwrap_or_default())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        "check_device_status" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let device_id = parsed.get("device_id")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(0);
+            let rt = tokio::runtime::Handle::current();
+            match rt.block_on(commands::devices::check_device_status(device_id, state.clone())) {
+                Ok(v) => Ok(v.to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        "check_all_devices_status" => {
+            let rt = tokio::runtime::Handle::current();
+            match rt.block_on(commands::devices::check_all_devices_status(state.clone())) {
+                Ok(v) => Ok(v.to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        "scan_live_hosts" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let subnet = parsed.get("subnet")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let timeout_ms = parsed.get("timeout_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(3000);
+            let rt = tokio::runtime::Handle::current();
+            match rt.block_on(commands::tools::scan_live_hosts(
+                app_handle.clone(), subnet, timeout_ms,
+            )) {
+                Ok(results) => Ok(serde_json::to_string(&results).unwrap_or_default()),
+                Err(e) => Err(e),
+            }
+        }
+        _ => Err(format!("未知工具: {}", name)),
+    };
+
+    match result {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!(r#"{{"error": "{}"}}"#, e.replace('"', "\\\""));
+            tracing::warn!("工具执行失败: name={}, error={}", name, e);
+            err
+        }
+    }
+}
+
+/// get_stats 内部函数（供工具调用和原有 #[tauri::command] 共用）
+fn get_stats_inner(state: &tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     let db = state.db.lock();
-    // 合并为单次查询，减少锁内 prepare/往返开销
+    let db = state.db.lock();
     let (device_count, online_count, offline_count, template_count, command_count,
          batch_count, pending_batch_count, completed_batch_count,
          network_device_count, security_device_count, server_count, database_count, other_device_count, report_count) = db
@@ -656,7 +808,7 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
                 ))
             },
         )
-        .unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        .map_err(|e| format!("统计查询失败: {}", e))?;
 
     Ok(serde_json::json!({
         "device_count": device_count,
@@ -676,9 +828,10 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
     }))
 }
 
-/// 对话模式：发送消息到 AI 并返回回复
+/// 对话模式：发送消息到 AI 并返回回复，支持 tool calling
 #[tauri::command]
 async fn chat_with_ai(
+    app_handle: tauri::AppHandle,
     config_id: Option<i64>,
     system_prompt: String,
     messages: Vec<serde_json::Value>,
@@ -708,46 +861,85 @@ async fn chat_with_ai(
         .map_err(|e| format!("解密 API Key 失败: {}", e))?;
 
     let url = crate::services::ai_inspection::build_chat_url(&base_url);
+    let tools = build_tools();
 
-    // 构建消息数组：system + 用户传入的历史消息
+    // 构建消息数组
     let mut api_messages = vec![serde_json::json!({"role": "system", "content": system_prompt})];
     api_messages.extend(messages);
 
-    let body = serde_json::json!({
-        "model": model,
-        "messages": api_messages,
-        "temperature": 0.7,
-        "max_tokens": 4096
-    });
-
     let client = crate::services::ai_inspection::get_client();
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", decrypted_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("AI 请求失败: {}", e))?;
+    let max_rounds = 5;
 
-    let status = response.status();
-    let response_text = response.text().await
-        .map_err(|e| format!("读取 AI 响应失败: {}", e))?;
+    for round in 0..max_rounds {
+        tracing::debug!("chat_with_ai 第 {}/{} 轮", round + 1, max_rounds);
 
-    if !status.is_success() {
-        return Err(format!("AI 返回错误 ({}): {}", status, &response_text[..response_text.len().min(200)]));
+        let mut body = serde_json::json!({
+            "model": model,
+            "messages": api_messages,
+            "temperature": 0.7,
+            "max_tokens": 4096,
+        });
+        // 第一轮带上工具定义，后续轮不需要（token 节省）
+        if round == 0 {
+            body["tools"] = serde_json::Value::Array(tools.clone());
+            body["tool_choice"] = serde_json::json!("auto");
+        }
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", decrypted_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("AI 请求失败: {}", e))?;
+
+        let status = response.status();
+        let response_text = response.text().await
+            .map_err(|e| format!("读取 AI 响应失败: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("AI 返回错误 ({}): {}", status, &response_text[..response_text.len().min(200)]));
+        }
+
+        let json: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| format!("解析 AI 响应失败: {}", e))?;
+
+        let choice = &json["choices"][0];
+        let message = &choice["message"];
+        let finish_reason = choice["finish_reason"].as_str().unwrap_or("");
+
+        if finish_reason == "tool_calls" {
+            let tool_calls = message["tool_calls"].as_array()
+                .cloned()
+                .unwrap_or_default();
+
+            // 添加 assistant 的 tool_calls 消息到历史
+            api_messages.push(message.clone());
+
+            for tc in &tool_calls {
+                let id = tc["id"].as_str().unwrap_or("");
+                let func_name = tc["function"]["name"].as_str().unwrap_or("");
+                let func_args = tc["function"]["arguments"].as_str().unwrap_or("");
+                let result = execute_tool(func_name, func_args, state.clone(), &app_handle);
+                api_messages.push(serde_json::json!({
+                    "tool_call_id": id,
+                    "role": "tool",
+                    "content": result,
+                }));
+            }
+            continue;
+        }
+
+        // finish_reason 为 stop 或 length
+        let content = message["content"]
+            .as_str()
+            .unwrap_or("AI 未返回有效回复")
+            .to_string();
+        return Ok(content);
     }
 
-    // 解析响应
-    let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| format!("解析 AI 响应失败: {}", e))?;
-
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("AI 未返回有效回复")
-        .to_string();
-
-    Ok(content)
+    Ok("AI 对话已达到最大轮次，请简化请求或重试".to_string())
 }
 
 /// 静态信息检测冷却：同一设备 10 分钟内不重复触发（防止状态抖动反复 SSH）
