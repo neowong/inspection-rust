@@ -740,7 +740,7 @@ fn build_tools() -> Vec<serde_json::Value> {
 }
 
 /// 执行工具调用并返回 JSON 字符串结果
-fn execute_tool(
+async fn execute_tool(
     name: &str,
     args: &str,
     state: tauri::State<'_, AppState>,
@@ -776,15 +776,13 @@ fn execute_tool(
             let device_id = parsed.get("device_id")
                 .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
                 .unwrap_or(0);
-            let rt = tokio::runtime::Handle::current();
-            match rt.block_on(commands::devices::check_device_status(device_id, state.clone())) {
+            match commands::devices::check_device_status(device_id, state.clone()).await {
                 Ok(v) => Ok(v.to_string()),
                 Err(e) => Err(e),
             }
         }
         "check_all_devices_status" => {
-            let rt = tokio::runtime::Handle::current();
-            match rt.block_on(commands::devices::check_all_devices_status(state.clone())) {
+            match commands::devices::check_all_devices_status(state.clone()).await {
                 Ok(v) => Ok(v.to_string()),
                 Err(e) => Err(e),
             }
@@ -799,10 +797,9 @@ fn execute_tool(
             let timeout_ms = parsed.get("timeout_ms")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(3000);
-            let rt = tokio::runtime::Handle::current();
-            match rt.block_on(commands::tools::scan_live_hosts(
+            match commands::tools::scan_live_hosts(
                 app_handle.clone(), subnet, timeout_ms,
-            )) {
+            ).await {
                 Ok(results) => Ok(serde_json::to_string(&results).unwrap_or_default()),
                 Err(e) => Err(e),
             }
@@ -1028,8 +1025,16 @@ async fn chat_with_ai(
     let client = crate::services::ai_inspection::get_client();
     let max_rounds = 5;
 
+    // 记录用户自然语言问题
+    if let Some(first) = api_messages.iter().find(|m| m["role"] == "user") {
+        if let Some(text) = first["content"].as_str() {
+            let truncated: String = text.chars().take(200).collect();
+            tracing::info!("[AI聊天] 用户问题: {}", truncated);
+        }
+    }
+
     for round in 0..max_rounds {
-        tracing::debug!("chat_with_ai 第 {}/{} 轮", round + 1, max_rounds);
+        tracing::info!("[AI聊天] 第 {} 轮请求", round + 1);
 
         let mut body = serde_json::json!({
             "model": model,
@@ -1075,16 +1080,16 @@ async fn chat_with_ai(
         // 记录 API 响应头几行用于诊断
         if has_tool_calls {
             let tc_count = message["tool_calls"].as_array().map(|a| a.len()).unwrap_or(0);
-            tracing::info!("AI 返回 tool_calls: count={}", tc_count);
+            tracing::info!("[AI聊天] 返回 tool_calls: count={}", tc_count);
             for (ti, tc) in message["tool_calls"].as_array().unwrap_or(&vec![]).iter().enumerate() {
-                tracing::info!("  tool_call[{}]: name={}, args={}",
+                tracing::info!("[AI聊天]   tool_call[{}]: name={}, args={}",
                     ti,
                     tc["function"]["name"].as_str().unwrap_or(""),
                     tc["function"]["arguments"].as_str().unwrap_or("")
                 );
             }
         } else {
-            tracing::info!("AI 文本回复: finish_reason={}, text={}", finish_reason,
+            tracing::info!("[AI聊天] 文本回复: finish_reason={}, text={}", finish_reason,
                 message["content"].as_str().unwrap_or("").chars().take(100).collect::<String>()
             );
         }
@@ -1101,7 +1106,7 @@ async fn chat_with_ai(
                 let id = tc["id"].as_str().unwrap_or("");
                 let func_name = tc["function"]["name"].as_str().unwrap_or("");
                 let func_args = tc["function"]["arguments"].as_str().unwrap_or("");
-                let result = execute_tool(func_name, func_args, state.clone(), &app_handle);
+                let result = execute_tool(func_name, func_args, state.clone(), &app_handle).await;
                 api_messages.push(serde_json::json!({
                     "tool_call_id": id,
                     "role": "tool",
