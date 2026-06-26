@@ -666,7 +666,7 @@ fn build_tools() -> Vec<serde_json::Value> {
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "device_id": {"type": "number", "description": "设备 ID"}
+                        "device_id": {"type": "integer", "description": "设备 ID"}
                     },
                     "required": ["device_id"]
                 }
@@ -688,7 +688,7 @@ fn build_tools() -> Vec<serde_json::Value> {
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "device_id": {"type": "number", "description": "设备 ID（必需）"},
+                        "device_id": {"type": "integer", "description": "设备 ID（必需）"},
                         "name": {"type": "string", "description": "新设备名称"},
                         "ip": {"type": "string", "description": "新 IP 地址"},
                         "device_type": {"type": "string", "description": "设备类型 switch/router/firewall/loadbalancer/server/database"},
