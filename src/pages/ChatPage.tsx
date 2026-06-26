@@ -158,6 +158,13 @@ export default function ChatPage() {
             <h2 className="text-[32px] font-medium mb-2 leading-tight" style={{ color: "hsl(var(--text-primary))", fontFamily: "'Times New Roman', serif" }}>
               有什么可以帮你的？
             </h2>
+            {selectedConfig && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] mb-6"
+                style={{ backgroundColor: "hsl(var(--bg-hover))", color: "hsl(var(--text-tertiary))" }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "hsl(var(--success))" }} />
+                当前模型：{selectedConfig.name} · {selectedConfig.model}
+              </div>
+            )}
           </div>
         ) : (
           /* 消息列表 */
@@ -253,7 +260,7 @@ export default function ChatPage() {
                     style={{ color: "hsl(var(--text-tertiary))" }}
                   >
                     {selectedConfig ? (
-                      <span>{selectedConfig.model}</span>
+                      <span className="font-medium">{selectedConfig.name}</span>
                     ) : (
                       <span>选择模型</span>
                     )}
@@ -270,7 +277,10 @@ export default function ChatPage() {
                             key={c.id}
                             onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
                             className="flex items-center justify-between w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-[hsl(var(--bg-hover))]"
-                            style={{ color: "hsl(var(--text-primary))" }}
+                            style={{
+                              color: "hsl(var(--text-primary))",
+                              backgroundColor: c.id === selectedId ? "hsl(var(--bg-hover))" : "transparent",
+                            }}
                           >
                             <span className="font-medium">{c.name}</span>
                             <span className="text-[11px]" style={{ color: "hsl(var(--text-tertiary))" }}>{c.model}</span>
