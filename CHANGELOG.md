@@ -1,24 +1,53 @@
 # 更新日志
 
-## v3.53.0 (2026-06-25)
+## v3.53.0 (2026-06-26)
 
 ### ✨ 新功能
-- **AI 配置测试连接**：新增「测试连接」按钮，验证 API Key 和 URL 是否可用
+- **AI 模式**：侧边栏新增「AI 模式」入口，基于自然语言对话控制系统
+  - 支持 Function Calling（Tool Use），可真实调用系统接口
+  - 可用工具：scan_live_hosts / list_devices / get_stats / check_device_status / update_device / create_device / list_templates / update_template / list_batches / run_batch / analyze_batch
+  - 示例问题引导，点击自动填充输入框
+  - 模型选择器：输入框内切换已配置的 AI 模型
+  - Claude.ai 风格 UI：大圆角输入框 + 欢迎页 + 胶囊建议
+  - 聊天历史持久化（localStorage），按日期分组
+  - Markdown 渲染（react-markdown + remark-gfm）
+  - 消息复制，切换页面后状态保持
+- **侧边栏重构**：传统模式 / AI 模式可切换，默认传统模式
+  - 传统模式收起时显示导航图标
+  - AI 模式收起时显示聊天历史图标
+  - 品牌区域点击切换收起/展开
+- **报告封面独立定制**：封面和报告内容分离配置
+  - 封面仅组合报告输出，单设备报告不输出
+  - 预览两页 1:1 比例（封面页 + 报告页）
+  - 目录可选项，勾选后在封面和设备报告之间插入目录页
+  - 封面排版重设计：标题/分割线/副标题/日期底部
+  - 封面无页眉页脚，正文页码从目录开始
+- **仪表盘设备分类新增「其它」**
+- **设备管理筛选新增「其它」选项**
 
 ### 🐛 Bug 修复
 - **Linux 关闭按钮失效**：`visible:false` + `window.show()` 在 WebKitGTK 下导致标题栏装饰未初始化，改为 `visible:true` + `transparent:true`
-- **启动闪烁优化**：WebView 背景透明 + body 内联背景色，替代窗口隐藏方案，兼容所有平台
+- **启动闪烁优化**：WebView 背景透明 + body 内联背景色
 - **Windows 日志文件行尾修复**：tracing 默认写 LF，Windows 记事本不识别，添加 CRLF 转换器
 - **版本检测 internal- 前缀兼容**：`internal-v3.53.0` tag 去掉 `internal-` 前缀后再比较，避免误报更新
-- **DeepSeek 响应兼容**：修复 `content` 为 `null` 或空串时的解析错误
-- **DeepSeek URL 智能去重**：已含 `/v1` 时不再重复拼接
-- **AI API URL 规范化**：不再强制加 `/v1`，按各厂商官方规范处理
-- **Modal 稳定性修复**：背景点击检测、模型列表双击编辑
-- **AI 配置表单 Enter 导航**：已去掉，保持 Tab 键原生导航
+- **AI 分析状态跨页面保持**：processingBatches 升级为模块级 ref
+- **get_stats 死锁修复**：重复 `let db = state.db.lock()` 导致 parking_lot 死锁
+- **tool_calls 每轮都发送 tools**：修复第二轮无工具可用导致 AI 只说不做
+- **execute_tool 改用 async**：消除 `block_on` 死锁，扫描工具前端不再卡思考中
+- **对话历史 title 丢失**：useRef 解决 stale closure
+- **chatId ↔ session.id 循环依赖**：去掉 sync effect，URL 只在首次发消息时设置
+- **预览缩放自适应**：根据容器宽度等比缩小
+- **综合报告封面使用定制模板**：优先取 cover.title 非空的模板
+- **build_cover 真正使用模板标题/副标题**：不再硬编码项目名
+- **DeepSeek 响应兼容、URL 拼接、AI 配置测试连接**
+- **Modal 稳定性修复**
 
 ### 🔧 改进
-- **发版流程优化**：master 全平台发布，internal 只发 Windows 版
-- **构建目标精简**：去掉 AppImage，只保留 NSIS + DEB
+- **发版流程**：master 全平台，internal 仅 Windows
+- **构建目标**：Windows 改为 MSI（避免 SmartScreen），去掉 AppImage
+- **侧边栏**：AI 模式入口图标改为 Bot（机器人）
+- **对话框占位符**：「输入问题，AI 帮你操作...」
+- **报告预览**：两页 1:1 真实比例
 
 ## v3.52.0 (2026-06-25)
 
