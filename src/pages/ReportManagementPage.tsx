@@ -16,11 +16,13 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   critical: { label: "严重", color: "var(--danger)" },
 };
 
+// 模块级引用，跨页面切换保持处理状态
+const processingBatchesRef: { current: Record<number, "ai" | "manual"> } = { current: {} };
+
 export default function ReportManagementPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
   const [devices, setDevices] = useState<Device[]>([]);
-  // 跟踪当前期望选中的批次 id，用于丢弃过期的 get_batch 响应（快速切换批次 / 轮询竞态）
   const selectedIdRef = useRef<number | null>(null);
 
   // Selected record detail
@@ -29,7 +31,7 @@ export default function ReportManagementPage() {
   const [recordLoading, setRecordLoading] = useState(false);
 
   const [batchGenerating, setBatchGenerating] = useState<"" | "ai" | "manual" | "combined">("");
-  const [processingBatches, setProcessingBatches] = useState<Record<number, "ai" | "manual">>({});
+  const [processingBatches, setProcessingBatches] = useState<Record<number, "ai" | "manual">>(processingBatchesRef.current);
   // 批次操作完成后显示简短反馈
   const [batchDone, setBatchDone] = useState<{type: "ai" | "manual"; batchId: number} | null>(null);
   // Log analysis
@@ -63,11 +65,23 @@ export default function ReportManagementPage() {
     setExpandedRecordId(null);
     setFullRecord(null);
     setLogResult(null);
+    // 恢复之前的处理状态（跨页面导航保持）
+    if (processingBatchesRef.current[batch.id]) {
+      setProcessingBatches({...processingBatchesRef.current});
+    }
     try {
       const full: any = await invoke("get_batch", { batchId: batch.id });
-      // 用户可能在 await 期间切换了批次，丢弃过期响应避免指向错误批次
       if (selectedIdRef.current !== batch.id) return;
       setSelectedBatch(full);
+      // 自动检测：如果还有记录在分析中，恢复处理状态
+      if (full.records?.some((r: any) => r.ai_status === 'processing')) {
+        const sp = (v: Record<number, "ai" | "manual">) => { processingBatchesRef.current = v; setProcessingBatches(v); };
+        sp({...processingBatchesRef.current, [batch.id]: "ai"});
+      } else {
+        // 记录都已完成，清理处理状态
+        delete processingBatchesRef.current[batch.id];
+        setProcessingBatches({...processingBatchesRef.current});
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -146,14 +160,15 @@ export default function ReportManagementPage() {
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || []; // 提前捕获，避免切批次后变成别的任务的
     setBatchGenerating("ai");
-    setProcessingBatches(prev => ({...prev, [batchId]: "ai"}));
+    const sp = (v: Record<number, "ai" | "manual">) => { processingBatchesRef.current = v; setProcessingBatches(v); };
+    sp({...processingBatchesRef.current, [batchId]: "ai"});
     try {
       await invoke("analyze_batch", { batchId, force: hasAnalyzedRecords });
       await refreshAfterMutation(expandedRecordId ?? undefined);
       await generateAllReports(batchId, records);
       flashBatchDone("ai", batchId);
     } catch (e) { console.error(String(e)); }
-    finally { setBatchGenerating(""); setProcessingBatches(prev => { const n = {...prev}; delete n[batchId]; return n; }); }
+    finally { setBatchGenerating(""); const n = {...processingBatchesRef.current}; delete n[batchId]; sp(n); }
   };
 
   // 批次：人工评判 — 直接生成单个报告（跳过 AI）
@@ -162,12 +177,13 @@ export default function ReportManagementPage() {
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || [];
     setBatchGenerating("manual");
-    setProcessingBatches(prev => ({...prev, [batchId]: "manual"}));
+    const sp = (v: Record<number, "ai" | "manual">) => { processingBatchesRef.current = v; setProcessingBatches(v); };
+    sp({...processingBatchesRef.current, [batchId]: "manual"});
     try {
       await generateAllReports(batchId, records);
       flashBatchDone("manual", batchId);
     } catch (e) { console.error(String(e)); }
-    finally { setBatchGenerating(""); setProcessingBatches(prev => { const n = {...prev}; delete n[batchId]; return n; }); }
+    finally { setBatchGenerating(""); const n = {...processingBatchesRef.current}; delete n[batchId]; sp(n); }
   };
 
   // 批次：下载综合报告（合并已有单报告 + 保存对话框）
