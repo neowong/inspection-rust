@@ -170,12 +170,22 @@ export default function AppShell() {
                 })}
               </nav>
             ) : (
-              <div className="flex flex-col items-center py-3 gap-3 flex-1">
+              <div className="flex flex-col items-center py-3 gap-1.5 flex-1">
                 <button onClick={newChat} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }} title="新对话">
                   <Plus size={20} />
                 </button>
-                <button onClick={() => navigate("/chat")} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                <div className="w-6 border-t my-1" style={{ borderColor: "hsl(var(--sidebar-hover))" }} />
+                {groupedSessions.flatMap(g => g.items).slice(0, 10).map(s => (
+                  <button key={s.id} onClick={() => navigate(`/chat?id=${s.id}`)}
+                    className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                    style={{ color: s.id === currentChatId ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }}
+                    title={s.title}>
+                    <MessageCircle size={18} />
+                  </button>
+                ))}
+                <div className="flex-1" />
+                <button onClick={() => navigate("/chat")} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))] mb-1"
                   style={{ color: location.pathname.startsWith("/chat") ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
                   <MessageSquare size={20} />
                 </button>
