@@ -680,6 +680,62 @@ fn build_tools() -> Vec<serde_json::Value> {
                 "parameters": {"type": "object", "properties": {}}
             }
         }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "update_device",
+                "description": "修改设备信息（名称、IP、类型、厂商等），需先查询设备 ID",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "device_id": {"type": "number", "description": "设备 ID（必需）"},
+                        "name": {"type": "string", "description": "新设备名称"},
+                        "ip": {"type": "string", "description": "新 IP 地址"},
+                        "device_type": {"type": "string", "description": "设备类型 switch/router/firewall/loadbalancer/server/database"},
+                        "vendor": {"type": "string", "description": "厂商"}
+                    },
+                    "required": ["device_id"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "create_device",
+                "description": "添加新设备",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "设备名称"},
+                        "ip": {"type": "string", "description": "IP 地址"},
+                        "device_type": {"type": "string", "description": "设备类型"},
+                        "vendor": {"type": "string", "description": "厂商"}
+                    },
+                    "required": ["name", "ip", "device_type", "vendor"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "list_templates",
+                "description": "查询巡检模板列表",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "list_batches",
+                "description": "查询巡检任务列表，支持按状态筛选",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "description": "任务状态过滤，如 pending,running,completed"}
+                    }
+                }
+            }
+        }),
     ]
 }
 
@@ -748,6 +804,102 @@ fn execute_tool(
                 app_handle.clone(), subnet, timeout_ms,
             )) {
                 Ok(results) => Ok(serde_json::to_string(&results).unwrap_or_default()),
+                Err(e) => Err(e),
+            }
+        }
+        "update_device" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let device_id = parsed.get("device_id")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(0);
+            let data = crate::db::models::DeviceUpdate {
+                name: parsed.get("name").and_then(|v| v.as_str().map(|s| s.to_string())),
+                ip: parsed.get("ip").and_then(|v| v.as_str().map(|s| s.to_string())),
+                device_type: parsed.get("device_type").and_then(|v| v.as_str().map(|s| s.to_string())),
+                vendor: parsed.get("vendor").and_then(|v| v.as_str().map(|s| s.to_string())),
+                model: None,
+                ssh_username: None,
+                ssh_password_encrypted: None,
+                ssh_port: None,
+                template_id: None,
+                status: None,
+                last_checked_at: None,
+                serial_number: None,
+                manufacturing_date: None,
+                sysname: None,
+                cpu_cores: None,
+                memory_gb: None,
+                deployment: None,
+                db_version: None,
+                instance_name: None,
+                db_username: None,
+                db_password_encrypted: None,
+                db_port: None,
+                kernel_version: None,
+            };
+            match commands::devices::update_device(device_id, data, state) {
+                Ok(d) => Ok(serde_json::json!({
+                    "id": d.id, "name": d.name, "ip": d.ip, "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
+                }).to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        "create_device" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let name = parsed.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let ip = parsed.get("ip").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let device_type = parsed.get("device_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let vendor = parsed.get("vendor").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let data = crate::db::models::DeviceCreate {
+                name, ip, device_type, vendor,
+                model: None,
+                ssh_username: None,
+                ssh_password_encrypted: None,
+                ssh_port: None,
+                template_id: None,
+                status: None,
+                last_checked_at: None,
+                serial_number: None,
+                manufacturing_date: None,
+                sysname: None,
+                cpu_cores: None,
+                memory_gb: None,
+                deployment: None,
+                db_version: None,
+                instance_name: None,
+                db_username: None,
+                db_password_encrypted: None,
+                db_port: None,
+                kernel_version: None,
+            };
+            match commands::devices::create_device(data, state) {
+                Ok(d) => Ok(serde_json::json!({
+                    "id": d.id, "name": d.name, "ip": d.ip, "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
+                }).to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        "list_templates" => {
+            match commands::templates::list_templates(None, state) {
+                Ok(templates) => {
+                    let simplified: Vec<serde_json::Value> = templates.into_iter().map(|t| {
+                        serde_json::json!({
+                            "id": t.get("id"), "name": t.get("name"), "vendor": t.get("vendor")
+                        })
+                    }).collect();
+                    Ok(serde_json::to_string(&simplified).unwrap_or_default())
+                }
+                Err(e) => Err(e),
+            }
+        }
+        "list_batches" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let status = parsed.get("status").and_then(|v| v.as_str().map(|s| s.to_string()));
+            match commands::inspections::list_batches(status, state) {
+                Ok(batches) => Ok(serde_json::to_string(&batches).unwrap_or_default()),
                 Err(e) => Err(e),
             }
         }
