@@ -63,6 +63,11 @@ export default function DashboardPage() {
 
   const loadStats = () => invoke<Stats>("get_stats").then(setStats).catch(console.error);
   useEffect(() => { loadStats(); }, [location.key]);
+  // 每 30s 自动刷新
+  useEffect(() => {
+    const t = setInterval(loadStats, 30000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     window.addEventListener("focus", loadStats);
     return () => window.removeEventListener("focus", loadStats);

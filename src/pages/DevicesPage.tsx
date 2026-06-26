@@ -111,6 +111,11 @@ export default function DevicesPage() {
   }, []);
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
+  // 每 30s 自动刷新设备状态
+  useEffect(() => {
+    const t = setInterval(loadDevices, 30000);
+    return () => clearInterval(t);
+  }, [loadDevices]);
   // URL ?status= / ?type= 变化时同步筛选（dashboard 跳转）
   useEffect(() => {
     const s = searchParams.get("status") || "";
