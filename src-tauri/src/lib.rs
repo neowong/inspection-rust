@@ -1037,11 +1037,9 @@ async fn chat_with_ai(
             "temperature": 0.7,
             "max_tokens": 4096,
         });
-        // 第一轮带上工具定义，后续轮不需要（token 节省）
-        if round == 0 {
-            body["tools"] = serde_json::Value::Array(tools.clone());
-            body["tool_choice"] = serde_json::json!("auto");
-        }
+        // 每轮都带上工具定义，允许 AI 在收到 tool 结果后继续调用新工具
+        body["tools"] = serde_json::Value::Array(tools.clone());
+        body["tool_choice"] = serde_json::json!("auto");
 
         let response = client
             .post(&url)
