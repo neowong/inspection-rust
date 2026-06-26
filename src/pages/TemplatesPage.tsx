@@ -1521,15 +1521,34 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
 
   const problems = rows.filter((r) => r.status === "warning" || r.status === "critical");
 
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [scale, setScale] = React.useState(1);
+  React.useEffect(() => {
+    const update = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth;
+        setScale(Math.min(1, w / 794));
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   return (
-    <div style={{ overflow: "auto", paddingBottom: 24 }}>
+    <div ref={containerRef} style={{ overflow: "hidden", paddingBottom: 24 }}>
+      <div style={{
+        transformOrigin: "top center",
+        transform: `scale(${scale})`,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 24,
+      }}>
       {/* ──── 第 1 页：封面 ──── */}
       <div style={{
         width: "210mm", minHeight: "297mm", background: "white",
         boxShadow: "0 2px 12px rgba(0,0,0,0.08)", padding: "20mm 18mm",
         boxSizing: "border-box", color: "#222",
         fontFamily: '"FangSong", "STFangsong", "仿宋", serif', fontSize: 11,
-        margin: "0 auto 24px auto", display: "flex", flexDirection: "column",
+        display: "flex", flexDirection: "column",
         justifyContent: "center", alignItems: "center", textAlign: "center" as const,
       }}>
         <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>封面（仅组合报告输出）</div>
@@ -1696,6 +1715,7 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
             {footerText}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
