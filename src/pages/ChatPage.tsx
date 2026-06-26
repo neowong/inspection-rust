@@ -293,7 +293,7 @@ export default function ChatPage() {
       {/* 开发中提示 */}
       <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1.5 text-[12px]"
         style={{ backgroundColor: "hsl(var(--warning) / 0.08)", color: "hsl(var(--warning))" }}>
-        ⚡ 此功能还在开发中，可能存在不完善之处，欢迎反馈
+        此功能还在完善中，可能存在不完善之处，欢迎反馈
       </div>
       {/* 消息区域 */}
       <div className="flex-1 overflow-y-auto">
