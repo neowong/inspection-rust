@@ -216,16 +216,19 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
   const selectedConfig = configs.find(c => c.id === selectedId);
 
   const updateMessages = (newMessages: Message[], userMsg?: string) => {
-    const s = { ...session };
+    // 始终基于最新 session 而不是闭包中的旧值
+    const s = { ...sessionRef.current };
     if (s.title === "新对话" && userMsg) {
       s.title = userMsg.length > 30 ? userMsg.slice(0, 30) + "…" : userMsg;
     }
     s.messages = newMessages;
     s.updatedAt = new Date().toISOString();
-    // 首次发送消息时同步 URL
     if (!chatId) {
       setSearchParams({ id: s.id }, { replace: true });
     }

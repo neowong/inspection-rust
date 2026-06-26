@@ -1154,7 +1154,8 @@ async fn chat_with_ai(
             .map_err(|e| format!("读取 AI 响应失败: {}", e))?;
 
         if !status.is_success() {
-            return Err(format!("AI 返回错误 ({}): {}", status, &response_text[..response_text.len().min(200)]));
+            let snippet: String = response_text.chars().take(200).collect();
+            return Err(format!("AI 返回错误 ({}): {}", status, snippet));
         }
 
         let json: serde_json::Value = serde_json::from_str(&response_text)
@@ -1210,7 +1211,13 @@ async fn chat_with_ai(
             continue;
         }
 
-        // finish_reason 为 stop 或 length
+        // finish_reason: stop → 正常；length → 截断；content_filter → 被过滤
+        if finish_reason == "content_filter" {
+            return Err("AI 回复被内容过滤拦截，请修改输入后重试".to_string());
+        }
+        if finish_reason == "length" {
+            tracing::warn!("[AI聊天] 响应被截断 (max_tokens 不足)");
+        }
         let content = message["content"]
             .as_str()
             .unwrap_or("AI 未返回有效回复")
@@ -1469,8 +1476,6 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
             "后台静态信息采集: {} 台需要检测，{} 台冷却中跳过（每批并发 3）",
             filtered.len(), skipped
         );
-        for _id in &filtered {
-        }
         for chunk in filtered.chunks(3) {
             std::thread::scope(|s| {
                 for id in chunk {
