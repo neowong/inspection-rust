@@ -173,12 +173,17 @@ export default function ChatPage() {
                   <button
                     key={i}
                     onClick={() => handleSend(PROMPT_MAP[s.text] || s.text)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full border text-[13px]
-                      hover:bg-[hsl(var(--bg-hover))] transition-colors cursor-pointer"
-                    style={{ borderColor: "hsl(var(--border))" }}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] transition-colors cursor-pointer"
+                    style={{
+                      border: "1px solid hsl(var(--border))",
+                      color: "hsl(var(--text-primary))",
+                      backgroundColor: "transparent",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "hsl(var(--bg-hover))")}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
                   >
-                    <Icon size={14} className="shrink-0 opacity-50" />
-                    <span className="whitespace-nowrap">{s.text}</span>
+                    <Icon size={14} style={{ opacity: 0.5 }} />
+                    <span>{s.text}</span>
                   </button>
                 );
               })}
