@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info,
-  MessageSquare, Plus, MessageCircle, Trash2, RotateCw,
+  Bot, Plus, MessageCircle, Trash2, RotateCw,
 } from "lucide-react";
 import { loadSessions, deleteSession } from "../pages/ChatPage";
 import type { ChatSession } from "../pages/ChatPage";
@@ -172,7 +172,7 @@ export default function AppShell() {
                 <button onClick={() => { setNavMode(false); navigate("/chat"); }}
                   className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
-                  <MessageSquare size={18} />
+                  <Bot size={18} />
                 </button>
               </nav>
             ) : (
@@ -239,7 +239,7 @@ export default function AppShell() {
                 <button onClick={() => { setNavMode(false); navigate("/chat"); }}
                   className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }}>
-                  <MessageSquare size={18} />
+                  <Bot size={18} />
                   <span className="truncate">AI聊天模式</span>
                 </button>
               </div>

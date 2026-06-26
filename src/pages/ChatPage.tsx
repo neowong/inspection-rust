@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, User, Loader2, Sparkles, ChevronDown, Check, ArrowUp, Plus, Copy, CheckCheck } from "lucide-react";
+import { Bot, User, Loader2, ChevronDown, Check, ArrowUp, Plus, Copy, CheckCheck } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -305,7 +305,7 @@ export default function ChatPage() {
           <div className="flex flex-col items-center justify-center h-full px-4">
             <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5"
               style={{ backgroundColor: "hsl(var(--accent) / 0.1)" }}>
-              <Sparkles size={32} style={{ color: "hsl(var(--accent))" }} />
+              <Bot size={32} style={{ color: "hsl(var(--accent))" }} />
             </div>
             <h2 className="text-[32px] font-medium mb-8 leading-tight" style={{ color: "hsl(var(--text-primary))", fontFamily: "'Times New Roman', serif" }}>
               有什么可以帮你的？
