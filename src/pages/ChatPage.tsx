@@ -140,40 +140,31 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function getDateLabel(dateStr: string): string {
-  const d = new Date(dateStr);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toISOString().slice(0, 10) === today.toISOString().slice(0, 10)) return "今天";
-  if (d.toISOString().slice(0, 10) === yesterday.toISOString().slice(0, 10)) return "昨天";
-  return "更早";
-}
-
-function initSession(id: string): ChatSession {
-  if (id) return loadSessionById(id) || { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-  return { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-}
-
 // ── 暴露给 AppShell 的 API ──
 
-export { loadSessions, deleteSession, getDateLabel };
+export { loadSessions, deleteSession };
 
 export default function ChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const chatId = searchParams.get("id") || "";
 
   // 当前会话
-  const [session, setSession] = useState<ChatSession>(() => initSession(chatId));
+  const [session, setSession] = useState<ChatSession>(() => {
+    const s = chatId ? loadSessionById(chatId) : null;
+    if (s) return s;
+    return { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  });
 
-  // chatId 变化时重新加载会话
+  // chatId 变化时重新加载会话（跳过初始渲染和相同 ID）
+  const prevChatIdRef = useRef(chatId);
   useEffect(() => {
-    if (chatId) {
-      const saved = loadSessionById(chatId);
-      if (saved) setSession(saved);
-      else setSession(initSession(""));
-    } else {
-      setSession(initSession(""));
+    if (chatId === prevChatIdRef.current) return;
+    prevChatIdRef.current = chatId;
+    const saved = chatId ? loadSessionById(chatId) : null;
+    if (saved) {
+      setSession(saved);
+    } else if (!chatId) {
+      setSession({ id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     }
   }, [chatId]);
 
@@ -225,25 +216,21 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
-  // 同步 session ID 到 URL
-  useEffect(() => {
-    if (session.id && session.id !== chatId) {
-      setSearchParams({ id: session.id }, { replace: true });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
-
   const selectedConfig = configs.find(c => c.id === selectedId);
 
   const updateMessages = (newMessages: Message[], userMsg?: string) => {
-    const title = session.title;
-    if (title === "新对话" && userMsg) {
-      session.title = userMsg.length > 30 ? userMsg.slice(0, 30) + "…" : userMsg;
+    const s = { ...session };
+    if (s.title === "新对话" && userMsg) {
+      s.title = userMsg.length > 30 ? userMsg.slice(0, 30) + "…" : userMsg;
     }
-    session.messages = newMessages;
-    session.updatedAt = new Date().toISOString();
-    upsertSession({ ...session });
-    setSession({ ...session });
+    s.messages = newMessages;
+    s.updatedAt = new Date().toISOString();
+    // 首次发送消息时同步 URL
+    if (!chatId) {
+      setSearchParams({ id: s.id }, { replace: true });
+    }
+    upsertSession(s);
+    setSession(s);
   };
 
   const handleSend = async (text?: string) => {
