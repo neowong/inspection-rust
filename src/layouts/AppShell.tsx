@@ -137,7 +137,7 @@ export default function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside
-          className={`${collapsed ? "w-[56px]" : "w-[220px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out`}
+          className={`${collapsed ? "w-[56px]" : "w-[260px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out`}
           style={{ backgroundColor: sidebarBg }}
         >
           {/* Brand — 点击收起 */}
