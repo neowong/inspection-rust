@@ -76,15 +76,17 @@ pub fn generate_combined_docx(
     vars.insert("device_name", cover.project_name.clone());
     let header_tpl = replace_simple_vars(&project_config.header, &vars);
     let footer_tpl = replace_simple_vars(&project_config.footer, &vars);
-    // 组合报告仅封面+正文，正文页眉页脚从第一台设备开始
-    let footer_stripped = strip_page_number_vars(&footer_tpl);
+    // 组合报告：页眉页脚在设备页和目录页显示，封面不显示
+    // 通过 title_pg() 让首页（封面）无页眉页脚
+    // 通过 inject_page_restart_xml 在目录后分节，页码从正文重新编号
     let mut docx = Docx::new()
-        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417));
+        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
+        .title_pg();
     if !header_tpl.trim().is_empty() {
         docx = docx.header(build_header(&header_tpl));
     }
-    if !footer_stripped.trim().is_empty() {
-        docx = docx.footer(build_footer(&footer_stripped));
+    if !footer_tpl.trim().is_empty() {
+        docx = docx.footer(build_footer(&footer_tpl));
     }
     docx = build_cover(docx, project_config, None, cover);
 
@@ -320,17 +322,6 @@ fn build_running_paragraph(template: &str) -> Paragraph {
         paragraph = paragraph.add_run(Run::new().add_text(buf).size(18).fonts(zh_fonts()));
     }
     paragraph
-}
-
-/// 去掉页脚中的 {{page}} {{total}}，组合报告不显示页码
-fn strip_page_number_vars(template: &str) -> String {
-    template
-        .replace("第 {{page}} 页", "")
-        .replace("/ 共 {{total}} 页", "")
-        .replace("{{page}}", "")
-        .replace("{{total}}", "")
-        .trim()
-        .to_string()
 }
 
 fn replace_simple_vars(template: &str, vars: &HashMap<&str, String>) -> String {
@@ -1308,11 +1299,31 @@ fn inject_toc_styles(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
     xml
 }
 
-/// 在封面后的第一个分页符处插入分节符，正文页码从 1 开始
-/* 当前未使用 — docx-rs 的 section API 为内部，无法干净地插入分节符。
-   暂时接受组合报告的页脚不显示页码（封面占 P1，正文从 P2 起）。
-   单设备报告不受影响。 */
+/// 在目录后插入分节符，正文页码从 1 开始
 fn inject_page_restart_xml(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
+    let doc_str = String::from_utf8_lossy(&xml.document).into_owned();
+    // 找第二个 page break（目录 → 设备），插入分节符段落
+    let br = r#"<w:br w:type="page"/>"#;
+    let first = doc_str.find(br).unwrap_or(usize::MAX);
+    if first == usize::MAX { return xml; }
+    let second = doc_str[first + br.len()..].find(br).map(|i| first + br.len() + i);
+    let Some(br_pos) = second else { return xml; };
+    let after_br = br_pos + br.len();
+
+    // 找到该分页符所在的段落结束位置
+    let p_end = doc_str[after_br..].find("</w:p>").map(|i| after_br + i + "</w:p>".len()).unwrap_or(after_br);
+
+    // 插入分节符段落（含正文分节属性）
+    let section_p = format!(
+        r#"<w:p><w:pPr><w:sectPr><w:pgNumType w:start="1" />{}</w:sectPr></w:pPr></w:p>"#,
+        r#"<w:type w:val="nextPage" />"#
+    );
+    let mut out = String::with_capacity(doc_str.len() + section_p.len());
+    out.push_str(&doc_str[..p_end]);
+    out.push_str(&section_p);
+    out.push_str(&doc_str[p_end..]);
+
+    xml.document = out.into_bytes();
     xml
 }
 
