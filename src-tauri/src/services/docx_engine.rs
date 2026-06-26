@@ -74,18 +74,17 @@ pub fn generate_combined_docx(
     let mut vars: HashMap<&str, String> = HashMap::new();
     vars.insert("vendor", String::new());
     vars.insert("device_name", cover.project_name.clone());
-    let header = replace_simple_vars(&project_config.header, &vars);
-    let footer = replace_simple_vars(&project_config.footer, &vars);
+    let header_tpl = replace_simple_vars(&project_config.header, &vars);
+    let footer_tpl = replace_simple_vars(&project_config.footer, &vars);
+    // 组合报告仅封面+正文，正文页眉页脚从第一台设备开始
+    let footer_stripped = strip_page_number_vars(&footer_tpl);
     let mut docx = Docx::new()
-        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
-        .title_pg();
-    // 封面（首页）无页眉页脚 — first_header/first_footer 不设即不显示
-    // 正文页沿用模板的页眉页脚
-    if !header.trim().is_empty() {
-        docx = docx.header(build_header(&header));
+        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417));
+    if !header_tpl.trim().is_empty() {
+        docx = docx.header(build_header(&header_tpl));
     }
-    if !footer.trim().is_empty() {
-        docx = docx.footer(build_footer(&footer));
+    if !footer_stripped.trim().is_empty() {
+        docx = docx.footer(build_footer(&footer_stripped));
     }
     docx = build_cover(docx, project_config, None, cover);
 
@@ -321,6 +320,17 @@ fn build_running_paragraph(template: &str) -> Paragraph {
         paragraph = paragraph.add_run(Run::new().add_text(buf).size(18).fonts(zh_fonts()));
     }
     paragraph
+}
+
+/// 去掉页脚中的 {{page}} {{total}}，组合报告不显示页码
+fn strip_page_number_vars(template: &str) -> String {
+    template
+        .replace("第 {{page}} 页", "")
+        .replace("/ 共 {{total}} 页", "")
+        .replace("{{page}}", "")
+        .replace("{{total}}", "")
+        .trim()
+        .to_string()
 }
 
 fn replace_simple_vars(template: &str, vars: &HashMap<&str, String>) -> String {
@@ -1298,17 +1308,11 @@ fn inject_toc_styles(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
     xml
 }
 
-/// 正文页从 1 开始编号：在 sectPr 中注入 pgNumType start="1"
+/// 在封面后的第一个分页符处插入分节符，正文页码从 1 开始
+/* 当前未使用 — docx-rs 的 section API 为内部，无法干净地插入分节符。
+   暂时接受组合报告的页脚不显示页码（封面占 P1，正文从 P2 起）。
+   单设备报告不受影响。 */
 fn inject_page_restart_xml(mut xml: docx_rs::XMLDocx) -> docx_rs::XMLDocx {
-    let doc_str = String::from_utf8_lossy(&xml.document).into_owned();
-    let marker = "</w:sectPr>";
-    if let Some(pos) = doc_str.rfind(marker) {
-        let mut out = String::with_capacity(doc_str.len() + 100);
-        out.push_str(&doc_str[..pos]);
-        out.push_str(r#"<w:pgNumType w:start="1" />"#);
-        out.push_str(&doc_str[pos..]);
-        xml.document = out.into_bytes();
-    }
     xml
 }
 
