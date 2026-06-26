@@ -1172,6 +1172,10 @@ function ReportTemplateEditor({
         </div>
 
         <CollapsibleSection title="封面" defaultOpen>
+          <p className="text-[12px] text-[hsl(var(--text-tertiary))] mb-3 bg-[hsl(var(--accent)/0.06)] px-3 py-2 rounded-md">
+            封面和目录仅在<b>下载组合报告</b>（批次合并为一个文件）时出现，
+            单设备报告和 ZIP 打包的逐设备报告<b>不会</b>包含封面和目录。
+          </p>
           <div className="space-y-2">
             <Field label="主标题（支持 {{vendor}}）">
               <Input value={form.config.cover.title}
@@ -1189,6 +1193,16 @@ function ReportTemplateEditor({
                 <Input value={form.config.cover.primary_color}
                   onChange={(e) => updateConfig({ cover: { ...form.config.cover, primary_color: e.target.value } })} />
               </div>
+            </Field>
+            <Field label="包含目录">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox"
+                  checked={form.config.cover.include_toc ?? false}
+                  onChange={(e) => updateConfig({ cover: { ...form.config.cover, include_toc: e.target.checked } })} />
+                <span className="text-[12px] text-[hsl(var(--text-secondary))]">
+                  组合报告中插入目录页（需在 WPS 中手动更新域）
+                </span>
+              </label>
             </Field>
           </div>
         </CollapsibleSection>
@@ -1531,8 +1545,9 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
         </div>
       )}
 
-      {/* 封面 */}
+      {/* 封面（仅预览，实际仅组合报告输出） */}
       <div style={{ textAlign: "center", padding: "60px 0 40px" }}>
+        <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>（预览：封面仅在组合报告中输出）</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: accent }}>{title}</div>
         {config.cover.subtitle && (
           <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{applyVars(config.cover.subtitle, dev)}</div>

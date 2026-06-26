@@ -36,7 +36,8 @@ pub fn generate_record_docx(
 ) -> Result<(), String> {
     tracing::info!("DOCX 报告生成开始: device={}, output={}", device.name, output_path.display());
     let start = std::time::Instant::now();
-    let docx = build_record_docx(config, device, record, cmd_descs, true, cover);
+    // 单设备报告：不包含封面和目录
+    let docx = build_record_docx(config, device, record, cmd_descs, false, cover);
     let result = write_docx(docx, output_path);
     let latency = start.elapsed().as_millis();
     match &result {
@@ -68,7 +69,10 @@ pub fn generate_combined_docx(
     let mut docx = init_docx_with_vars(project_config, "", &cover.project_name);
     docx = build_cover(docx, project_config, None, cover);
     docx = page_break(docx);
-    docx = build_device_catalog(docx, project_config, items);
+    // 目录仅在用户启用时生成（默认不启用）
+    if project_config.cover.include_toc {
+        docx = build_device_catalog(docx, project_config, items);
+    }
 
     for (index, (device, record)) in items.iter().enumerate() {
         let cfg = configs.get(index).unwrap_or(project_config);
@@ -122,7 +126,7 @@ pub fn generate_zip_bundle(
     for (index, (device, record)) in items.iter().enumerate() {
         let cfg = configs.get(index).unwrap_or(fallback);
         let cover = single_device_cover_context(device, record);
-        let docx = build_record_docx(cfg, device, record, cmd_descs, true, &cover);
+        let docx = build_record_docx(cfg, device, record, cmd_descs, false, &cover);
         let buf = pack_docx_to_bytes(docx)?;
 
         let base = sanitize_filename(&format!(
