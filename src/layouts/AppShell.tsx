@@ -73,10 +73,7 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [navMode, setNavMode] = useState(() => {
-    const saved = localStorage.getItem("sidebar_mode");
-    return saved ? saved === "nav" : true; // 默认传统模式
-  });
+  const [navMode, setNavMode] = useState(true); // 默认传统模式
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
