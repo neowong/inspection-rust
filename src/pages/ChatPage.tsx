@@ -1,10 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Send, Bot, User, Loader2, Sparkles, Server, Play, Search, BarChart3 } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Server, Play, Search, BarChart3, ChevronDown, Check } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+}
+
+interface AiConfig {
+  id: number;
+  name: string;
+  model: string;
+  is_active: boolean;
 }
 
 const SYSTEM_PROMPT = `你是 AI 巡检助手的智能对话助手，帮助用户通过自然语言操作系统。
@@ -63,8 +70,34 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [configs, setConfigs] = useState<AiConfig[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showModelList, setShowModelList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelListRef = useRef<HTMLDivElement>(null);
+
+  // 加载 AI 配置列表
+  useEffect(() => {
+    invoke<AiConfig[]>("list_ai_configs").then(list => {
+      setConfigs(list);
+      // 默认选中激活的模型
+      const active = list.find(c => c.is_active);
+      if (active) setSelectedId(active.id);
+      else if (list.length > 0) setSelectedId(list[0]!.id);
+    }).catch(() => {});
+  }, []);
+
+  // 点击外部关闭模型列表
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (modelListRef.current && !modelListRef.current.contains(e.target as Node)) {
+        setShowModelList(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -74,23 +107,24 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
+  const selectedConfig = configs.find(c => c.id === selectedId);
+
   const handleSend = async (text?: string) => {
     const msg = (text || input).trim();
     if (!msg || loading) return;
+
+    if (!selectedId) {
+      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在下方选择一个 AI 模型，或在「系统设置」中添加模型配置。" }]);
+      return;
+    }
 
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: msg }]);
     setLoading(true);
 
     try {
-      const configs = await invoke<Array<{ id: number }>>("list_ai_configs");
-      if (!configs || configs.length === 0) {
-        setMessages(prev => [...prev, { role: "assistant", content: "请先在「系统设置」中配置并激活一个 AI 模型，才能使用对话模式。" }]);
-        setLoading(false);
-        return;
-      }
-
       const result = await invoke<string>("chat_with_ai", {
+        configId: selectedId,
         systemPrompt: SYSTEM_PROMPT,
         messages: [...messages, { role: "user", content: msg }],
       });
@@ -245,9 +279,56 @@ export default function ChatPage() {
               <Send size={16} />
             </button>
           </div>
-          <p className="text-center text-[11px] mt-2" style={{ color: "hsl(var(--text-tertiary))" }}>
-            AI 巡检助手 · 对话模式
-          </p>
+
+          {/* 模型选择器 */}
+          <div className="flex items-center justify-center mt-2">
+            <div ref={modelListRef} className="relative">
+              <button
+                onClick={() => setShowModelList(!showModelList)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] transition-colors
+                  hover:bg-[hsl(var(--bg-hover))]"
+                style={{ color: "hsl(var(--text-tertiary))" }}
+              >
+                {selectedConfig ? (
+                  <>
+                    <span className="font-medium" style={{ color: "hsl(var(--text-secondary))" }}>
+                      {selectedConfig.name}
+                    </span>
+                    <span>·</span>
+                    <span>{selectedConfig.model}</span>
+                  </>
+                ) : (
+                  <span>请选择模型</span>
+                )}
+                <ChevronDown size={12} className={`transition-transform ${showModelList ? "rotate-180" : ""}`} />
+              </button>
+
+              {showModelList && configs.length > 0 && (
+                <div
+                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-64 rounded-xl border shadow-lg overflow-hidden z-50"
+                  style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}
+                >
+                  {configs.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
+                      className="flex items-center justify-between w-full px-3 py-2.5 text-left text-sm transition-colors
+                        hover:bg-[hsl(var(--bg-hover))]"
+                      style={{ color: "hsl(var(--text-primary))" }}
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium">{c.name}</span>
+                        <span className="text-[11px]" style={{ color: "hsl(var(--text-tertiary))" }}>{c.model}</span>
+                      </div>
+                      {c.id === selectedId && (
+                        <Check size={14} style={{ color: "hsl(var(--accent))" }} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

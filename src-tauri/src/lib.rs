@@ -679,19 +679,29 @@ fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String>
 /// 对话模式：发送消息到 AI 并返回回复
 #[tauri::command]
 async fn chat_with_ai(
+    config_id: Option<i64>,
     system_prompt: String,
     messages: Vec<serde_json::Value>,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    // 获取激活的 AI 配置
+    // 获取指定的或激活的 AI 配置
     let (api_key, model, base_url) = {
         let db = state.db.lock();
-        db.query_row(
-            "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
-            [],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
-        )
-        .map_err(|_| "未找到激活的 AI 配置，请先在系统设置中配置并激活一个 AI 模型".to_string())?
+        if let Some(cid) = config_id {
+            db.query_row(
+                "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE id = ?1",
+                [cid],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+            )
+            .map_err(|_| format!("未找到 ID 为 {} 的 AI 配置", cid))?
+        } else {
+            db.query_row(
+                "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+            )
+            .map_err(|_| "未找到激活的 AI 配置，请先在系统设置中配置并激活一个 AI 模型".to_string())?
+        }
     };
 
     let decrypted_key = crate::services::crypto::CryptoService::decrypt(&api_key)
