@@ -1540,7 +1540,8 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
       <div style={{
         transformOrigin: "top center",
         transform: `scale(${scale})`,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 24,
+        width: "210mm", margin: "0 auto",
+        display: "flex", flexDirection: "column", gap: 24,
       }}>
       {/* ──── 第 1 页：封面 ──── */}
       <div style={{
