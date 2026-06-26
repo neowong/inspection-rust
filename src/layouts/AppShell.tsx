@@ -45,7 +45,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
 
 const FLAT_ITEMS = [
   ...NAV_GROUPS.flatMap(g => g.items),
-  { key: "chat" as PageKey, label: "对话模式", path: "/chat", icon: MessageSquare },
+  { key: "chat" as PageKey, label: "AI聊天模式", path: "/chat", icon: MessageSquare },
 ];
 
 export default function AppShell() {
@@ -170,13 +170,13 @@ export default function AppShell() {
           <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
             <button
               onClick={() => navigate("/chat")}
-              title={collapsed ? "对话模式" : undefined}
+              title={collapsed ? "AI聊天模式" : undefined}
               className={`flex items-center gap-3 w-full select-none transition-all duration-150 rounded-lg hover:bg-[hsl(var(--sidebar-hover))]
                 ${collapsed ? "px-0 justify-center h-10" : "px-3 h-9 mt-2"}`}
               style={{ color: "hsl(var(--sidebar-text-muted))" }}
             >
               <MessageSquare size={18} className="shrink-0" />
-              {!collapsed && <span className="text-[13px] truncate">对话模式</span>}
+              {!collapsed && <span className="text-[13px] truncate">AI聊天模式</span>}
             </button>
           </div>
         </aside>
