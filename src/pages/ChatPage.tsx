@@ -118,7 +118,7 @@ export default function ChatPage() {
     if (!msg || loading) return;
 
     if (!selectedId) {
-      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在输入框右下角选择一个 AI 模型，或在「系统设置」中添加模型配置。" }]);
+      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在输入框左下角选择一个 AI 模型，或在「系统设置」中添加模型配置。" }]);
       return;
     }
 
@@ -154,7 +154,6 @@ export default function ChatPage() {
       {/* 消息区域 */}
       <div className="flex-1 overflow-y-auto">
         {isEmpty ? (
-          /* 欢迎界面 */
           <div className="flex flex-col items-center justify-center h-full px-4">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6"
               style={{ backgroundColor: "hsl(var(--accent) / 0.1)" }}>
@@ -190,7 +189,6 @@ export default function ChatPage() {
             </div>
           </div>
         ) : (
-          /* 消息列表 */
           <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
             {messages.map((msg, i) => (
               <div key={i} className="flex gap-4">
@@ -240,13 +238,9 @@ export default function ChatPage() {
       {/* 输入区域 */}
       <div className="shrink-0 pb-5 pt-2">
         <div className="max-w-3xl mx-auto px-4">
-          <div className="relative rounded-2xl border shadow-sm transition-all
-            focus-within:border-[hsl(var(--accent) / 0.4)] focus-within:shadow-md"
-            style={{
-              backgroundColor: "hsl(var(--bg-input))",
-              borderColor: "hsl(var(--border))",
-            }}
-          >
+          {/* 输入框 */}
+          <div className="rounded-2xl border shadow-sm transition-all focus-within:border-[hsl(var(--accent) / 0.4)] focus-within:shadow-md"
+            style={{ backgroundColor: "hsl(var(--bg-input))", borderColor: "hsl(var(--border))" }}>
             <textarea
               ref={inputRef}
               value={input}
@@ -255,8 +249,8 @@ export default function ChatPage() {
               placeholder="给 AI 巡检助手发送消息..."
               disabled={loading}
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-12 text-sm outline-none
-                placeholder:text-[hsl(var(--text-tertiary))] disabled:opacity-50 max-h-48"
+              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-14 text-sm outline-none
+                placeholder:text-[hsl(var(--text-tertiary))] disabled:opacity-50 max-h-48 rounded-2xl"
               style={{ color: "hsl(var(--text-primary))" }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
@@ -264,60 +258,14 @@ export default function ChatPage() {
                 target.style.height = Math.min(target.scrollHeight, 192) + "px";
               }}
             />
-
-            {/* 底部工具栏 */}
-            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2.5">
-              {/* 左侧：模型选择 */}
-              <div ref={modelListRef} className="relative">
-                <button
-                  onClick={() => setShowModelList(!showModelList)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] transition-colors
-                    hover:bg-[hsl(var(--bg-hover))]"
-                  style={{ color: "hsl(var(--text-tertiary))" }}
-                >
-                  {selectedConfig ? (
-                    <span>{selectedConfig.model}</span>
-                  ) : (
-                    <span>选择模型</span>
-                  )}
-                  <ChevronDown size={11} className={`transition-transform ${showModelList ? "rotate-180" : ""}`} />
-                </button>
-
-                {showModelList && configs.length > 0 && (
-                  <div
-                    className="absolute bottom-full left-0 mb-1 w-56 rounded-xl border shadow-lg overflow-hidden z-50"
-                    style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}
-                  >
-                    <div className="py-1">
-                      {configs.map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
-                          className="flex items-center justify-between w-full px-3 py-2 text-left text-sm transition-colors
-                            hover:bg-[hsl(var(--bg-hover))]"
-                          style={{ color: "hsl(var(--text-primary))" }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{c.model}</span>
-                          </div>
-                          {c.id === selectedId && (
-                            <Check size={14} style={{ color: "hsl(var(--accent))" }} />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 右侧：发送按钮 */}
+            {/* 发送按钮 - 右下角 */}
+            <div className="absolute bottom-0 right-0 p-3">
               <button
                 onClick={() => handleSend()}
                 disabled={loading || !input.trim()}
-                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all
-                  disabled:opacity-20"
+                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all disabled:opacity-20"
                 style={{
-                  backgroundColor: input.trim() ? "hsl(var(--accent))" : "hsl(var(--text-tertiary) / 0.2)",
+                  backgroundColor: input.trim() ? "hsl(var(--accent))" : "hsl(var(--text-tertiary) / 0.15)",
                   color: input.trim() ? "white" : "hsl(var(--text-tertiary))",
                 }}
               >
@@ -326,7 +274,48 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <p className="text-center text-[11px] mt-2.5" style={{ color: "hsl(var(--text-tertiary) / 0.6)" }}>
+          {/* 模型选择器 - 输入框下方 */}
+          <div className="flex items-center justify-start mt-2 ml-1">
+            <div ref={modelListRef} className="relative">
+              <button
+                onClick={() => setShowModelList(!showModelList)}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] transition-colors hover:bg-[hsl(var(--bg-hover))]"
+                style={{ color: "hsl(var(--text-tertiary))" }}
+              >
+                {selectedConfig ? (
+                  <span>{selectedConfig.model}</span>
+                ) : (
+                  <span>选择模型</span>
+                )}
+                <ChevronDown size={11} className={`transition-transform ${showModelList ? "rotate-180" : ""}`} />
+              </button>
+
+              {showModelList && configs.length > 0 && (
+                <div
+                  className="absolute top-full left-0 mt-1 w-56 rounded-xl border shadow-lg z-50"
+                  style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}
+                >
+                  <div className="py-1">
+                    {configs.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
+                        className="flex items-center justify-between w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[hsl(var(--bg-hover))]"
+                        style={{ color: "hsl(var(--text-primary))" }}
+                      >
+                        <span className="font-medium">{c.model}</span>
+                        {c.id === selectedId && (
+                          <Check size={14} style={{ color: "hsl(var(--accent))" }} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="text-center text-[11px] mt-2" style={{ color: "hsl(var(--text-tertiary) / 0.6)" }}>
             AI 巡检助手可能会犯错，请核实重要信息
           </p>
         </div>
