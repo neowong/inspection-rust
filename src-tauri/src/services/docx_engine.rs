@@ -331,27 +331,43 @@ fn build_cover(
         .primary_color
         .trim_start_matches('#')
         .to_string();
-    let project_name = if cover.project_name.trim().is_empty() {
-        "项目".to_string()
+
+    let title = if config.cover.title.trim().is_empty() {
+        format!("{} 巡检报告", cover.project_name)
     } else {
-        cover.project_name.trim().to_string()
+        let mut t = config.cover.title.clone();
+        t = t.replace("{{vendor}}", &cover.inspector); // fallback
+        t
     };
 
-    for _ in 0..4 {
+    for _ in 0..5 {
         docx = docx.add_paragraph(Paragraph::new());
     }
     docx = docx.add_paragraph(
         Paragraph::new().align(AlignmentType::Center).add_run(
             Run::new()
-                .add_text(format!("{} 巡检报告", project_name))
+                .add_text(&title)
                 .bold()
-                .size(56)
+                .size(48)
                 .color(&color)
                 .fonts(zh_fonts()),
         ),
     );
 
-    for _ in 0..7 {
+    if !config.cover.subtitle.trim().is_empty() {
+        docx = docx.add_paragraph(Paragraph::new());
+        docx = docx.add_paragraph(
+            Paragraph::new().align(AlignmentType::Center).add_run(
+                Run::new()
+                    .add_text(&config.cover.subtitle)
+                    .size(28)
+                    .color("666666")
+                    .fonts(zh_fonts()),
+            ),
+        );
+    }
+
+    for _ in 0..6 {
         docx = docx.add_paragraph(Paragraph::new());
     }
     docx = docx.add_paragraph(cover_info_line("巡检日期", &cover.inspection_date));
