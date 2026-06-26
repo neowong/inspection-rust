@@ -1270,22 +1270,21 @@ fn now_epoch() -> i64 {
 fn poll_offline_devices(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     // 读取当前离线设备
     let devices: Vec<(i64, String, i64)> = {
-        if let Some(conn) = db.try_lock() {
-            let mut stmt = match conn.prepare(
-                "SELECT id, ip, ssh_port FROM devices WHERE status = 'offline' OR status = 'unknown'",
-            ) {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            stmt.query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
-            })
-            .ok()
-            .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
-            .unwrap_or_default()
-        } else {
-            return;
-        }
+        let conn = db.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, ip, ssh_port FROM devices WHERE status = 'offline' OR status = 'unknown'",
+        ) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let rows: Vec<_> = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+        })
+        .ok()
+        .into_iter()
+        .flat_map(|mapped| mapped.filter_map(|r| r.ok()))
+        .collect();
+        rows
     };
     if devices.is_empty() {
         return;
@@ -1354,31 +1353,29 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     // status 用于判断是否变更（仅变更时写状态日志）
     #[allow(clippy::type_complexity)]
     let devices: Vec<(i64, String, i64, Option<String>, Option<String>, String)> = {
-        if let Some(conn) = db.try_lock() {
-            let mut stmt = match conn.prepare(
-                "SELECT id, ip, ssh_port, model, sysname, status FROM devices",
-            ) {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            let rows: Vec<_> = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, String>(5)?,
-                    ))
-                })
-                .ok()
-                .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
-                .unwrap_or_default();
-            rows
-        } else {
-            return;
-        }
+        let conn = db.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, ip, ssh_port, model, sysname, status FROM devices",
+        ) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let rows: Vec<_> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })
+            .ok()
+            .into_iter()
+            .flat_map(|mapped| mapped.filter_map(|r| r.ok()))
+            .collect();
+        rows
     };
 
     if devices.is_empty() {
