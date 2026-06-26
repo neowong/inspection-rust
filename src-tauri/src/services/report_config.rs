@@ -25,6 +25,9 @@ pub struct CoverConfig {
     pub subtitle: String,
     pub logo_path: String,
     pub primary_color: String,
+    /// 是否在组合报告中插入目录（单设备报告始终无封面无目录）
+    #[serde(default)]
+    pub include_toc: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +78,7 @@ fn default_cover() -> CoverConfig {
         subtitle: "运维巡检中心".into(),
         logo_path: String::new(),
         primary_color: "#1F4E79".into(),
+        include_toc: false,
     }
 }
 

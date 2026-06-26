@@ -159,6 +159,7 @@ interface CoverConfig {
   subtitle: string;
   logo_path: string;
   primary_color: string;
+  include_toc?: boolean;
 }
 
 interface DeviceInfoConfig {
