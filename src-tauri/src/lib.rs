@@ -764,6 +764,35 @@ fn build_tools() -> Vec<serde_json::Value> {
                 }
             }
         }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "run_batch",
+                "description": "执行巡检任务，对批次中所有设备发起 SSH 巡检",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "batch_id": {"type": "integer", "description": "批次 ID（必需）"}
+                    },
+                    "required": ["batch_id"]
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "analyze_batch",
+                "description": "AI 分析巡检结果，生成评判结论",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "batch_id": {"type": "integer", "description": "批次 ID（必需）"},
+                        "force": {"type": "boolean", "description": "强制重新分析，覆盖已有结果"}
+                    },
+                    "required": ["batch_id"]
+                }
+            }
+        }),
     ]
 }
 
@@ -956,6 +985,29 @@ async fn execute_tool(
             let status = parsed.get("status").and_then(|v| v.as_str().map(|s| s.to_string()));
             match commands::inspections::list_batches(status, state) {
                 Ok(batches) => Ok(serde_json::to_string(&batches).unwrap_or_default()),
+                Err(e) => Err(e),
+            }
+        }
+        "run_batch" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let batch_id = parsed.get("batch_id")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(0);
+            match commands::inspections::run_batch(batch_id, state.clone()).await {
+                Ok(()) => Ok(r#"{"status":"started","message":"巡检任务已启动，正在后台执行"}"#.to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        "analyze_batch" => {
+            let parsed: std::collections::HashMap<String, serde_json::Value> =
+                serde_json::from_str(args).unwrap_or_default();
+            let batch_id = parsed.get("batch_id")
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or(0);
+            let force = parsed.get("force").and_then(|v| v.as_bool());
+            match commands::reports::analyze_batch(batch_id, force, state.clone()).await {
+                Ok(v) => Ok(v.to_string()),
                 Err(e) => Err(e),
             }
         }
