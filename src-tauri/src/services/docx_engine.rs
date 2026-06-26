@@ -65,15 +65,11 @@ pub fn generate_combined_docx(
     let start = std::time::Instant::now();
 
     let project_config = &configs[0];
-    // 合并报告页眉页脚使用项目级上下文，避免封面出现某一台设备名。
+    // 封面
     let mut docx = init_docx_with_vars(project_config, "", &cover.project_name);
     docx = build_cover(docx, project_config, None, cover);
-    docx = page_break(docx);
-    // 目录仅在用户启用时生成（默认不启用）
-    if project_config.cover.include_toc {
-        docx = build_device_catalog(docx, project_config, items);
-    }
 
+    // 每台设备从新页开始
     for (index, (device, record)) in items.iter().enumerate() {
         let cfg = configs.get(index).unwrap_or(project_config);
         docx = page_break(docx);
@@ -85,6 +81,13 @@ pub fn generate_combined_docx(
         );
         docx = append_record_body(docx, cfg, device, record, cmd_descs);
     }
+
+    // 目录在所有设备之后生成（启用时）
+    if project_config.cover.include_toc {
+        docx = page_break(docx);
+        docx = build_device_catalog(docx, project_config, items);
+    }
+
     let result = write_docx(docx, output_path);
     let latency = start.elapsed().as_millis();
     match &result {
@@ -374,7 +377,7 @@ fn build_device_catalog(
     docx = docx.add_paragraph(
         Paragraph::new().align(AlignmentType::Center).add_run(
             Run::new()
-                .add_text("目录")
+                .add_text("设备目录")
                 .bold()
                 .size(36)
                 .color(color)
@@ -387,32 +390,30 @@ fn build_device_catalog(
         return docx;
     }
 
-    // 目录：先放一个提示段落，再放一个空 TOC 字段占位。
-    //
-    // 背景：docx-rs 0.4.20 生成的 TOC 字段在 WPS 里无法自动展开（尝试过
-    // \u/\o 开关、注入 Heading1/2 与 TOC1/2 样式、<w:updateFields> 等均无效，
-    // WPS 打开后目录区域为空）。因此这里：
-    //   1) 写一段提示文字，告诉用户"在 WPS 中引用→更新目录"手工生成
-    //   2) 仍保留一个 dirty 的 TOC 字段，用户在 WPS 里"更新域"时能识别并填充
-    // 标题已用 Heading1/Heading2 样式标记（inject_toc_styles 注入定义），
-    // WPS 手工生成目录时可正确收集。
-    docx = docx.add_paragraph(
-        Paragraph::new()
-            .align(AlignmentType::Center)
-            .add_run(
-                Run::new()
-                    .add_text("（在 WPS 中点击“引用 → 更新目录”生成带页码的目录）")
-                    .size(18)
-                    .color("808080")
-                    .fonts(zh_fonts()),
-            ),
-    );
-    docx = docx.add_paragraph(Paragraph::new());
+    // 构建手动设备目录表（序号 + 设备名 + 厂商 + IP）
+    let cell = |text: &str, bold: bool| -> TableCell {
+        let mut run = Run::new().add_text(text).size(22).fonts(zh_fonts());
+        if bold { run = run.bold(); }
+        TableCell::new().add_paragraph(Paragraph::new().add_run(run))
+    };
+    let header_cell = |text: &str| -> TableCell {
+        cell(text, true).shading(Shading::new().fill("E8E8E8"))
+    };
+    let mut rows: Vec<TableRow> = Vec::new();
+    rows.push(TableRow::new(vec![header_cell("序号"), header_cell("设备名称"), header_cell("厂商"), header_cell("IP 地址")]));
+    for (index, (device, _record)) in items.iter().enumerate() {
+        rows.push(TableRow::new(vec![
+            cell(&format!("{}", index + 1), false),
+            cell(&device.name, false),
+            cell(&device.vendor, false),
+            cell(&device.ip, false),
+        ]));
+    }
 
-    let toc = TableOfContents::with_instr_text(r#"TOC \o "1-2" \h"#)
-        .auto()
-        .dirty();
-    docx = docx.add_table_of_contents(toc);
+    docx = docx.add_table(
+        Table::new(rows)
+            .set_grid(vec![800, 3000, 2000, 2000])
+    );
 
     docx
 }
