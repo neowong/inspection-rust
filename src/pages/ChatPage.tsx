@@ -191,18 +191,19 @@ export default function ChatPage() {
             <h2 className="text-[32px] font-medium mb-8 leading-tight" style={{ color: "hsl(var(--text-primary))", fontFamily: "'Times New Roman', serif" }}>
               有什么可以帮你的？
             </h2>
-            <div className="flex flex-col items-center gap-3 w-full max-w-md">
+            <div className="flex flex-wrap justify-center gap-2 max-w-lg">
               {EXAMPLES.map((text, i) => (
                 <button
                   key={i}
                   onClick={() => handleSend(text)}
-                  className="w-full px-5 py-3 rounded-xl border text-[14px] text-left transition-all
-                    hover:shadow-sm hover:border-[hsl(var(--accent) / 0.3)]"
+                  className="px-4 py-2 rounded-full text-[13px] transition-all hover:shadow-sm"
                   style={{
-                    borderColor: "hsl(var(--border-light))",
-                    color: "hsl(var(--text-secondary))",
+                    border: "1px solid hsl(var(--border-light))",
+                    color: "hsl(var(--text-primary))",
                     backgroundColor: "hsl(var(--bg-card))",
                   }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = "hsl(var(--border))")}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = "hsl(var(--border-light))")}
                 >
                   {text}
                 </button>
@@ -356,28 +357,6 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
-
-          {/* 示例问题 - 仅在空状态时显示 */}
-          {isEmpty && (
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
-              {EXAMPLES.map((text, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(text)}
-                  className="px-4 py-2 rounded-full text-[13px] transition-all hover:shadow-sm"
-                  style={{
-                    border: "1px solid hsl(var(--border-light))",
-                    color: "hsl(var(--text-primary))",
-                    backgroundColor: "hsl(var(--bg-card))",
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = "hsl(var(--border))")}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = "hsl(var(--border-light))")}
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
-          )}
 
           <p className="text-center text-[11px] mt-3" style={{ color: "hsl(var(--text-tertiary) / 0.5)" }}>
             AI 巡检助手可能会犯错，请核实重要信息
