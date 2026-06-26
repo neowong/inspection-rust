@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, User, Loader2, Sparkles, Server, Play, Search, ChevronDown, Check, ArrowUp, Plus, FileText, Wrench, Monitor } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Message {
   role: "user" | "assistant";
@@ -186,9 +188,15 @@ export default function ChatPage() {
                   <div className="text-sm font-medium mb-1" style={{ color: "hsl(var(--text-secondary))" }}>
                     {msg.role === "assistant" ? "AI 巡检助手" : "你"}
                   </div>
-                  <div className="text-[15px] leading-7 whitespace-pre-wrap" style={{ color: "hsl(var(--text-primary))" }}>
-                    {msg.content}
-                  </div>
+                  {msg.role === "assistant" ? (
+                    <div className="prose prose-sm max-w-none leading-7" style={{ color: "hsl(var(--text-primary))" }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="text-[15px] leading-7 whitespace-pre-wrap" style={{ color: "hsl(var(--text-primary))" }}>
+                      {msg.content}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
