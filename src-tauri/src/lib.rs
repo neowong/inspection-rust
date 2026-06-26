@@ -1381,8 +1381,10 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     // 收集 (id, new_status, old_status)，scope 结束后一次性持锁批量更新，避免 try_lock 丢更新
     let results: Mutex<Vec<(i64, String, String)>> = Mutex::new(Vec::new());
 
+    // 分批并发：每批 50 台，避免一次性创建过多 OS 线程
     std::thread::scope(|s| {
-        for (id, ip, port, model, sysname, old_status) in &devices {
+        for chunk in devices.chunks(50) {
+            for (id, ip, port, model, sysname, old_status) in chunk {
             let online_ref = &online_count;
             let offline_ref = &offline_count;
             let needs_detect = &needs_detect;
@@ -1429,6 +1431,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                     needs_detect.lock().push(id);
                 }
             });
+        }
         }
     });
 
