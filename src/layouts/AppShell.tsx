@@ -73,7 +73,10 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [navMode, setNavMode] = useState(() => localStorage.getItem("sidebar_mode") === "nav");
+  const [navMode, setNavMode] = useState(() => {
+    const saved = localStorage.getItem("sidebar_mode");
+    return saved ? saved === "nav" : true; // 默认传统模式
+  });
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -199,7 +202,7 @@ export default function AppShell() {
               </nav>
               {/* 底部：切换到 AI聊天模式 */}
               <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
-                <button onClick={() => setNavMode(false)}
+                <button onClick={() => { setNavMode(false); navigate("/chat"); }}
                   className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }}>
                   <MessageSquare size={18} />
@@ -267,7 +270,7 @@ export default function AppShell() {
 
               {/* 底部：切换到传统模式 */}
               <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
-                <button onClick={() => setNavMode(true)}
+                <button onClick={() => { setNavMode(true); navigate("/dashboard"); }}
                   className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }}>
                   <RotateCw size={16} />
