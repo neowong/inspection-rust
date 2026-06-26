@@ -75,7 +75,13 @@ pub fn generate_combined_docx(
     vars.insert("vendor", String::new());
     vars.insert("device_name", cover.project_name.clone());
     let header = replace_simple_vars(&project_config.header, &vars);
-    let footer = replace_simple_vars(&project_config.footer, &vars);
+    // 组合报告封面占 1 页，去掉页码标记避免正文从第 2 页开始
+    let footer = replace_simple_vars(&project_config.footer, &vars)
+        .replace("第 {{page}} 页 / 共 {{total}} 页", "")
+        .replace("{{page}}", "")
+        .replace("{{total}}", "")
+        .trim()
+        .to_string();
     let mut docx = Docx::new()
         .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
         .title_pg();
