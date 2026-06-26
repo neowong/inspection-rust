@@ -689,14 +689,14 @@ async fn chat_with_ai(
         let db = state.db.lock();
         if let Some(cid) = config_id {
             db.query_row(
-                "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE id = ?1",
+                "SELECT api_key_encrypted, model_id, base_url FROM ai_model_configs WHERE id = ?1",
                 [cid],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
             )
             .map_err(|_| format!("未找到 ID 为 {} 的 AI 配置", cid))?
         } else {
             db.query_row(
-                "SELECT api_key_encrypted, model, base_url FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
+                "SELECT api_key_encrypted, model_id, base_url FROM ai_model_configs WHERE is_active = 1 LIMIT 1",
                 [],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
             )

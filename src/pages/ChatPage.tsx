@@ -10,8 +10,8 @@ interface Message {
 interface AiConfig {
   id: number;
   name: string;
-  model: string;
-  is_active: boolean;
+  model_id: string;
+  is_active: number;
 }
 
 const SYSTEM_PROMPT = `你是 AI 巡检助手的智能对话助手，帮助用户通过自然语言操作系统。
@@ -162,7 +162,7 @@ export default function ChatPage() {
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] mb-6"
                 style={{ backgroundColor: "hsl(var(--bg-hover))", color: "hsl(var(--text-tertiary))" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "hsl(var(--success))" }} />
-                当前模型：{selectedConfig.name} · {selectedConfig.model}
+                当前模型：{selectedConfig.name} · {selectedConfig.model_id}
               </div>
             )}
           </div>
@@ -283,7 +283,7 @@ export default function ChatPage() {
                             }}
                           >
                             <span className="font-medium">{c.name}</span>
-                            <span className="text-[11px]" style={{ color: "hsl(var(--text-tertiary))" }}>{c.model}</span>
+                            <span className="text-[11px]" style={{ color: "hsl(var(--text-tertiary))" }}>{c.model_id}</span>
                             {c.id === selectedId && (
                               <Check size={14} style={{ color: "hsl(var(--accent))" }} />
                             )}
