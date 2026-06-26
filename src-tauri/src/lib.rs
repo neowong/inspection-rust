@@ -1278,7 +1278,6 @@ fn now_epoch() -> i64 {
 
 /// 仅探测当前离线设备的状态（高频快轮询用），上线后触发静态检测（带冷却）
 fn poll_offline_devices(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
-    // 读取当前离线设备
     let devices: Vec<(i64, String, i64)> = {
         let conn = db.lock();
         let mut stmt = match conn.prepare(
@@ -1327,6 +1326,7 @@ fn poll_offline_devices(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     });
 
     let recovered = recovered.lock();
+    tracing::info!("[poll-offline] 离线检测完成: {} 台设备，{} 台恢复在线", devices.len(), recovered.len());
     if recovered.is_empty() {
         return;
     }
@@ -1391,6 +1391,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     if devices.is_empty() {
         return;
     }
+    tracing::info!("[poll-full] 全量检测 {} 台设备", devices.len());
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let online_count = std::sync::atomic::AtomicU32::new(0);
