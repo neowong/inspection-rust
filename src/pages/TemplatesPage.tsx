@@ -1536,12 +1536,12 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
   }, []);
 
   return (
-    <div ref={containerRef} style={{ overflow: "hidden", paddingBottom: 24 }}>
+    <div ref={containerRef} style={{ paddingBottom: 24 }}>
       <div style={{
         transformOrigin: "top center",
         transform: `scale(${scale})`,
-        width: "210mm", margin: "0 auto",
-        display: "flex", flexDirection: "column", gap: 24,
+        margin: "0 auto",
+        display: "flex", flexDirection: "column", gap: 24, alignItems: "center",
       }}>
       {/* ──── 第 1 页：封面 ──── */}
       <div style={{
