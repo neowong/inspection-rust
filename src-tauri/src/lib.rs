@@ -440,25 +440,15 @@ pub fn run() {
     }
     debug_log("数据子目录创建完成");
 
-    // Background task: 差异化轮询设备状态
-    // - 离线设备 90s 探测一次（尽快发现恢复）
-    // - 全量设备 5min 探测一次（覆盖在线设备的掉线检测）
-    // 两套节奏独立调度，互不阻塞
+    // Background task: 全量设备 60s 轮询一次
     let bg_db = state.db.clone();
-    let bg_db3 = state.db.clone();
     let bg_db_startup = state.db.clone();
     std::thread::spawn(move || {
-        // 离线设备快轮询：每 90s 跑一次（只探测当前离线的设备，尽快发现恢复）
+        // 首次延迟 10s 等窗口加载完成，之后每 60s 一次
+        std::thread::sleep(std::time::Duration::from_secs(10));
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(90));
-            poll_offline_devices(&bg_db3);
-        }
-    });
-    std::thread::spawn(move || {
-        // 全量轮询：每 5min 一次（覆盖在线设备掉线 + 离线设备补静态信息）
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(5 * 60));
             poll_device_statuses(&bg_db);
+            std::thread::sleep(std::time::Duration::from_secs(60));
         }
     });
     // 启动后立即触发一次所有缺静态信息设备的检测（server + database + 网络设备）
