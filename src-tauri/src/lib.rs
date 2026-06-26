@@ -532,6 +532,14 @@ pub fn run() {
                     );
                 }
             }
+            // 非 Linux: 窗口 visible:true 会在 WebView 就绪前闪白，
+            // 这里立即 hide 再等所有内容加载后 show 消除闪烁。
+            // Linux: visible:true 保持，hide+show 会导致关闭按钮失效。
+            #[cfg(not(target_os = "linux"))]
+            if let Some(window) = app.get_webview_window("main") {
+                window.hide().ok();
+                window.show().ok();
+            }
             Ok(())
         })
         .manage(state)
