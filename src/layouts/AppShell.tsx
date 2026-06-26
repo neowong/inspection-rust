@@ -168,6 +168,12 @@ export default function AppShell() {
                     </button>
                   );
                 })}
+                <div className="flex-1" />
+                <button onClick={() => { setNavMode(false); navigate("/chat"); }}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
+                  <MessageSquare size={18} />
+                </button>
               </nav>
             ) : (
               <div className="flex flex-col items-center py-3 gap-1.5 flex-1">
@@ -185,9 +191,10 @@ export default function AppShell() {
                   </button>
                 ))}
                 <div className="flex-1" />
-                <button onClick={() => navigate("/chat")} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))] mb-1"
-                  style={{ color: location.pathname.startsWith("/chat") ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
-                  <MessageSquare size={20} />
+                <button onClick={() => { setNavMode(true); navigate("/dashboard"); }}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="传统模式">
+                  <RotateCw size={16} />
                 </button>
               </div>
             )
