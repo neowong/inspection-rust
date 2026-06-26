@@ -64,7 +64,12 @@ pub fn generate_combined_docx(
     tracing::info!("DOCX 合并报告生成开始: devices={}, output={}", items.len(), output_path.display());
     let start = std::time::Instant::now();
 
-    let project_config = &configs[0];
+    // 封面配置：优先使用第一个非空 cover title 的模板（用户定制过的），
+    // 找不到则回退到 configs[0]
+    let project_config = configs
+        .iter()
+        .find(|c| !c.cover.title.is_empty())
+        .unwrap_or(&configs[0]);
     // 封面
     let mut docx = init_docx_with_vars(project_config, "", &cover.project_name);
     docx = build_cover(docx, project_config, None, cover);
