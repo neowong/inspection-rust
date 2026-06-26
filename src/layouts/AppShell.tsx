@@ -73,7 +73,10 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  const [navMode, setNavMode] = useState(true); // 默认传统模式
+  const [navMode, setNavMode] = useState(() => {
+    // 默认传统模式，仅当用户之前明确选择过 AI 模式时恢复
+    return localStorage.getItem("sidebar_mode") !== "chat";
+  });
   const [hint, setHint] = useState<{ text: string; level: "info" | "warn" | "error" | "success" } | null>(null);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -150,17 +153,34 @@ export default function AppShell() {
           </div>
 
           {collapsed ? (
-            /* ────── 收起模式：只显示图标 ────── */
-            <div className="flex flex-col items-center py-3 gap-3 flex-1">
-              <button onClick={newChat} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                style={{ color: "hsl(var(--sidebar-text-muted))" }} title="新对话">
-                <Plus size={20} />
-              </button>
-              <button onClick={() => navigate("/chat")} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                style={{ color: location.pathname.startsWith("/chat") ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
-                <MessageSquare size={20} />
-              </button>
-            </div>
+            /* ────── 收起模式：根据模式显示图标 ────── */
+            navMode ? (
+              <nav className="flex flex-col items-center py-3 gap-2 flex-1">
+                {FLAT_ITEMS.map(item => {
+                  const active = activeKey === item.key;
+                  const Icon = item.icon;
+                  return (
+                    <button key={item.key} onClick={() => navigate(item.path)}
+                      className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                      style={{ color: active ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }}
+                      title={item.label}>
+                      <Icon size={20} />
+                    </button>
+                  );
+                })}
+              </nav>
+            ) : (
+              <div className="flex flex-col items-center py-3 gap-3 flex-1">
+                <button onClick={newChat} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="新对话">
+                  <Plus size={20} />
+                </button>
+                <button onClick={() => navigate("/chat")} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
+                  style={{ color: location.pathname.startsWith("/chat") ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
+                  <MessageSquare size={20} />
+                </button>
+              </div>
+            )
           ) : navMode ? (
             /* ────── Nav 模式：传统导航 ────── */
             <>
