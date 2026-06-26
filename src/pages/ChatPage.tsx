@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, User, Loader2, Sparkles, ChevronDown, Check, ArrowUp, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -14,6 +15,14 @@ interface AiConfig {
   name: string;
   model_id: string;
   is_active: number;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 const SYSTEM_PROMPT = `你是 AI 巡检助手的智能对话助手，帮助用户通过自然语言操作系统。
@@ -82,45 +91,93 @@ const EXAMPLES = [
   "生成最新的巡检报告",
 ];
 
+// ── 会话持久化工具 ──
+
+function loadSessions(): ChatSession[] {
+  try {
+    return JSON.parse(localStorage.getItem("chat_sessions") || "[]");
+  } catch { return []; }
+}
+
+function saveSessions(sessions: ChatSession[]) {
+  localStorage.setItem("chat_sessions", JSON.stringify(sessions));
+}
+
+function loadSessionById(id: string): ChatSession | undefined {
+  return loadSessions().find(s => s.id === id);
+}
+
+function upsertSession(session: ChatSession) {
+  const sessions = loadSessions();
+  const idx = sessions.findIndex(s => s.id === session.id);
+  if (idx >= 0) sessions[idx] = session;
+  else sessions.unshift(session);
+  saveSessions(sessions);
+}
+
+function deleteSession(id: string) {
+  const sessions = loadSessions().filter(s => s.id !== id);
+  saveSessions(sessions);
+}
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function getDateLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toISOString().slice(0, 10) === today.toISOString().slice(0, 10)) return "今天";
+  if (d.toISOString().slice(0, 10) === yesterday.toISOString().slice(0, 10)) return "昨天";
+  return "更早";
+}
+
+// ── 暴露给 AppShell 的 API ──
+
+export { loadSessions, deleteSession, getDateLabel };
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    try {
-      const saved = sessionStorage.getItem("chat_messages");
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chatId = searchParams.get("id") || "";
+
+  // 当前会话
+  const [session, setSession] = useState<ChatSession>(() => {
+    if (chatId) return loadSessionById(chatId) || { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    return { id: generateId(), title: "新对话", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   });
+
+  const messages = session.messages;
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [configs, setConfigs] = useState<AiConfig[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(() => {
-    const saved = sessionStorage.getItem("chat_model_id");
-    return saved ? Number(saved) : null;
-  });
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showModelList, setShowModelList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelListRef = useRef<HTMLDivElement>(null);
 
-  // 持久化消息到 sessionStorage
-  useEffect(() => {
-    sessionStorage.setItem("chat_messages", JSON.stringify(messages));
-  }, [messages]);
-  useEffect(() => {
-    if (selectedId) sessionStorage.setItem("chat_model_id", String(selectedId));
-  }, [selectedId]);
-
   useEffect(() => {
     invoke<AiConfig[]>("list_ai_configs").then(list => {
       setConfigs(list);
-      if (!selectedId) {
+      const saved = localStorage.getItem("chat_model_id");
+      if (saved) setSelectedId(Number(saved));
+      else {
         const active = list.find(c => c.is_active);
         if (active) setSelectedId(active.id);
         else if (list.length > 0) setSelectedId(list[0]!.id);
       }
     }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 保存模型选择
+  useEffect(() => {
+    if (selectedId) localStorage.setItem("chat_model_id", String(selectedId));
+  }, [selectedId]);
+
+  // 点击外部关闭模型列表
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (modelListRef.current && !modelListRef.current.contains(e.target as Node)) {
@@ -139,30 +196,53 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
+  // 同步 session ID 到 URL
+  useEffect(() => {
+    if (session.id && session.id !== chatId) {
+      setSearchParams({ id: session.id }, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id]);
+
   const selectedConfig = configs.find(c => c.id === selectedId);
+
+  const updateMessages = (newMessages: Message[], userMsg?: string) => {
+    const title = session.title;
+    if (title === "新对话" && userMsg) {
+      session.title = userMsg.length > 30 ? userMsg.slice(0, 30) + "…" : userMsg;
+    }
+    session.messages = newMessages;
+    session.updatedAt = new Date().toISOString();
+    upsertSession({ ...session });
+    setSession({ ...session });
+  };
 
   const handleSend = async (text?: string) => {
     const msg = (text || input).trim();
     if (!msg || loading) return;
 
     if (!selectedId) {
-      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在系统设置中添加并激活一个 AI 模型。" }]);
+      const newMsgs = [...messages, { role: "user" as const, content: msg }, { role: "assistant" as const, content: "请先在系统设置中添加并激活一个 AI 模型。" }];
+      updateMessages(newMsgs, msg);
       return;
     }
 
     setInput("");
-    setMessages(prev => [...prev, { role: "user", content: msg }]);
+    const newMsgs = [...messages, { role: "user" as const, content: msg }];
+    updateMessages(newMsgs, msg);
     setLoading(true);
 
     try {
       const result = await invoke<string>("chat_with_ai", {
         configId: selectedId,
         systemPrompt: SYSTEM_PROMPT,
-        messages: [...messages, { role: "user", content: msg }],
+        messages: newMsgs,
       });
-      setMessages(prev => [...prev, { role: "assistant", content: result }]);
+      const finalMsgs = [...newMsgs, { role: "assistant" as const, content: result }];
+      updateMessages(finalMsgs);
     } catch (e) {
-      setMessages(prev => [...prev, { role: "assistant", content: `抱歉，出现了错误：${e}` }]);
+      const errMsgs = [...newMsgs, { role: "assistant" as const, content: `抱歉，出现了错误：${e}` }];
+      updateMessages(errMsgs);
     } finally {
       setLoading(false);
     }
@@ -182,7 +262,7 @@ export default function ChatPage() {
       {/* 消息区域 */}
       <div className="flex-1 overflow-y-auto">
         {isEmpty ? (
-          /* 欢迎界面 - 居中，Claude 风格 */
+          /* 欢迎界面 */
           <div className="flex flex-col items-center justify-center h-full px-4">
             <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5"
               style={{ backgroundColor: "hsl(var(--accent) / 0.1)" }}>
@@ -264,16 +344,11 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* 输入区域 - Claude 风格大卡片 */}
+      {/* 输入区域 */}
       <div className="shrink-0 px-4 pb-6">
         <div className="max-w-3xl mx-auto">
-          {/* 大圆角输入框 */}
           <div className="rounded-[24px] border transition-shadow focus-within:shadow-md"
-            style={{
-              backgroundColor: "hsl(var(--bg-card))",
-              borderColor: "hsl(var(--border-light))",
-            }}
-          >
+            style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border-light))" }}>
             <textarea
               ref={inputRef}
               value={input}
@@ -291,9 +366,7 @@ export default function ChatPage() {
                 target.style.height = Math.min(target.scrollHeight, 192) + "px";
               }}
             />
-            {/* 底部工具栏 */}
             <div className="flex items-center justify-between px-3 pb-3 -mt-10">
-              {/* 左侧：附件 + */}
               <button
                 className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[hsl(var(--bg-hover))]"
                 style={{ color: "hsl(var(--text-tertiary))" }}
@@ -301,7 +374,6 @@ export default function ChatPage() {
               >
                 <Plus size={18} />
               </button>
-              {/* 右侧：模型选择 + 发送 */}
               <div className="flex items-center gap-2">
                 <div ref={modelListRef} className="relative">
                   <button
