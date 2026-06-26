@@ -1147,7 +1147,7 @@ function ReportTemplateEditor({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">设备类别</label>
+              <label className="block text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1">厂商</label>
               <Select value={form.category} onChange={(e) => {
                   const cat = e.target.value as RptCategory;
                   const defaults = categoryFields(cat);
@@ -1158,9 +1158,9 @@ function ReportTemplateEditor({
                   ];
                   update({ category: cat, config: { ...form.config, device_info: { ...form.config.device_info, fields: merged } } });
                 }}>
-                <option value="network">网络设备</option>
-                <option value="linux">Linux 服务器</option>
-                <option value="database">数据库</option>
+                <option value="network">H3C / 华为 / 思科 / 锐捷 / 飞塔</option>
+                <option value="linux">Linux / Ubuntu / CentOS / Rocky / Debian</option>
+                <option value="database">MySQL / PostgreSQL / Oracle / 达梦 / Redis</option>
               </Select>
             </div>
           </div>
