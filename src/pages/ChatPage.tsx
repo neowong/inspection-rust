@@ -83,23 +83,42 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = sessionStorage.getItem("chat_messages");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [configs, setConfigs] = useState<AiConfig[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const saved = sessionStorage.getItem("chat_model_id");
+    return saved ? Number(saved) : null;
+  });
   const [showModelList, setShowModelList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelListRef = useRef<HTMLDivElement>(null);
 
+  // 持久化消息到 sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("chat_messages", JSON.stringify(messages));
+  }, [messages]);
+  useEffect(() => {
+    if (selectedId) sessionStorage.setItem("chat_model_id", String(selectedId));
+  }, [selectedId]);
+
   useEffect(() => {
     invoke<AiConfig[]>("list_ai_configs").then(list => {
       setConfigs(list);
-      const active = list.find(c => c.is_active);
-      if (active) setSelectedId(active.id);
-      else if (list.length > 0) setSelectedId(list[0]!.id);
+      if (!selectedId) {
+        const active = list.find(c => c.is_active);
+        if (active) setSelectedId(active.id);
+        else if (list.length > 0) setSelectedId(list[0]!.id);
+      }
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
