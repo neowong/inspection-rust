@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Send, Bot, User, Loader2, Sparkles, Server, Play, Search, BarChart3, ChevronDown, Check } from "lucide-react";
+import { Bot, User, Loader2, Sparkles, Server, Play, Search, BarChart3, ChevronDown, Check, ArrowUp } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -60,11 +60,18 @@ const SYSTEM_PROMPT = `你是 AI 巡检助手的智能对话助手，帮助用�
 6. 如果用户信息不完整，主动询问缺少的参数`;
 
 const SUGGESTIONS = [
-  { icon: BarChart3, text: "查看系统状态", prompt: "帮我查看一下系统当前的状态概览" },
-  { icon: Server, text: "添加设备", prompt: "我想添加一台网络设备" },
-  { icon: Play, text: "执行巡检", prompt: "帮我执行一次巡检任务" },
-  { icon: Search, text: "扫描网络", prompt: "帮我扫描一下网段内的存活主机" },
+  { icon: BarChart3, text: "查看系统状态" },
+  { icon: Server, text: "添加设备" },
+  { icon: Play, text: "执行巡检" },
+  { icon: Search, text: "扫描网络" },
 ];
+
+const PROMPT_MAP: Record<string, string> = {
+  "查看系统状态": "帮我查看一下系统当前的状态概览",
+  "添加设备": "我想添加一台网络设备",
+  "执行巡检": "帮我执行一次巡检任务",
+  "扫描网络": "帮我扫描一下网段内的存活主机",
+};
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -77,18 +84,15 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelListRef = useRef<HTMLDivElement>(null);
 
-  // 加载 AI 配置列表
   useEffect(() => {
     invoke<AiConfig[]>("list_ai_configs").then(list => {
       setConfigs(list);
-      // 默认选中激活的模型
       const active = list.find(c => c.is_active);
       if (active) setSelectedId(active.id);
       else if (list.length > 0) setSelectedId(list[0]!.id);
     }).catch(() => {});
   }, []);
 
-  // 点击外部关闭模型列表
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (modelListRef.current && !modelListRef.current.contains(e.target as Node)) {
@@ -114,7 +118,7 @@ export default function ChatPage() {
     if (!msg || loading) return;
 
     if (!selectedId) {
-      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在下方选择一个 AI 模型，或在「系统设置」中添加模型配置。" }]);
+      setMessages(prev => [...prev, { role: "user", content: msg }, { role: "assistant", content: "请先在输入框右下角选择一个 AI 模型，或在「系统设置」中添加模型配置。" }]);
       return;
     }
 
@@ -128,7 +132,6 @@ export default function ChatPage() {
         systemPrompt: SYSTEM_PROMPT,
         messages: [...messages, { role: "user", content: msg }],
       });
-
       setMessages(prev => [...prev, { role: "assistant", content: result }]);
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", content: `抱歉，出现了错误：${e}` }]);
@@ -153,32 +156,31 @@ export default function ChatPage() {
         {isEmpty ? (
           /* 欢迎界面 */
           <div className="flex flex-col items-center justify-center h-full px-4">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
-              style={{ backgroundColor: "hsl(var(--accent) / 0.12)" }}>
-              <Sparkles size={28} style={{ color: "hsl(var(--accent))" }} />
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6"
+              style={{ backgroundColor: "hsl(var(--accent) / 0.1)" }}>
+              <Sparkles size={32} style={{ color: "hsl(var(--accent))" }} />
             </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: "hsl(var(--text-primary))" }}>
+            <h2 className="text-2xl font-semibold mb-3" style={{ color: "hsl(var(--text-primary))" }}>
               有什么可以帮你的？
             </h2>
-            <p className="text-sm mb-8" style={{ color: "hsl(var(--text-tertiary))" }}>
+            <p className="text-sm mb-10" style={{ color: "hsl(var(--text-tertiary))" }}>
               我可以帮你管理设备、执行巡检、扫描网络等操作
             </p>
-            <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+            <div className="flex flex-wrap justify-center gap-2 max-w-lg">
               {SUGGESTIONS.map((s, i) => {
                 const Icon = s.icon;
                 return (
                   <button
                     key={i}
-                    onClick={() => handleSend(s.prompt)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl border text-left text-sm transition-all
-                      hover:shadow-sm hover:border-[hsl(var(--accent) / 0.3)]"
+                    onClick={() => handleSend(PROMPT_MAP[s.text] || s.text)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm transition-all
+                      hover:bg-[hsl(var(--bg-hover))]"
                     style={{
                       borderColor: "hsl(var(--border))",
                       color: "hsl(var(--text-secondary))",
-                      backgroundColor: "hsl(var(--bg-card))",
                     }}
                   >
-                    <Icon size={16} style={{ color: "hsl(var(--accent))" }} className="shrink-0" />
+                    <Icon size={14} style={{ color: "hsl(var(--text-tertiary))" }} />
                     <span>{s.text}</span>
                   </button>
                 );
@@ -189,44 +191,38 @@ export default function ChatPage() {
           /* 消息列表 */
           <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
             {messages.map((msg, i) => (
-              <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : ""}`}>
-                {msg.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                    style={{ backgroundColor: "hsl(var(--accent) / 0.12)" }}>
-                    <Bot size={16} style={{ color: "hsl(var(--accent))" }} />
+              <div key={i} className="flex gap-4">
+                {msg.role === "assistant" ? (
+                  <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-1"
+                    style={{ backgroundColor: "hsl(var(--accent))" }}>
+                    <Bot size={14} className="text-white" />
+                  </div>
+                ) : (
+                  <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-1"
+                    style={{ backgroundColor: "hsl(var(--sidebar-bg))" }}>
+                    <User size={14} className="text-white" />
                   </div>
                 )}
-                <div className={`max-w-[80%] ${msg.role === "user" ? "order-first" : ""}`}>
-                  <div
-                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                      msg.role === "user"
-                        ? "rounded-tr-md"
-                        : "rounded-tl-md border"
-                    }`}
-                    style={msg.role === "user"
-                      ? { backgroundColor: "hsl(var(--accent))", color: "white" }
-                      : { backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))", color: "hsl(var(--text-primary))" }
-                    }
-                  >
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium mb-1" style={{ color: "hsl(var(--text-secondary))" }}>
+                    {msg.role === "assistant" ? "AI 巡检助手" : "你"}
+                  </div>
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "hsl(var(--text-primary))" }}>
                     {msg.content}
                   </div>
                 </div>
-                {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                    style={{ backgroundColor: "hsl(var(--sidebar-active))" }}>
-                    <User size={16} className="text-white" />
-                  </div>
-                )}
               </div>
             ))}
             {loading && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: "hsl(var(--accent) / 0.12)" }}>
-                  <Bot size={16} style={{ color: "hsl(var(--accent))" }} />
+              <div className="flex gap-4">
+                <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-1"
+                  style={{ backgroundColor: "hsl(var(--accent))" }}>
+                  <Bot size={14} className="text-white" />
                 </div>
-                <div className="rounded-2xl rounded-tl-md px-4 py-3 border"
-                  style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}>
+                <div className="flex-1">
+                  <div className="text-[13px] font-medium mb-1" style={{ color: "hsl(var(--text-secondary))" }}>
+                    AI 巡检助手
+                  </div>
                   <div className="flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" style={{ color: "hsl(var(--text-tertiary))" }} />
                     <span className="text-sm" style={{ color: "hsl(var(--text-tertiary))" }}>思考中...</span>
@@ -240,10 +236,10 @@ export default function ChatPage() {
       </div>
 
       {/* 输入区域 */}
-      <div className="shrink-0 pb-4 pt-2">
+      <div className="shrink-0 pb-5 pt-2">
         <div className="max-w-3xl mx-auto px-4">
-          <div className="relative flex items-end rounded-2xl border shadow-sm transition-colors
-            focus-within:border-[hsl(var(--accent) / 0.5)]"
+          <div className="relative rounded-2xl border shadow-sm transition-all
+            focus-within:border-[hsl(var(--accent) / 0.4)] focus-within:shadow-md"
             style={{
               backgroundColor: "hsl(var(--bg-input))",
               borderColor: "hsl(var(--border))",
@@ -254,81 +250,83 @@ export default function ChatPage() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入指令，如「查看系统状态」「添加一台交换机」..."
+              placeholder="给 AI 巡检助手发送消息..."
               disabled={loading}
               rows={1}
-              className="flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none
-                placeholder:text-[hsl(var(--text-tertiary))] disabled:opacity-50 max-h-32"
+              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-12 text-sm outline-none
+                placeholder:text-[hsl(var(--text-tertiary))] disabled:opacity-50 max-h-48"
               style={{ color: "hsl(var(--text-primary))" }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
                 target.style.height = "auto";
-                target.style.height = Math.min(target.scrollHeight, 128) + "px";
+                target.style.height = Math.min(target.scrollHeight, 192) + "px";
               }}
             />
-            <button
-              onClick={() => handleSend()}
-              disabled={loading || !input.trim()}
-              className="flex items-center justify-center w-9 h-9 mr-1.5 mb-1.5 rounded-xl transition-all
-                disabled:opacity-30"
-              style={{
-                backgroundColor: input.trim() ? "hsl(var(--accent))" : "transparent",
-                color: input.trim() ? "white" : "hsl(var(--text-tertiary))",
-              }}
-            >
-              <Send size={16} />
-            </button>
-          </div>
 
-          {/* 模型选择器 */}
-          <div className="flex items-center justify-center mt-2">
-            <div ref={modelListRef} className="relative">
-              <button
-                onClick={() => setShowModelList(!showModelList)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] transition-colors
-                  hover:bg-[hsl(var(--bg-hover))]"
-                style={{ color: "hsl(var(--text-tertiary))" }}
-              >
-                {selectedConfig ? (
-                  <>
-                    <span className="font-medium" style={{ color: "hsl(var(--text-secondary))" }}>
-                      {selectedConfig.name}
-                    </span>
-                    <span>·</span>
-                    <span>{selectedConfig.model}</span>
-                  </>
-                ) : (
-                  <span>请选择模型</span>
-                )}
-                <ChevronDown size={12} className={`transition-transform ${showModelList ? "rotate-180" : ""}`} />
-              </button>
-
-              {showModelList && configs.length > 0 && (
-                <div
-                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-64 rounded-xl border shadow-lg overflow-hidden z-50"
-                  style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}
+            {/* 底部工具栏 */}
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2.5">
+              {/* 左侧：模型选择 */}
+              <div ref={modelListRef} className="relative">
+                <button
+                  onClick={() => setShowModelList(!showModelList)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] transition-colors
+                    hover:bg-[hsl(var(--bg-hover))]"
+                  style={{ color: "hsl(var(--text-tertiary))" }}
                 >
-                  {configs.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
-                      className="flex items-center justify-between w-full px-3 py-2.5 text-left text-sm transition-colors
-                        hover:bg-[hsl(var(--bg-hover))]"
-                      style={{ color: "hsl(var(--text-primary))" }}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-[11px]" style={{ color: "hsl(var(--text-tertiary))" }}>{c.model}</span>
-                      </div>
-                      {c.id === selectedId && (
-                        <Check size={14} style={{ color: "hsl(var(--accent))" }} />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+                  {selectedConfig ? (
+                    <span>{selectedConfig.model}</span>
+                  ) : (
+                    <span>选择模型</span>
+                  )}
+                  <ChevronDown size={11} className={`transition-transform ${showModelList ? "rotate-180" : ""}`} />
+                </button>
+
+                {showModelList && configs.length > 0 && (
+                  <div
+                    className="absolute bottom-full left-0 mb-1 w-56 rounded-xl border shadow-lg overflow-hidden z-50"
+                    style={{ backgroundColor: "hsl(var(--bg-card))", borderColor: "hsl(var(--border))" }}
+                  >
+                    <div className="py-1">
+                      {configs.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setSelectedId(c.id); setShowModelList(false); }}
+                          className="flex items-center justify-between w-full px-3 py-2 text-left text-sm transition-colors
+                            hover:bg-[hsl(var(--bg-hover))]"
+                          style={{ color: "hsl(var(--text-primary))" }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{c.model}</span>
+                          </div>
+                          {c.id === selectedId && (
+                            <Check size={14} style={{ color: "hsl(var(--accent))" }} />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 右侧：发送按钮 */}
+              <button
+                onClick={() => handleSend()}
+                disabled={loading || !input.trim()}
+                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all
+                  disabled:opacity-20"
+                style={{
+                  backgroundColor: input.trim() ? "hsl(var(--accent))" : "hsl(var(--text-tertiary) / 0.2)",
+                  color: input.trim() ? "white" : "hsl(var(--text-tertiary))",
+                }}
+              >
+                <ArrowUp size={14} />
+              </button>
             </div>
           </div>
+
+          <p className="text-center text-[11px] mt-2.5" style={{ color: "hsl(var(--text-tertiary) / 0.6)" }}>
+            AI 巡检助手可能会犯错，请核实重要信息
+          </p>
         </div>
       </div>
     </div>
