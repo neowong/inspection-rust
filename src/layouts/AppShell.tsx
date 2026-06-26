@@ -171,7 +171,7 @@ export default function AppShell() {
                 <div className="flex-1" />
                 <button onClick={() => { setNavMode(false); navigate("/chat"); }}
                   className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="AI聊天模式">
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="AI模式">
                   <Bot size={18} />
                 </button>
               </nav>
@@ -234,13 +234,13 @@ export default function AppShell() {
                   </div>
                 ))}
               </nav>
-              {/* 底部：切换到 AI聊天模式 */}
+              {/* 底部：切换到 AI模式 */}
               <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
                 <button onClick={() => { setNavMode(false); navigate("/chat"); }}
                   className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
                   style={{ color: "hsl(var(--sidebar-text-muted))" }}>
                   <Bot size={18} />
-                  <span className="truncate">AI聊天模式</span>
+                  <span className="truncate">AI模式</span>
                 </button>
               </div>
             </>
