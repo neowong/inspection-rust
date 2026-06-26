@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, User, Loader2, Sparkles, ChevronDown, Check, ArrowUp, Plus } from "lucide-react";
+import { Bot, User, Loader2, Sparkles, ChevronDown, Check, ArrowUp, Plus, Copy, CheckCheck } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -248,6 +248,21 @@ export default function ChatPage() {
     }
   };
 
+  const fillInput = (text: string) => {
+    setInput(text);
+    inputRef.current?.focus();
+  };
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyContent = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch { /* ignore */ }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -275,7 +290,7 @@ export default function ChatPage() {
               {EXAMPLES.map((text, i) => (
                 <button
                   key={i}
-                  onClick={() => handleSend(text)}
+                  onClick={() => fillInput(text)}
                   className="px-4 py-2 rounded-full text-[13px] transition-all hover:shadow-sm"
                   style={{
                     border: "1px solid hsl(var(--border-light))",
@@ -306,16 +321,26 @@ export default function ChatPage() {
                     <User size={14} className="text-white" />
                   </div>
                 )}
-                <div className="flex-1 min-w-0 pt-0.5">
-                  <div className="text-sm font-medium mb-1" style={{ color: "hsl(var(--text-secondary))" }}>
-                    {msg.role === "assistant" ? "AI 巡检助手" : "你"}
+                <div className="flex-1 min-w-0 pt-0.5 group">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium" style={{ color: "hsl(var(--text-secondary))" }}>
+                      {msg.role === "assistant" ? "AI 巡检助手" : "你"}
+                    </div>
+                    <button
+                      onClick={() => copyContent(msg.content, `msg-${i}`)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[hsl(var(--bg-hover))]"
+                      style={{ color: "hsl(var(--text-tertiary))" }}
+                      title="复制"
+                    >
+                      {copiedId === `msg-${i}` ? <CheckCheck size={14} /> : <Copy size={14} />}
+                    </button>
                   </div>
                   {msg.role === "assistant" ? (
                     <div className="prose prose-sm max-w-none leading-7" style={{ color: "hsl(var(--text-primary))" }}>
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                     </div>
                   ) : (
-                    <div className="text-[15px] leading-7 whitespace-pre-wrap" style={{ color: "hsl(var(--text-primary))" }}>
+                    <div className="text-[15px] leading-7 whitespace-pre-wrap select-all" style={{ color: "hsl(var(--text-primary))" }}>
                       {msg.content}
                     </div>
                   )}
