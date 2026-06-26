@@ -1522,7 +1522,8 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
   const problems = rows.filter((r) => r.status === "warning" || r.status === "critical");
 
   return (
-    <div style={{ overflow: "auto", paddingBottom: 24 }}>
+    <div style={{ overflow: "auto", width: "100%", paddingBottom: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, minWidth: "210mm" }}>
       {/* ──── 第 1 页：封面 ──── */}
       <div style={{
         width: "210mm", minHeight: "297mm", background: "white",
@@ -1696,6 +1697,7 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
             {footerText}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
