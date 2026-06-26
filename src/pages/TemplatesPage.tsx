@@ -1555,10 +1555,10 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
         <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>封面（仅组合报告输出）</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: accent }}>{title}</div>
         {config.cover.subtitle && (
-          <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{applyVars(config.cover.subtitle, dev)}</div>
+          <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{config.cover.subtitle}</div>
         )}
-        <div style={{ marginTop: 80, fontSize: 14 }}>设备：{dev.name}</div>
-        <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>生成日期：{dev.inspect_time.slice(0, 10)}</div>
+        <div style={{ marginTop: 80, fontSize: 14, color: "#999" }}>运维巡检中心</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>组合巡检报告</div>
       </div>
 
       {/* ──── 第 2 页：设备报告 ──── */}
