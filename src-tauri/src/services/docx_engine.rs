@@ -333,45 +333,61 @@ fn build_cover(
         .to_string();
 
     let title = if config.cover.title.trim().is_empty() {
-        format!("{} 巡检报告", cover.project_name)
+        format!("{{vendor}} 设备巡检报告")
     } else {
-        let mut t = config.cover.title.clone();
-        t = t.replace("{{vendor}}", &cover.inspector); // fallback
-        t
+        config.cover.title.clone()
     };
 
-    for _ in 0..5 {
+    // 顶部留白
+    for _ in 0..6 {
         docx = docx.add_paragraph(Paragraph::new());
     }
+
+    // 主标题
     docx = docx.add_paragraph(
         Paragraph::new().align(AlignmentType::Center).add_run(
             Run::new()
                 .add_text(&title)
                 .bold()
-                .size(48)
+                .size(52)
                 .color(&color)
                 .fonts(zh_fonts()),
         ),
     );
 
+    // 装饰线
+    docx = docx.add_paragraph(Paragraph::new());
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(Run::new().add_text("").size(2).fonts(zh_fonts())),
+    );
+    // 副标题
     if !config.cover.subtitle.trim().is_empty() {
-        docx = docx.add_paragraph(Paragraph::new());
         docx = docx.add_paragraph(
             Paragraph::new().align(AlignmentType::Center).add_run(
                 Run::new()
                     .add_text(&config.cover.subtitle)
-                    .size(28)
+                    .size(26)
                     .color("666666")
                     .fonts(zh_fonts()),
             ),
         );
     }
 
-    for _ in 0..6 {
+    // 撑满→日期置底
+    for _ in 0..10 {
         docx = docx.add_paragraph(Paragraph::new());
     }
-    docx = docx.add_paragraph(cover_info_line("巡检日期", &cover.inspection_date));
-    docx = docx.add_paragraph(cover_info_line("巡检人员", &cover.inspector));
+    docx = docx.add_paragraph(
+        Paragraph::new().align(AlignmentType::Center).add_run(
+            Run::new()
+                .add_text(&cover.inspection_date)
+                .size(22)
+                .color("888888")
+                .fonts(zh_fonts()),
+        ),
+    );
 
     docx
 }
