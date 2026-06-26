@@ -1522,32 +1522,17 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
   const problems = rows.filter((r) => r.status === "warning" || r.status === "critical");
 
   return (
-    <div style={{ width: "min(100%, 210mm)", display: "flex", justifyContent: "center" }}>
-      <div
-        style={{
-          width: "210mm",
-          minHeight: "297mm",
-          background: "white",
-          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-          padding: "20mm 18mm",
-          boxSizing: "border-box",
-          color: "#222",
-          fontFamily: '"FangSong", "STFangsong", "仿宋", serif',
-          fontSize: 11,
-          transformOrigin: "top center",
-          transform: "scale(min(0.78, calc((100vw - 520px) / 794)))",
-        }}
-      >
-      {/* 页眉 */}
-      {headerText.trim() && (
-        <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderBottom: "1px solid #ddd", paddingBottom: 4, marginBottom: 12 }}>
-          {headerText.replace(/\{\{[^}]+\}\}/g, "")}
-        </div>
-      )}
-
-      {/* 封面（仅预览，实际仅组合报告输出） */}
-      <div style={{ textAlign: "center", padding: "60px 0 40px" }}>
-        <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>（预览：封面仅在组合报告中输出）</div>
+    <div style={{ overflow: "auto", paddingBottom: 24 }}>
+      {/* ──── 第 1 页：封面 ──── */}
+      <div style={{
+        width: "210mm", minHeight: "297mm", background: "white",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.08)", padding: "20mm 18mm",
+        boxSizing: "border-box", color: "#222",
+        fontFamily: '"FangSong", "STFangsong", "仿宋", serif', fontSize: 11,
+        margin: "0 auto 24px auto", display: "flex", flexDirection: "column",
+        justifyContent: "center", alignItems: "center", textAlign: "center" as const,
+      }}>
+        <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>封面（仅组合报告输出）</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: accent }}>{title}</div>
         {config.cover.subtitle && (
           <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{applyVars(config.cover.subtitle, dev)}</div>
@@ -1556,7 +1541,20 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
         <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>生成日期：{dev.inspect_time.slice(0, 10)}</div>
       </div>
 
-      <div style={{ height: 1, background: "#eee", margin: "20px 0" }} />
+      {/* ──── 第 2 页：设备报告 ──── */}
+      <div style={{
+        width: "210mm", minHeight: "297mm", background: "white",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.08)", padding: "20mm 18mm",
+        boxSizing: "border-box", color: "#222",
+        fontFamily: '"FangSong", "STFangsong", "仿宋", serif', fontSize: 11,
+        margin: "0 auto",
+      }}>
+      {/* 页眉 */}
+      {headerText.trim() && (
+        <div style={{ textAlign: "center", fontSize: 10, color: "#666", borderBottom: "1px solid #ddd", paddingBottom: 4, marginBottom: 12 }}>
+          {headerText.replace(/\{\{[^}]+\}\}/g, "")}
+        </div>
+      )}
 
       {/* 设备信息 */}
       {config.device_info.enabled && visibleFields.length > 0 && (
