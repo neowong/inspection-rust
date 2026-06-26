@@ -1550,15 +1550,18 @@ function DocxPreview({ config, category }: { config: ReportTemplateConfig; categ
         boxSizing: "border-box", color: "#222",
         fontFamily: '"FangSong", "STFangsong", "仿宋", serif', fontSize: 11,
         display: "flex", flexDirection: "column",
-        justifyContent: "center", alignItems: "center", textAlign: "center" as const,
+        alignItems: "center", textAlign: "center" as const,
       }}>
-        <div style={{ fontSize: 11, color: "#999", marginBottom: 16 }}>封面（仅组合报告输出）</div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: accent }}>{title}</div>
+        <div style={{ fontSize: 11, color: "#999", marginBottom: 60 }}>封面（仅组合报告输出）</div>
+        <div style={{ fontSize: 32, fontWeight: 700, color: accent, letterSpacing: 2 }}>{title}</div>
+        <div style={{ width: 80, height: 3, background: accent, margin: "28px 0" }} />
         {config.cover.subtitle && (
-          <div style={{ fontSize: 16, color: "#777", marginTop: 12 }}>{config.cover.subtitle}</div>
+          <div style={{ fontSize: 15, color: "#555", letterSpacing: 1 }}>{config.cover.subtitle}</div>
         )}
-        <div style={{ marginTop: 80, fontSize: 14, color: "#999" }}>运维巡检中心</div>
-        <div style={{ marginTop: 6, fontSize: 12, color: "#888" }}>组合巡检报告</div>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 13, color: "#888" }}>
+          {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
+        </div>
       </div>
 
       {/* ──── 第 2 页：设备报告 ──── */}
