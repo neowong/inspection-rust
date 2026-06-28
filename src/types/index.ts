@@ -19,7 +19,7 @@ export interface Device {
   auth_status: string | null;
   /** 账号验证错误的简短中文消息 */
   auth_message: string | null;
-  /** 部署方式：direct/docker/podman/k8s */
+  /** 部署方式：direct/docker/podman */
   deployment: string | null;
   /** 数据库版本（数据库设备专用） */
   db_version: string | null;

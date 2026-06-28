@@ -894,6 +894,18 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 32: {}", e))?;
     }
 
+    // ── v33: 清理数据库厂商中耦合 docker/podman 前缀的命令 ──
+    // 命令库只存裸命令，容器包装由执行引擎按设备 deployment 自动处理。
+    // 删除数据库厂商下以 docker/podman 开头的命令，种子数据下次启动会补回裸命令。
+    if version < 33 {
+        conn.execute_batch(
+            "DELETE FROM command_pool WHERE vendor IN ('MySQL','PostgreSQL','Oracle','达梦','SQL Server','Redis','MongoDB') \
+             AND (command LIKE 'docker %' OR command LIKE 'podman %');"
+        ).map_err(|e| format!("migration 33: {}", e))?;
+        conn.execute_batch("PRAGMA user_version = 33;")
+            .map_err(|e| format!("migration 33: {}", e))?;
+    }
+
     Ok(())
 }
 

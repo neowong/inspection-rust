@@ -15,7 +15,7 @@ import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
-import { VENDORS, CATEGORIES } from "../lib/constants";
+import { VENDORS, CATEGORIES, DB_VENDORS, OS_VENDORS } from "../lib/constants";
 
 type TabKey = "templates" | "commands" | "reports";
 
@@ -109,6 +109,8 @@ export default function TemplatesPage() {
   const [customVendorInput, setCustomVendorInput] = useState("");
   const [tplVendorCustom, setTplVendorCustom] = useState(false);
   const [tplCustomVendorInput, setTplCustomVendorInput] = useState("");
+  // Template editor: vendor tab filter for available commands (empty = all)
+  const [tplCmdVendor, setTplCmdVendor] = useState("");
 
   // Extract unique vendors from commands, custom ones sorted to top
   useEffect(() => {
@@ -180,14 +182,14 @@ export default function TemplatesPage() {
   useEffect(() => { loadCommands(); }, [cmdVendor]);
   useEffect(() => { loadReportTemplates(); }, []);
 
-  // Load commands for template editor independently (not affected by command pool tab vendor filter)
+  // Load ALL commands for template editor (supports multi-vendor selection)
   useEffect(() => {
-    if (templateModal && templateForm.vendor) {
-      invoke<CommandPool[]>("list_commands", { vendor: templateForm.vendor })
+    if (templateModal) {
+      invoke<CommandPool[]>("list_commands", {})
         .then(setTemplateCommands)
         .catch(console.error);
     }
-  }, [templateModal, templateForm.vendor]);
+  }, [templateModal]);
 
   const filteredTemplates = useMemo(() => templates.filter((t) =>
     !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase())
@@ -197,9 +199,20 @@ export default function TemplatesPage() {
     !cmdSearch || c.command.toLowerCase().includes(cmdSearch.toLowerCase()) || (c.description && c.description.toLowerCase().includes(cmdSearch.toLowerCase()))
   ), [commands, cmdSearch]);
 
-  const vendorFilteredCommands = useMemo(() => templateCommands.filter((c) =>
-    c.vendor === templateForm.vendor
-  ), [templateCommands, templateForm.vendor]);
+  // 是否为数据库模板（决定是否启用多厂商标签页）
+  const isDbTemplate = (DB_VENDORS as readonly string[]).includes(templateForm.vendor);
+  // Filter commands: DB template uses tab filter, others filter by template vendor
+  const vendorFilteredCommands = useMemo(() => {
+    if (isDbTemplate) return templateCommands.filter((c) => !tplCmdVendor || c.vendor === tplCmdVendor);
+    return templateCommands.filter((c) => c.vendor === templateForm.vendor);
+  }, [templateCommands, tplCmdVendor, isDbTemplate, templateForm.vendor]);
+  // 数据库模板：标签页 = OS 厂商 + 当前 DB 厂商（仅包含命令池中实际存在的）
+  const tplCmdVendors = useMemo(() => {
+    if (!isDbTemplate) return [];
+    const present = new Set(templateCommands.map(c => c.vendor));
+    const allowed = [...OS_VENDORS, templateForm.vendor];
+    return allowed.filter(v => present.has(v));
+  }, [templateCommands, templateForm.vendor, isDbTemplate]);
 
   // ----- Template handlers -----
   const openAddTemplate = () => {
@@ -207,6 +220,7 @@ export default function TemplatesPage() {
     setTemplateForm(getEmptyTemplateForm());
     setTplVendorCustom(false);
     setTplCustomVendorInput("");
+    setTplCmdVendor("");
     setTemplateModal(true);
   };
   const openEditTemplate = (t: InspectionTemplate) => {
@@ -220,6 +234,7 @@ export default function TemplatesPage() {
     });
     setTplVendorCustom(isCustom);
     setTplCustomVendorInput(isCustom ? t.vendor : "");
+    setTplCmdVendor("");
     setTemplateModal(true);
   };
   const duplicateTemplate = (t: InspectionTemplate) => {
@@ -235,6 +250,7 @@ export default function TemplatesPage() {
     });
     setTplVendorCustom(isCustom);
     setTplCustomVendorInput(isCustom ? t.vendor : "");
+    setTplCmdVendor("");
     setTemplateModal(true);
   };
   const handleSaveTemplate = () => {
@@ -493,7 +509,7 @@ export default function TemplatesPage() {
         <Modal
           open={templateModal}
           title={editingTemplate ? "编辑模板" : "添加模板"}
-          width="max-w-4xl"
+          width="max-w-5xl"
           onClose={() => setTemplateModal(false)}
           footer={
             <div className="flex gap-2">
@@ -518,6 +534,7 @@ export default function TemplatesPage() {
                         onChange={(e) => {
                           if (e.target.value === "__add__") return;
                           setTplVendorCustom(false);
+                          setTplCmdVendor("");
                           setTemplateForm({ ...templateForm, vendor: e.target.value, commands: [] });
                         }}
                         className="flex-1">
@@ -534,9 +551,9 @@ export default function TemplatesPage() {
                       <div className="flex items-center gap-1 mt-1">
                         <Input className="flex-1" placeholder="输入自定义厂商名称" value={tplCustomVendorInput}
                           onChange={(e) => setTplCustomVendorInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter" && tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}} />
+                          onKeyDown={(e) => { if (e.key === "Enter" && tplCustomVendorInput.trim()) { setTplCmdVendor(""); setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}} />
                         <Button size="sm"
-                          onClick={() => { if (tplCustomVendorInput.trim()) { setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}}>确定</Button>
+                          onClick={() => { if (tplCustomVendorInput.trim()) { setTplCmdVendor(""); setTemplateForm({ ...templateForm, vendor: tplCustomVendorInput.trim(), commands: [] }); setTplVendorCustom(false); }}}>确定</Button>
                         <button type="button" onClick={() => setTplVendorCustom(false)}
                           className="h-7 w-7 flex items-center justify-center text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">
                           <X size={14} />
@@ -609,6 +626,7 @@ export default function TemplatesPage() {
                         <div className="flex items-center gap-1.5">
                           <GripVertical size={12} className="text-[hsl(var(--text-tertiary))] shrink-0" />
                           <span className="text-[11px] text-[hsl(var(--text-tertiary))] w-4 text-right shrink-0">{idx + 1}</span>
+                          {isDbTemplate && <span className="shrink-0 px-1 py-0 rounded text-[10px] bg-[hsl(var(--accent)_/_0.1)] text-[hsl(var(--accent))]">{cmd.vendor}</span>}
                           <code className="text-xs bg-[hsl(var(--bg-hover))] px-1 rounded truncate">{cmd.command}</code>
                           <button type="button"
                             onClick={() => setTemplateForm({ ...templateForm, commands: templateForm.commands.filter(c => c.command_id !== spec.command_id) })}
@@ -621,14 +639,34 @@ export default function TemplatesPage() {
                 <p className="shrink-0 mt-1 text-[10px] text-[hsl(var(--text-tertiary))] text-right">列表顺序即为报告中的展示顺序</p>
               </div>
 
-              {/* 右：可选命令（按类别分组） */}
+              {/* 右：可选命令（按类别分组；数据库模板支持多厂商标签页） */}
               <div className="flex flex-col min-h-0">
-                <label className="shrink-0 text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">
-                  可选命令
-                </label>
+                <div className="shrink-0 flex items-center gap-2 mb-2">
+                  <label className="text-xs font-medium text-[hsl(var(--text-secondary))]">
+                    可选命令
+                  </label>
+                  {isDbTemplate && (
+                    <div className="flex-1 overflow-x-auto flex gap-1">
+                      <button type="button"
+                        onClick={() => setTplCmdVendor("")}
+                        className={`shrink-0 px-2 py-0.5 rounded text-[11px] transition-colors ${!tplCmdVendor ? "bg-[hsl(var(--accent)_/_0.15)] text-[hsl(var(--accent))] font-medium" : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-secondary))]"}`}>
+                        全部
+                      </button>
+                      {tplCmdVendors.map((v) => (
+                        <button key={v} type="button"
+                          onClick={() => setTplCmdVendor(v)}
+                          className={`shrink-0 px-2 py-0.5 rounded text-[11px] transition-colors ${tplCmdVendor === v ? "bg-[hsl(var(--accent)_/_0.15)] text-[hsl(var(--accent))] font-medium" : "text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-secondary))]"}`}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex-1 min-h-0 overflow-y-auto border border-[hsl(var(--border))] rounded-md">
                   {vendorFilteredCommands.length === 0 && (
-                    <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">暂无 {templateForm.vendor} 命令，请先在命令库中添加</p>
+                    <p className="text-xs text-[hsl(var(--text-tertiary))] text-center mt-16">
+                      {isDbTemplate && tplCmdVendor ? `暂无 ${tplCmdVendor} 命令` : `暂无 ${templateForm.vendor} 命令，请先在命令库中添加`}
+                    </p>
                   )}
                   <AvailableCommands
                     commands={vendorFilteredCommands.filter(cmd => !templateForm.commands.some(c => c.command_id === cmd.id))}
