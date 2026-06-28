@@ -207,7 +207,7 @@ export default function DevicesPage() {
     if (form.template_id === null) { triggerShake("template_id"); return; }
 
     // 容器部署的数据库设备：容器名必填
-    if (form.device_type === "database" && (form.deployment === "docker" || form.deployment === "podman" || form.deployment === "k8s")) {
+    if (form.device_type === "database" && (form.deployment === "docker" || form.deployment === "podman")) {
       if (!form.instance_name.trim()) { triggerShake("instance_name"); setSaveError("容器部署必须填写容器名"); return; }
     }
 
@@ -757,7 +757,6 @@ export default function DevicesPage() {
                           <option value="direct">包安装</option>
                           <option value="docker">Docker 容器</option>
                           <option value="podman">Podman 容器</option>
-                          <option value="k8s">Kubernetes</option>
                         </Select>
                       </div>
                       <div>
@@ -766,7 +765,7 @@ export default function DevicesPage() {
                           value={form.instance_name}
                           className={shakeFields.has("instance_name") ? "animate-shake" : ""}
                           onChange={(e) => { setForm({ ...form, instance_name: e.target.value }); setSaveError(null); }}
-                          placeholder={form.deployment === "direct" ? "无需" : form.deployment === "k8s" ? "如 deploy/mysql" : "如 mysql"}
+                          placeholder={form.deployment === "direct" ? "无需" : "如 mysql"}
                           disabled={form.deployment === "direct"}
                         />
                       </div>

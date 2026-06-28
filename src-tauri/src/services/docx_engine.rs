@@ -631,6 +631,8 @@ fn build_device_info(
                 })
                 .unwrap_or_default(),
             "kernel_version" => device.kernel_version.clone().unwrap_or_default(),
+            "db_version" => device.db_version.clone().unwrap_or_default(),
+            "instance_name" => device.instance_name.clone().unwrap_or_default(),
             _ => String::new(),
         }
     };
@@ -1108,25 +1110,81 @@ fn text_cell(text: &str, width: usize, fill: Option<&str>) -> TableCell {
 }
 
 /// 去除 SSH 输出首行的命令回显。
-/// 处理两种形态：裸命令回显（`display version`）和带提示符前缀的回显（`<sysname>display version`）。
+/// 处理四种形态：
+/// 1. 裸命令回显（`display version`）
+/// 2. 带提示符前缀的回显（`<sysname>display version`）
+/// 3. 容器部署的多行回显（`docker exec ...` + `mysql -e ...`）
+/// 4. 包安装带环境变量前缀（`MYSQL_PWD='xxx' mysql -e ...`）
 /// 报告随后会用 `prompt + cmd` 重新生成首行，故此处必须剥离，否则会出现重复命令行。
 fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
-    let mut lines = output.lines();
-    let Some(first) = lines.next() else {
-        return String::new();
-    };
-    let first_t = first.trim();
+    let mut remaining: Vec<&str> = output.lines().collect();
     let cmd_t = cmd.trim();
-    // 去掉提示符前缀后再比较，兼容 `<sysname>cmd` / `[sysname]cmd` 等形态
-    let after_prompt = first_t
-        .strip_prefix(prompt.trim())
-        .unwrap_or(first_t)
-        .trim_start();
-    if first_t.eq_ignore_ascii_case(cmd_t) || after_prompt.eq_ignore_ascii_case(cmd_t) {
-        lines.collect::<Vec<_>>().join("\n")
-    } else {
-        output.to_string()
+
+    // 跳过容器 exec 回显行（如 `docker exec mysql sh -c '...'`）
+    if let Some(first) = remaining.first() {
+        let ft = first.trim();
+        if ft.starts_with("docker exec ") || ft.starts_with("podman exec ") || ft.starts_with("docker-compose exec ") {
+            remaining.remove(0);
+        }
     }
+
+    // 跳过裸命令或带提示符前缀的回显行（含环境变量前缀的情况）
+    if let Some(first) = remaining.first() {
+        let first_t = first.trim();
+        let after_prompt = first_t
+            .strip_prefix(prompt.trim())
+            .unwrap_or(first_t)
+            .trim_start();
+        // 去掉 MYSQL_PWD='xxx' / PGPASSWORD='xxx' 前缀后再比较
+        let after_env = if after_env_starts_with_env_var(after_prompt) {
+            strip_env_var_prefix(after_prompt)
+        } else {
+            after_prompt
+        };
+        if first_t.eq_ignore_ascii_case(cmd_t)
+            || after_prompt.eq_ignore_ascii_case(cmd_t)
+            || after_env.eq_ignore_ascii_case(cmd_t)
+        {
+            remaining.remove(0);
+        }
+    }
+
+    remaining.join("\n")
+}
+
+/// 检查字符串是否以 KEY='VALUE' 或 KEY=VALUE 环境变量前缀开头
+fn after_env_starts_with_env_var(s: &str) -> bool {
+    if let Some(eq_pos) = s.find('=') {
+        let key = &s[..eq_pos];
+        // 环境变量名只含大写字母、数字、下划线
+        !key.is_empty() && key.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    } else {
+        false
+    }
+}
+
+/// 去掉开头的 KEY='VALUE' 或 KEY=VALUE 环境变量前缀
+fn strip_env_var_prefix(s: &str) -> &str {
+    if let Some(eq_pos) = s.find('=') {
+        let after_eq = &s[eq_pos + 1..];
+        // 跳过引号包裹的值
+        if after_eq.starts_with('\'') {
+            if let Some(end) = after_eq[1..].find('\'') {
+                return after_eq[end + 2..].trim_start();
+            }
+        } else if after_eq.starts_with('"') {
+            if let Some(end) = after_eq[1..].find('"') {
+                return after_eq[end + 2..].trim_start();
+            }
+        } else {
+            // 无引号：跳到下一个空格
+            if let Some(end) = after_eq.find(char::is_whitespace) {
+                return after_eq[end..].trim_start();
+            }
+            return "";
+        }
+    }
+    s
 }
 
 fn truncate_output(output: &str, max_lines: i32) -> String {

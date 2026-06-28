@@ -16,10 +16,29 @@ use crate::AppState;
 // Internal Helpers
 // ============================================================
 
+/// 为 `docker exec -e KEY=VALUE` 的 VALUE 提供 shell 安全引用。
+/// 使用单引号包裹（避免 shell 展开特殊字符），内部单引号用 `'\''` 转义。
+fn shell_quote_docker(val: &str) -> String {
+    format!("'{}'", val.replace('\'', "'\\''"))
+}
+
+/// 脱敏命令字符串中的敏感信息（如 docker exec -e 中的密码、MYSQL_PWD 环境变量），用于进度显示和 DB 存储。
+fn sanitize_cmd_for_display(cmd: &str) -> String {
+    let mut result = cmd.to_string();
+    // 去掉 docker exec -e 'KEY=VALUE' 或 -e KEY=VALUE 模式
+    let re1 = regex::Regex::new(r#"-e\s+(?:'[^']*'|"[^"]*"|\S+)"#).unwrap();
+    result = re1.replace_all(&result, "-e ***").to_string();
+    // 去掉 MYSQL_PWD='xxx' 或 PGPASSWORD='xxx' 环境变量前缀
+    let re2 = regex::Regex::new(r#"(?:MYSQL_PWD|PGPASSWORD)=(?:'[^']*'|"[^"]*"|\S+)\s*"#).unwrap();
+    result = re2.replace_all(&result, "").to_string();
+    result
+}
+
 #[derive(Debug, Clone)]
 struct TemplateCommandSpec {
     command: String,
     needs_root: bool,
+    vendor: String,
 }
 
 /// 从数据库读取设备巡检所需的全部信息（在锁内调用）
@@ -82,14 +101,14 @@ fn read_device_inspection_data(
         spec_entries.push((cmd_id, spec));
     }
 
-    let cmd_texts: std::collections::HashMap<i64, (String, bool)> = if spec_entries.is_empty() {
+    let cmd_texts: std::collections::HashMap<i64, (String, bool, String)> = if spec_entries.is_empty() {
         std::collections::HashMap::new()
     } else {
         let placeholders: Vec<String> = spec_entries.iter().enumerate()
             .map(|(i, _)| format!("?{}", i + 1))
             .collect();
         let sql = format!(
-            "SELECT id, command, COALESCE(needs_root, 0) FROM command_pool WHERE id IN ({})",
+            "SELECT id, command, COALESCE(needs_root, 0), vendor FROM command_pool WHERE id IN ({})",
             placeholders.join(",")
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -100,19 +119,19 @@ fn read_device_inspection_data(
         let rows = stmt
             .query_map(
                 param_refs.as_slice(),
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, bool>(2)?)),
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, bool>(2)?, row.get::<_, String>(3)?)),
             )
             .map_err(|e| e.to_string())?;
         let mut m = std::collections::HashMap::new();
-        for (id, command, needs_root) in rows.flatten() {
-            m.insert(id, (command, needs_root));
+        for (id, command, needs_root, vendor) in rows.flatten() {
+            m.insert(id, (command, needs_root, vendor));
         }
         m
     };
 
     let mut commands: Vec<TemplateCommandSpec> = Vec::new();
     for (cmd_id, _spec) in &spec_entries {
-        let (command, needs_root) = cmd_texts
+        let (command, needs_root, vendor) = cmd_texts
             .get(cmd_id)
             .cloned()
             .ok_or_else(|| format!("命令 ID {} 不存在", cmd_id))?;
@@ -120,6 +139,7 @@ fn read_device_inspection_data(
         commands.push(TemplateCommandSpec {
             command,
             needs_root,
+            vendor,
         });
     }
 
@@ -331,26 +351,100 @@ fn execute_device_ssh(
 
     let deployment = device.deployment.as_deref().unwrap_or("direct");
 
-    match profile.exec_mode {
-        crate::services::vendor_profile::ExecMode::Exec => {
-            let cmd_strings: Vec<String> = if deployment == "docker" || deployment == "podman" {
-                // 容器部署：用 instance_name 作为容器名，未填则用设备名兜底
-                let runtime = if deployment == "docker" { "docker" } else { "podman" };
-                let container_name = device.instance_name.clone()
-                    .unwrap_or_default();
-                let cname = if container_name.is_empty() { &device.name } else { &container_name };
-                // 容器名拼入远端 shell，校验安全字符集防注入
-                crate::commands::devices::validate_shell_identifier(cname, "容器/实例名")?;
-                commands.iter().map(|s| {
-                    let sq = s.command.replace('\'', "'\\''");
-                    format!(
-                        "{rt} exec {cn} sh -c '{cmd}' 2>&1; E=$?; [ $E -eq 127 ] && echo [客户端未安装] || [ $E -ne 0 ] && echo [容器命令失败]",
-                        rt = runtime, cn = cname, cmd = sq
-                    )
-                }).collect()
+    // 解密数据库密码（容器部署时注入认证信息）
+    let db_password = match &device.db_password_encrypted {
+        Some(enc) if !enc.is_empty() => CryptoService::decrypt(enc).unwrap_or_default(),
+        _ => String::new(),
+    };
+    let db_username = device.db_username.clone().unwrap_or_default();
+    let db_vendor_lower = device.vendor.to_lowercase();
+
+    // OS 厂商的命令在宿主机执行，不进容器
+    let is_os_vendor = |v: &str| -> bool {
+        matches!(v.to_lowercase().as_str(), "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux")
+    };
+
+    // 按命令的 vendor 和部署方式决定包装策略：
+    // - OS 厂商命令 → 宿主机直接执行（不注入认证）
+    // - 容器部署的数据库命令 → docker/podman exec 进容器，密码用 -e 传递
+    // - 包安装的数据库命令 → 直接注入认证（MYSQL_PWD='xxx' mysql -u'root' ...）
+    let wrap_for_deployment = |cmd: &str, cmd_vendor: &str| -> Result<String, String> {
+        if is_os_vendor(cmd_vendor) {
+            return Ok(cmd.to_string());
+        }
+
+        // 数据库命令：注入用户参数
+        let cmd_with_user = if db_vendor_lower.contains("mysql") || db_vendor_lower.contains("mariadb") {
+            let user_flag = if !db_username.is_empty() {
+                format!(" -u'{}'", crate::commands::devices::shell_quote_single(&db_username))
+            } else { String::new() };
+            if cmd.starts_with("mysql ") || cmd == "mysql" {
+                let rest = cmd.strip_prefix("mysql").unwrap_or(cmd);
+                format!("mysql{uf}{rest}", uf = user_flag, rest = rest)
             } else {
-                commands.iter().map(|s| s.command.clone()).collect()
-            };
+                cmd.to_string()
+            }
+        } else if db_vendor_lower.contains("postgres") {
+            let user_flag = if !db_username.is_empty() {
+                format!(" -U '{}'", crate::commands::devices::shell_quote_single(&db_username))
+            } else { String::new() };
+            if cmd.starts_with("psql ") || cmd == "psql" {
+                let rest = cmd.strip_prefix("psql").unwrap_or(cmd);
+                format!("psql{uf}{rest}", uf = user_flag, rest = rest)
+            } else {
+                cmd.to_string()
+            }
+        } else {
+            cmd.to_string()
+        };
+
+        if deployment == "docker" || deployment == "podman" {
+            // 容器部署：docker exec -e 传递密码（密码不在命令字符串中，避免 SSH 回显泄露）
+            let runtime = if deployment == "docker" { "docker" } else { "podman" };
+            let container_name = device.instance_name.clone().unwrap_or_default();
+            let cname = if container_name.is_empty() { &device.name } else { &container_name };
+            crate::commands::devices::validate_shell_identifier(cname, "容器/实例名")?;
+
+            let mut env_flags = String::new();
+            if db_vendor_lower.contains("mysql") || db_vendor_lower.contains("mariadb") {
+                if !db_password.is_empty() {
+                    env_flags.push_str(&format!(" -e MYSQL_PWD={}", shell_quote_docker(&db_password)));
+                }
+            } else if db_vendor_lower.contains("postgres") {
+                if !db_password.is_empty() {
+                    env_flags.push_str(&format!(" -e PGPASSWORD={}", shell_quote_docker(&db_password)));
+                }
+            }
+
+            let sq = cmd_with_user.replace('\'', "'\\''");
+            Ok(format!("{rt} exec{env} {cn} sh -c '{cmd}'", rt = runtime, env = env_flags, cn = cname, cmd = sq))
+        } else {
+            // 包安装：直接在命令前注入密码环境变量
+            let mut env_prefix = String::new();
+            if db_vendor_lower.contains("mysql") || db_vendor_lower.contains("mariadb") {
+                if !db_password.is_empty() {
+                    env_prefix.push_str(&format!("MYSQL_PWD={} ", shell_quote_docker(&db_password)));
+                }
+            } else if db_vendor_lower.contains("postgres") {
+                if !db_password.is_empty() {
+                    env_prefix.push_str(&format!("PGPASSWORD={} ", shell_quote_docker(&db_password)));
+                }
+            }
+            Ok(format!("{env}{cmd}", env = env_prefix, cmd = cmd_with_user))
+        }
+    };
+
+    // 包装命令，同时保留原始命令→包装命令的映射
+    let cmd_strings: Vec<String> = commands.iter()
+        .map(|s| wrap_for_deployment(&s.command, &s.vendor))
+        .collect::<Result<Vec<_>, _>>()?;
+    let wrapped_to_orig: std::collections::HashMap<&str, &str> = cmd_strings.iter()
+        .zip(commands.iter())
+        .map(|(w, o)| (w.as_str(), o.command.as_str()))
+        .collect();
+
+    let result = match profile.exec_mode {
+        crate::services::vendor_profile::ExecMode::Exec => {
             let needs_root_map: std::collections::HashMap<String, bool> = cmd_strings
                 .iter()
                 .zip(commands.iter())
@@ -365,7 +459,6 @@ fn execute_device_ssh(
             )
         }
         crate::services::vendor_profile::ExecMode::Shell => {
-            let cmd_strings: Vec<String> = commands.iter().map(|s| s.command.clone()).collect();
             inspection_runner::run_commands_with_cancel(
                 &source,
                 &device.vendor,
@@ -374,7 +467,17 @@ fn execute_device_ssh(
                 Some(cancel),
             )
         }
-    }
+    };
+
+    // 将输出的 key 从包装后的命令映射回原始命令，使报告显示正确的命令文本
+    result.map(|outputs| {
+        outputs.into_iter().map(|(wrapped_cmd, output)| {
+            let orig = wrapped_to_orig.get(wrapped_cmd.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or(wrapped_cmd);
+            (orig, output)
+        }).collect()
+    })
 }
 
 // ============================================================
@@ -871,10 +974,11 @@ async fn inspect_one_device(
             }
             let msg = progress_clone.lock().clone();
             if !msg.is_empty() {
+                let safe_msg = sanitize_cmd_for_display(&msg);
                 let conn = db_clone.lock();
                 let _ = conn.execute(
                     "UPDATE inspection_records SET error_message = ?1 WHERE id = ?2",
-                    rusqlite::params![format!("正在执行: {}", msg), record_id],
+                    rusqlite::params![format!("正在执行: {}", safe_msg), record_id],
                 );
             }
         }

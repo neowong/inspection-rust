@@ -59,7 +59,8 @@ pub(crate) fn validate_shell_identifier(field: &str, label: &str) -> Result<(), 
 
 /// 对双引号上下文转义：外层 `sh -c "..."` 的双引号会展开 `$` `` ` `` `\` `"`，
 /// 密码含这些字符需转义，否则被外层 shell 提前解释/执行。
-fn shell_escape_dq(s: &str) -> String {
+#[allow(dead_code)]
+pub(crate) fn shell_escape_dq(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -72,7 +73,7 @@ fn shell_escape_dq(s: &str) -> String {
 }
 
 /// 单引号包裹并转义内部单引号（用于 sh -c 内层 `'...'` 段）。
-fn shell_quote_single(s: &str) -> String {
+pub(crate) fn shell_quote_single(s: &str) -> String {
     s.replace('\'', "'\\''")
 }
 
@@ -1248,7 +1249,6 @@ fn detect_db_info_sync(
 
     let vendor_lower = vendor.to_lowercase();
     let is_container = deployment == "docker" || deployment == "podman";
-    let is_k8s = deployment == "k8s";
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
     // ── MySQL / MariaDB 数据库命令 ──
@@ -1260,9 +1260,8 @@ fn detect_db_info_sync(
         // db_username 已在入库时校验为安全字符集，单引号包裹防注入
         let mysql_auth = if !db_username.is_empty() { format!("-u'{}'", shell_quote_single(db_username)) } else { String::new() };
         let mysql_pwd_prefix = if !db_password.is_empty() {
-            // 外层 sh -c "..." 用双引号，需先对双引号上下文转义 $ ` " \，
-            // 再对内层单引号转义，保证密码原样进入 MYSQL_PWD
-            let escaped = shell_quote_single(&shell_escape_dq(db_password));
+            // wrap_cmd 使用 sh -c '...'（单引号），只做单引号转义即可
+            let escaped = shell_quote_single(db_password);
             format!("MYSQL_PWD='{}' ", escaped)
         } else { String::new() };
         db_cmds.push(("db_detail".to_string(), format!(
@@ -1271,7 +1270,7 @@ fn detect_db_info_sync(
         db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         if !db_username.is_empty() {
             let pg_env = if !db_password.is_empty() {
-                let escaped = shell_quote_single(&shell_escape_dq(db_password));
+                let escaped = shell_quote_single(db_password);
                 format!("PGPASSWORD='{}' ", escaped)
             } else { String::new() };
             db_cmds.push(("db_detail".to_string(), format!("{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, shell_quote_single(db_username), db_port)));
@@ -1301,11 +1300,6 @@ fn detect_db_info_sync(
             let sq = raw.replace('\'', "'\\''");
             Ok(format!("{} exec {} sh -c '{}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
                 runtime, cname, sq))
-        } else if is_k8s {
-            let cname = if instance_name.is_empty() { "mysql" } else { instance_name };
-            validate_shell_identifier(cname, "Pod名")?;
-            let sq = raw.replace('\'', "'\\''");
-            Ok(format!("kubectl exec {} -- sh -c '{}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo k8s_pod_not_found", cname, sq))
         } else {
             Ok(format!("{} 2>&1", raw))
         }
@@ -1398,7 +1392,6 @@ fn detect_db_info_sync(
             let trimmed = output.trim();
             if trimmed.is_empty()
                 || trimmed.contains("container_not_found")
-                || trimmed.contains("k8s_pod_not_found")
                 || trimmed.contains("client_not_found")
                 || trimmed.contains("unknown_db_vendor")
                 || trimmed.contains("command not found")
@@ -1458,10 +1451,6 @@ fn detect_db_info_sync(
                     db_error = Some(format!("容器 '{}' 未运行或名称错误，请确认容器名正确", if instance_name.is_empty() { device_name } else { instance_name }));
                     break;
                 }
-                if trimmed.contains("k8s_pod_not_found") {
-                    db_error = Some(format!("K8s Pod '{}' 未运行或名称错误", if instance_name.is_empty() { device_name } else { instance_name }));
-                    break;
-                }
                 if trimmed.contains("command not found") || trimmed.contains("No such file") {
                     db_error = Some("mysql 客户端未安装".to_string());
                     break;
@@ -1477,7 +1466,7 @@ fn detect_db_info_sync(
     // 附加警告到结果
     if let Some(ref warn) = db_error {
         info.insert("_warn".to_string(), serde_json::Value::String(warn.clone()));
-    } else if !has_db_result && (is_container || is_k8s) {
+    } else if !has_db_result && is_container {
         info.insert("_warn".to_string(), serde_json::Value::String(
             format!("数据库版本获取失败：请确认容器名 '{}' 正确且密码无误", if instance_name.is_empty() { device_name } else { instance_name })
         ));

@@ -123,6 +123,13 @@ ai-inspection/
 - **Window initialization**: `visible: true` + `transparent: true` + `decorations: true` in `tauri.conf.json`. Never use `visible: false` + `window.show()` — Linux WebKitGTK 下标题栏装饰不会正确初始化，导致关闭按钮失效。body 内联 `background-color` 减少闪烁。
 - **Windows 日志 CRLF**: tracing_subscriber 默认写 `\n`，Windows 记事本需要 `\r\n`。`CrlfWriter<W>` + `CrlfMakeWriter<M>` 包装器在 `#[cfg(windows)]` 下自动转换。
 - **版本检测 internal- 前缀兼容**: `check_update` 的 GitHub API 可能返回 `internal-vx.y.z` tag。需先 `trim_start_matches("internal-")` 再 `trim_start_matches('v')`，避免解析错误导致误报更新。
+- **数据库巡检多厂商模板**: 数据库模板（`DB_VENDORS`）支持从多个厂商混合选择命令（如 Linux + MySQL），右侧可选命令面板显示厂商标签页。非数据库模板保持单一厂商过滤。`TemplateCommandSpec` 新增 `vendor` 字段用于执行时区分命令来源。
+- **命令与部署方式解耦**: 命令库只存裸命令（如 `mysql -e 'SHOW STATUS'`），不包含 `docker exec` / `podman exec` 前缀。执行引擎 `wrap_for_deployment` 按命令的 `vendor` 和设备的 `deployment` 自动包装：OS 厂商命令在宿主机执行，数据库命令按部署方式注入认证后执行。
+- **数据库认证注入**: 所有部署方式的数据库命令都自动注入 `db_username` / `db_password`。包安装：`MYSQL_PWD='xxx' mysql -u'root' ...`；容器：`docker exec -e 'MYSQL_PWD=xxx' mysql sh -c '...'`。密码用 `shell_quote_docker`（单引号包裹），绝不用 `shell_escape_dq`（双引号转义在单引号上下文中会损坏密码）。
+- **Shell 转义上下文规则**: `shell_escape_dq`（`\`→`\\`）仅用于 `sh -c "..."` 双引号上下文；`sh -c '...'` 单引号上下文中反斜杠是字面值，只用 `shell_quote_single`（`'`→`'\''`）。混用会导致密码泄露到 shell。
+- **报告回显剥离**: `strip_command_echo` 支持四种形态：裸命令、带提示符前缀、容器多行回显（`docker exec ...`）、包安装带环境变量前缀（`MYSQL_PWD='xxx' mysql ...`）。进度显示通过 `sanitize_cmd_for_display` 脱敏 `-e KEY=VALUE` 和 `MYSQL_PWD='xxx'` 模式。
+- **报告输出 key 映射**: `execute_device_ssh` 返回的 `command_outputs` key 通过 `wrapped_to_orig` 映射回原始命令，使 `cmd_descs` 能正确匹配命令描述。报告巡检项显示描述而非包装后的命令。
+- **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
 
 ## Windows 交叉编译注意事项
 
