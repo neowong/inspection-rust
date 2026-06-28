@@ -187,9 +187,6 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         // 定时任务
         ("Linux", "crontab -l", "当前用户定时任务", "schedule", 0),
         ("Linux", "systemctl list-timers --no-pager", "systemd 定时器", "schedule", 0),
-        // ==================== Linux — 容器管理 ====================
-        ("Linux", "docker ps --format '{{.Names}} {{.Status}}'", "Docker 容器列表", "service", 0),
-        ("Linux", "podman ps --format '{{.Names}} {{.Status}}'", "Podman 容器列表", "service", 0),
         // ==================== Linux (CentOS 特有) ====================
         // --- 发行版特有命令 ---
         ("Linux", "cat /etc/centos-release", "CentOS 版本", "system", 0),

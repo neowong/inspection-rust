@@ -1,5 +1,13 @@
 # 更新日志
 
+## v3.55.1 (2026-06-28)
+
+### 🐛 Bug 修复
+
+- **PostgreSQL SQL 命令密码认证失败**：`psql` 默认走 Unix socket + peer 认证，忽略 `PGPASSWORD` 环境变量导致密码错。现已自动补 `-h localhost -d postgres` 强制 TCP 密码认证
+- **数据库设备报告提示符错误**：报告命令前缀显示 `<hostname>`（网络设备风格）而非 Linux `[user@host ~]#`，因 `device_prompt()` 未识别数据库厂商。现已对 database 设备和 MySQL/PostgreSQL 等厂商使用 Linux 风格提示符
+- **种子数据残留 docker/podman 前缀命令**：移除 Linux 厂商下 `docker ps` / `podman ps` 两条耦合命令（v34 迁移同步清理已有 DB）
+
 ## v3.55.0 (2026-06-28)
 
 ### ✨ 新功能
