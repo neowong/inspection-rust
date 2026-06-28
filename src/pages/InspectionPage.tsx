@@ -32,6 +32,9 @@ export default function InspectionPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [batchForm, setBatchForm] = useState<BatchForm>(getDefaultBatchForm());
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [batchDeleteIds, setBatchDeleteIds] = useState<Set<number>>(new Set());
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
   const [retrying, setRetrying] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
@@ -194,6 +197,25 @@ export default function InspectionPage() {
             <Button onClick={() => { setBatchForm(getDefaultBatchForm()); setModalOpen(true); }} size="sm">+</Button>
           </div>
           <p className="text-[11px] text-[hsl(var(--text-tertiary))]">{batches.length} 个任务</p>
+          {/* Select all + batch delete */}
+          {batches.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-xs text-[hsl(var(--text-secondary))] cursor-pointer select-none">
+                <input type="checkbox" className="w-3.5 h-3.5 accent-[hsl(var(--accent))]"
+                  checked={batchDeleteIds.size === batches.length && batches.length > 0}
+                  onChange={() => {
+                    if (batchDeleteIds.size === batches.length) setBatchDeleteIds(new Set());
+                    else setBatchDeleteIds(new Set(batches.map((x: any) => x.id)));
+                  }} />
+                全选
+              </label>
+              {batchDeleteIds.size > 0 && (
+                <Button size="sm" variant="danger" onClick={() => setConfirmBatchDelete(true)}>
+                  删除选中 ({batchDeleteIds.size})
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {batches.length === 0 && (
@@ -201,6 +223,12 @@ export default function InspectionPage() {
           )}
           {batches.map((b) => {
             const selected = selectedBatch?.id === b.id;
+            const isChecked = batchDeleteIds.has(b.id);
+            const toggleSelect = () => {
+              const next = new Set(batchDeleteIds);
+              if (next.has(b.id)) next.delete(b.id); else next.add(b.id);
+              setBatchDeleteIds(next);
+            };
             return (
               <div
                 key={b.id}
@@ -218,7 +246,10 @@ export default function InspectionPage() {
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{b.name || `#${b.id}`}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <input type="checkbox" checked={isChecked} onChange={toggleSelect} className="w-3.5 h-3.5 shrink-0 accent-[hsl(var(--accent))]" onClick={(e) => e.stopPropagation()} />
+                    <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{b.name || `#${b.id}`}</span>
+                  </div>
                   <StatusBadge status={batchStatusColor(b.status)} />
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-[hsl(var(--text-tertiary))]">
@@ -474,6 +505,18 @@ export default function InspectionPage() {
           <Button variant="danger" onClick={async () => {
             if (confirmDelete === null) return;
             try { await invoke("delete_batch", { batchId: confirmDelete }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(typeof e === "string" ? e : JSON.stringify(e)); setConfirmDelete(null); }
+          }}>确认删除</Button>
+        </div>
+      </Modal>
+
+      {/* Batch delete confirmation */}
+      <Modal open={confirmBatchDelete} title={`批量删除 (${batchDeleteIds.size} 个任务)`} onClose={() => setConfirmBatchDelete(false)}>
+        <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，所有相关巡检记录和报告文件也将被删除。</p>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={() => setConfirmBatchDelete(false)}>取消</Button>
+          <Button variant="danger" loading={batchDeleting} onClick={async () => {
+            setBatchDeleting(true);
+            try { await invoke("batch_delete_batches", { ids: Array.from(batchDeleteIds) }); setBatchDeleteIds(new Set()); setConfirmBatchDelete(false); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); } finally { setBatchDeleting(false); }
           }}>确认删除</Button>
         </div>
       </Modal>

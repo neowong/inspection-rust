@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { InspectionRecord, Device } from "../types";
 import { parseCommandOutputs, parseAiResult } from "../lib/utils";
 import DataTable from "../components/DataTable";
+import Modal from "../components/Modal";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import StatBadge from "../components/StatBadge";
@@ -41,6 +42,9 @@ export default function ReportManagementPage() {
   // Download / delete
   const [downloading, setDownloading] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<number>>(new Set());
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   useEffect(() => {
     loadBatches();
@@ -248,6 +252,16 @@ export default function ReportManagementPage() {
   );
 
   const recordColumns = useMemo(() => [
+    { key: "select", header: "✓", width: "w-10", noTruncate: true,
+      render: (r: any) => (
+        <input type="checkbox" checked={selectedRecordIds.has(r.id)} className="w-3.5 h-3.5 accent-[hsl(var(--accent))]"
+          onChange={() => {
+            const next = new Set(selectedRecordIds);
+            if (next.has(r.id)) next.delete(r.id); else next.add(r.id);
+            setSelectedRecordIds(next);
+          }} onClick={(e: any) => e.stopPropagation()} />
+      ),
+    },
     { key: "device", header: "设备", render: (r: any) => {
       const d = deviceMap.get(r.device_id);
       return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`;
@@ -347,6 +361,11 @@ export default function ReportManagementPage() {
                   onClick={() => invoke("open_reports_dir").catch(console.error)}>
                   报告目录
                 </Button>
+                {selectedRecordIds.size > 0 && (
+                  <Button size="sm" variant="danger" onClick={() => setConfirmBatchDelete(true)}>
+                    删除选中报告 ({selectedRecordIds.size})
+                  </Button>
+                )}
               </div>
 
               {/* Records table */}
@@ -495,6 +514,18 @@ export default function ReportManagementPage() {
           )}
         </div>
       </div>
+
+      {/* Batch delete confirmation */}
+      <Modal open={confirmBatchDelete} title={`批量删除报告 (${selectedRecordIds.size} 条)`} onClose={() => setConfirmBatchDelete(false)}>
+        <p className="text-sm text-[hsl(var(--text-secondary))]">确定要删除选中的 {selectedRecordIds.size} 条记录的报告文件吗？此操作会删除磁盘上的 docx 文件，但巡检记录保留。</p>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" onClick={() => setConfirmBatchDelete(false)}>取消</Button>
+          <Button variant="danger" loading={batchDeleting} onClick={async () => {
+            setBatchDeleting(true);
+            try { await invoke("batch_delete_record_reports", { recordIds: Array.from(selectedRecordIds) }); setSelectedRecordIds(new Set()); setConfirmBatchDelete(false); loadBatches(); if (selectedBatch?.id) { invoke<any>("get_batch", { batchId: selectedBatch.id }).then(setSelectedBatch).catch(() => {}); } } catch (e: any) { console.error(String(e)); } finally { setBatchDeleting(false); }
+          }}>确认删除</Button>
+        </div>
+      </Modal>
     </div>
   );
 }
