@@ -311,6 +311,10 @@ pub async fn submit_feedback(
         format!("{:x}", hasher.finalize())
     };
 
+    let os_info = os_info::get();
+    let os_type = os_info.os_type().to_string();
+    let os_version = os_info.version().to_string();
+
     let payload = serde_json::json!({
         "device_id": &device_id,
         "feedback_type": &feedback_type,
@@ -318,6 +322,8 @@ pub async fn submit_feedback(
         "content": &content,
         "contact": contact.unwrap_or_default(),
         "version": &version,
+        "os": os_type,
+        "os_version": os_version,
     });
 
     let api_url = "https://neowong.eu.org/stats/api/feedback";
