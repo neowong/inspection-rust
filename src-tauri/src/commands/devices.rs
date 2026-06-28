@@ -1335,7 +1335,7 @@ fn detect_db_info_sync(
                 format!("PGPASSWORD='{}' ", escaped)
             } else { String::new() };
             db_cmds.push(("db_version".to_string(), format!(
-                "{}psql -U '{}' -h localhost -p {} -t -c \"SELECT version()\"",
+                "{}psql -U '{}' -h localhost -p {} -t -c 'SHOW server_version'",
                 pg_env, shell_quote_single(db_username), db_port)));
             db_cmds.push(("db_detail".to_string(), format!(
                 "{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"",
