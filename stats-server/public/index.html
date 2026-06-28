@@ -82,13 +82,15 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
       margin-bottom: 12px;
       padding: 12px 16px;
       background: white;
       border-radius: 8px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }
-    .header h1 { font-size: 18px; color: #333; }
+    .header h1 { font-size: 18px; color: #333; white-space: nowrap; }
     .header .user-info { display: flex; align-items: center; gap: 12px; }
     .header .username { color: #666; font-size: 13px; }
     .header .logout-btn {
@@ -141,11 +143,12 @@
       font-size: 13px;
       font-weight: 600;
     }
+    .chart-card canvas { max-height: 280px; }
     .recent-table {
       background: white;
       border-radius: 8px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-      overflow: hidden;
+      overflow-x: auto;
     }
     .recent-table h3 {
       padding: 12px 16px;
@@ -157,16 +160,19 @@
     .recent-table table {
       width: 100%;
       border-collapse: collapse;
+      min-width: 600px;
     }
     .recent-table th, .recent-table td {
       padding: 8px 12px;
       text-align: left;
       border-bottom: 1px solid #eee;
+      font-size: 13px;
     }
     .recent-table th {
       background: #f8f9fa;
       font-weight: 600;
       color: #555;
+      white-space: nowrap;
     }
     .recent-table tr:hover { background: #f8f9fa; }
     .badge {
@@ -175,9 +181,40 @@
       border-radius: 4px;
       font-size: 12px;
       font-weight: 500;
+      white-space: nowrap;
     }
     .badge-windows { background: #e3f2fd; color: #1976d2; }
     .badge-linux { background: #e8f5e9; color: #388e3c; }
+    .badge-unknown { background: #f3e5f5; color: #7b1fa2; }
+
+    /* ── 平板（≤1024px）: 统计4列→2列 ── */
+    @media (max-width: 1024px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── 手机（≤640px）: 统计2列→1列，头部堆叠 ── */
+    @media (max-width: 640px) {
+      .dashboard { padding: 8px; }
+      .header { flex-direction: column; align-items: flex-start; }
+      .header h1 { font-size: 16px; }
+      .header .user-info { width: 100%; justify-content: space-between; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .stat-card { padding: 12px; }
+      .stat-card .value { font-size: 22px; }
+      .stat-card .label { font-size: 11px; }
+      .chart-card { padding: 10px; }
+      .chart-card h3 { font-size: 12px; }
+      .chart-card canvas { max-height: 200px; }
+      .recent-table th, .recent-table td { padding: 6px 8px; font-size: 11px; }
+      .login-box { padding: 24px; margin: 16px; }
+    }
+
+    /* ── 小手机（≤400px）: 统计1列 ── */
+    @media (max-width: 400px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .header h1 { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
