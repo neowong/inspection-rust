@@ -83,7 +83,7 @@ export default function DataTable<T>({
   return (
     <div ref={containerRef} className="border border-[hsl(var(--border))] rounded-lg overflow-hidden">
       <div className="overflow-auto max-h-[60vh]">
-        <table className={`w-full text-sm min-w-[700px] ${className ?? ""}`}>
+        <table className={`w-full text-sm ${className ?? ""}`}>
           <thead>
             <tr className="bg-[hsl(var(--bg-hover))] sticky top-0 z-10">
               {columns.map((col) => (
