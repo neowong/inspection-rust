@@ -173,6 +173,16 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
+#[tauri::command]
+pub fn get_os_info() -> serde_json::Value {
+    let info = os_info::get();
+    serde_json::json!({
+        "os": info.os_type().to_string(),
+        "os_version": info.version().to_string(),
+    })
+}
+
 /// 检查离线 IP 归属地库是否已加载
 #[tauri::command]
 pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
