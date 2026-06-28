@@ -517,14 +517,14 @@ fn read_until_prompt(
                 // Handle enable/super user password prompts
                 // non-blocking 模式下 write_all 遇 WouldBlock 会直接失败，用重试循环兜底
                 if !password_sent && text.contains("assword:") && !password.is_empty() {
-                    write_all_nb(channel, password.as_bytes());
-                    write_all_nb(channel, b"\n");
+                    let _ = write_all_nb(channel, password.as_bytes());
+                    let _ = write_all_nb(channel, b"\n");
                     password_sent = true;
                 }
 
                 // FortiGate 等设备即使已设置禁分页，也可能在长输出中出现 --More--，发送空格继续。
                 if contains_more_prompt(&text) {
-                    write_all_nb(channel, b" ");
+                    let _ = write_all_nb(channel, b" ");
                 }
 
                 if output_contains_prompt(&output, prompt, vendor) {
@@ -578,7 +578,8 @@ fn get_disable_paging_cmds(vendor: &str) -> Vec<&'static str> {
 /// Non-blocking write_all with WouldBlock 重试：non-blocking 模式下 libssh2 的
 /// write_all 遇 EAGAIN/WouldBlock 直接返回 Err，不会像 blocking 模式那样自动重试。
 /// 密码/分页符等小数据写入用此函数，避免设备等密码直到 30s 超时。
-fn write_all_nb(channel: &mut ssh2::Channel, data: &[u8]) {
+/// 返回写入的字节数; 非 WouldBlock 的写入错误会传播给调用者而不是静默丢弃。
+fn write_all_nb(channel: &mut ssh2::Channel, data: &[u8]) -> Result<usize, String> {
     let mut written = 0;
     while written < data.len() {
         match channel.write(&data[written..]) {
@@ -586,9 +587,13 @@ fn write_all_nb(channel: &mut ssh2::Channel, data: &[u8]) {
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(50));
             }
-            Err(_) => return, // 其他错误静默忽略，密码写入失败后续读取会超时被检测到
+            Err(e) => {
+                tracing::warn!("write_all_nb 写入失败 (已写 {}/{} 字节): {}", written, data.len(), e);
+                return Err(format!("SSH 通道写入失败: {}", e));
+            }
         }
     }
+    Ok(written)
 }
 
 /// Drain stale data from the channel until it goes silent for a short period.
@@ -644,7 +649,8 @@ pub fn send_command(
 
     // 用 WouldBlock 重试写命令，避免 non-blocking 模式下 TCP 缓冲满导致 EAGAIN 直接失败
     let cmd_bytes = format!("{}\n", cmd);
-    write_all_nb(channel, cmd_bytes.as_bytes());
+    write_all_nb(channel, cmd_bytes.as_bytes())
+        .map_err(|e| format!("[{}] 写入命令失败: {}", host, e))?;
 
     read_until_prompt(channel, prompt, password, host, cmd, vendor, cancel)
 }

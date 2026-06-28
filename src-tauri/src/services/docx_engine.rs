@@ -93,7 +93,7 @@ pub fn generate_combined_docx(
     // 目录（启用时，在封面之后、设备报告之前）
     if project_config.cover.include_toc {
         docx = page_break(docx);
-        docx = build_device_catalog(docx, project_config, items);
+        docx = build_device_catalog(docx, project_config);
     }
 
     // 每台设备从新页开始
@@ -349,7 +349,7 @@ fn build_cover(
         .to_string();
 
     let title = if config.cover.title.trim().is_empty() {
-        format!("{{vendor}} 设备巡检报告")
+        "{vendor} 设备巡检报告".to_string()
     } else {
         config.cover.title.clone()
     };
@@ -412,11 +412,10 @@ fn page_break(docx: Docx) -> Docx {
     docx.add_paragraph(Paragraph::new().add_run(Run::new().add_break(BreakType::Page)))
 }
 
-fn build_device_catalog(
-    mut docx: Docx,
-    config: &ReportTemplateConfig,
-    _items: &[(Device, InspectionRecord)],
-) -> Docx {
+/// 生成目录页（占位）。
+/// 注意：docx-rs 0.4 无法插入可自动展开的 TOC 域代码，因此目录页仅提供提示文字，
+/// 用户在 WPS 中点击「引用 → 更新目录」手动生成带页码的目录。
+fn build_device_catalog(mut docx: Docx, config: &ReportTemplateConfig) -> Docx {
     let color = config.cover.primary_color.trim_start_matches('#');
     docx = docx.add_paragraph(
         Paragraph::new().align(AlignmentType::Center).add_run(

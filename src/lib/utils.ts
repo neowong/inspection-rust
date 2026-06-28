@@ -36,7 +36,8 @@ export function parseAiResult(json: string | null | undefined): any {
 
 /** 将后端错误转为友好中文提示 */
 export function friendlyError(e: unknown): string {
-  const raw = typeof e === "string" ? e : JSON.stringify(e);
+  // JSON.stringify(undefined) 返回 undefined，会导致后续 .includes() 抛出 TypeError
+  const raw = typeof e === "string" ? e : JSON.stringify(e ?? "未知错误");
   // 后端 check_unique 自定义消息
   if (raw.includes("设备名称") && raw.includes("已存在")) return "设备名称已存在，请换一个";
   if (raw.includes("IP 地址") && raw.includes("已存在")) return "该 IP 地址已被其他设备使用";

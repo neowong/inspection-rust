@@ -108,7 +108,7 @@ pub fn update_ai_config(
     data: AiConfigUpdate,
     state: State<AppState>,
 ) -> Result<AiModelConfig, String> {
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
 
     // Verify config exists
     let sql = format!(
@@ -139,7 +139,8 @@ pub fn update_ai_config(
         }
     }
 
-    // Handle is_active
+    // Handle is_active — 设为激活时需在同一事务中先清零其他配置，避免多行激活
+    let need_deactivate = data.is_active == Some(1);
     updater.push_opt("is_active", &data.is_active);
 
     if updater.is_empty() {
@@ -158,10 +159,25 @@ pub fn update_ai_config(
     );
     params.push(Box::new(config_id));
 
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    if need_deactivate {
+        tx.execute(
+            "UPDATE ai_model_configs SET is_active = 0, updated_at = datetime('now') WHERE id != ?1",
+            rusqlite::params![config_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     let param_refs: Vec<&dyn rusqlite::types::ToSql> =
         params.iter().map(|p| p.as_ref()).collect();
-    conn.execute(&update_sql, param_refs.as_slice())
+    let affected = tx
+        .execute(&update_sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
+
+    if affected == 0 {
+        return Err(format!("AI 配置 ID {} 不存在", config_id));
+    }
+    tx.commit().map_err(|e| e.to_string())?;
 
     // Return updated config
     let query_sql = format!(

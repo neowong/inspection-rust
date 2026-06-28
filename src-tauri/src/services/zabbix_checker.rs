@@ -70,13 +70,22 @@ fn read_all_with_timeout(stream: &mut std::net::TcpStream, timeout: std::time::D
         return Err(format!("非Zabbix协议 (头部: {})", hex_preview(&buf[..total.min(32)], total.min(32))));
     }
 
-    let payload_len_u64 = u64::from_le_bytes(buf[5..13].try_into().expect("buf长度由前面的total<13检查保证"));
+    let payload_len_u64 = u64::from_le_bytes(
+        buf[5..13]
+            .try_into()
+            .map_err(|_| "内部错误：无法解析 payload 长度".to_string())?,
+    );
     // 限制 payload 长度防止溢出和过大分配
     if payload_len_u64 > 10_000_000 {
         return Err(format!("Zabbix 响应 payload 过大: {} 字节", payload_len_u64));
     }
     let payload_len = payload_len_u64 as usize;
     let expected_total = 13usize.checked_add(payload_len).ok_or("长度溢出")?;
+
+    // 按需扩容缓冲区，避免索引越界 panic（P1: 原固定 65536 字节的 buf 可能不够）
+    if expected_total > buf.len() {
+        buf.resize(expected_total, 0);
+    }
 
     // Read remaining payload bytes
     while total < expected_total {

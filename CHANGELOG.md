@@ -1,5 +1,32 @@
 # 更新日志
 
+## v3.54.1 (2026-06-28)
+
+### 🐛 Bug 修复（全局代码审计）
+
+**P1 关键修复:**
+
+- **报告模板 is_default 事务完整性**：`update_report_template` 设默认时清零与字段更新未在同一事务，若字段更新失败则 DB 中零个默认模板，导致 `analyze_batch` 回退到空白默认配置
+- **数据库端口未校验**：`db_port` 创建/更新时绕过 `validate_port()`，负数或溢出值直接拼入 shell 命令（如 `psql -p -1`）
+- **Zabbix 缓冲区溢出 panic**：固定 65536 字节接收缓冲区，payload 声明在 65524~10M 之间时 `buf[total..]` 索引越界导致进程崩溃
+- **端口扫描 JoinError 端口错报**：4 处 tokio 任务 JoinError 将端口 hardcode 为 0，改用 `(port, JoinHandle)` 元组正确跟踪
+- **AI 客户端假兜底 panic**：`get_client()` 的 `unwrap_or_else` 构建完全相同的 reqwest client，第一次失败第二次必然 panic
+- **巡检页 shake 校验无效**：`triggerShake("template_name")` 与 `shakeFields.has("name")` key 不匹配 + CSS 类名 `"shake"` 应为 `"animate-shake"`，导致空名称提交无视觉反馈
+- **friendlyError 空值崩溃**：`JSON.stringify(undefined)` 返回 `undefined`，后续 `.includes()` 抛出 TypeError
+
+**P2 修复:**
+
+- **删除设备孤立报告文件**：`delete_device` / `batch_delete_devices` 删除数据库记录但不清理磁盘上的 .docx 文件，现已事务前收集路径、事务后 `safe_remove_report()`
+- **重启批次孤立报告文件**：`restart_batch` 设 `report_path=NULL` 不删文件 + 与在途 SSH 任务竞态写入旧结果，现收集并清理文件 + 300ms 停止窗口降低竞态
+- **AI 配置多行激活**：`update_ai_config` 可直接设 `is_active=1` 不清零其他配置，现包裹事务先清零再更新
+- **SSH 通道写入错误静默丢弃**：`write_all_nb` 非 WouldBlock 写入错误被 `return` 吞掉，现返回 `Result` 并传播命令写入失败
+- **DOCX 目录函数死参数**：`build_device_catalog` 的 `_items` 参数从未使用，已移除并文档化
+
+### 🔧 改进
+
+- **删除死代码 `shell_escape_dq`**：带 `#[allow(dead_code)]` 从未调用，`shell_quote_single` 已取代
+- **clippy 自动修复**：2 处 collapsible_if + 1 处 useless_format
+
 ## v3.54.0 (2026-06-27)
 
 ### ✨ 新功能

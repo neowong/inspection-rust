@@ -1,6 +1,6 @@
 # AI巡检助手 — 用户操作手册
 
-> 版本：v3.40.18 | 适用平台：Windows / Linux
+> 版本：v3.54.1 | 适用平台：Windows / Linux
 
 ---
 

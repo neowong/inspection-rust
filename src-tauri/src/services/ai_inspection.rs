@@ -38,20 +38,12 @@ fn redact_secrets(s: &str) -> String {
 pub fn get_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         // AI API 无需重定向；禁用后避免 307/308 把 Authorization 头带往非预期端点。
-        // 兜底也必须带超时，否则 reqwest::Client::new() 无超时，请求可能挂死卡住 UI。
         reqwest::Client::builder()
             .timeout(Duration::from_secs(180))
             .connect_timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .unwrap_or_else(|_| {
-                reqwest::Client::builder()
-                    .timeout(Duration::from_secs(180))
-                    .connect_timeout(Duration::from_secs(15))
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .expect("带超时的 reqwest client 必能构建")
-            })
+            .expect("reqwest client 构建失败：请检查系统 TLS 配置（可能需要安装 ca-certificates 或 pkg-config openssl）")
     })
 }
 
