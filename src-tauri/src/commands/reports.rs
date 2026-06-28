@@ -962,18 +962,6 @@ pub fn update_report_template(
 ) -> Result<ReportTemplate, String> {
     let mut conn = state.db.lock();
 
-    // 设为默认时，先清空其他模板的 is_default，避免出现多行默认（事务保证一致性）
-    if data.is_default == Some(1) {
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
-        tx.execute(
-            "UPDATE report_templates SET is_default = 0, updated_at = ?1 WHERE id != ?2",
-            rusqlite::params![now_str(), template_id],
-        )
-        .map_err(|e| e.to_string())?;
-        // 先提交清零，再走下面的字段更新
-        tx.commit().map_err(|e| e.to_string())?;
-    }
-
     let mut sets: Vec<&str> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -1012,14 +1000,26 @@ pub fn update_report_template(
     );
     params.push(Box::new(template_id));
 
+    // 用事务包裹整个更新：若同时需要设为默认，清零其他模板和字段更新在同一事务中完成，
+    // 避免"先提交清零再更新字段"导致的中间态数据不一致问题（P1: is_default 全被清零）。
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    if data.is_default == Some(1) {
+        tx.execute(
+            "UPDATE report_templates SET is_default = 0, updated_at = ?1 WHERE id != ?2",
+            rusqlite::params![now_str(), template_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let affected = conn
+    let affected = tx
         .execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
 
     if affected == 0 {
         return Err(format!("报告模板 ID {} 不存在", template_id));
     }
+    tx.commit().map_err(|e| e.to_string())?;
 
     let q = format!(
         "SELECT {} FROM report_templates WHERE id = ?1",

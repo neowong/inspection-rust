@@ -161,7 +161,7 @@ export default function InspectionPage() {
   };
 
   const handleCreateAndRun = async () => {
-    if (!batchForm.name.trim()) { triggerShake("template_name"); return; }
+    if (!batchForm.name.trim()) { triggerShake("name"); return; }
     if (batchForm.device_ids.length === 0) {
       triggerShake("devices");
       return;
@@ -383,7 +383,7 @@ export default function InspectionPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">任务名称</label>
-            <Input className={shakeFields.has("name") ? "shake border-[hsl(var(--danger))]" : ""} value={batchForm.name} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} placeholder="例如: 巡检_2026-06-03_1430" />
+            <Input className={shakeFields.has("name") ? "animate-shake border-[hsl(var(--danger))]" : ""} value={batchForm.name} onChange={(e) => setBatchForm({ ...batchForm, name: e.target.value })} placeholder="例如: 巡检_2026-06-03_1430" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">

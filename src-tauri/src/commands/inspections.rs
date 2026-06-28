@@ -410,11 +410,10 @@ fn execute_device_ssh(
                 if !db_password.is_empty() {
                     env_flags.push_str(&format!(" -e MYSQL_PWD={}", shell_quote_docker(&db_password)));
                 }
-            } else if db_vendor_lower.contains("postgres") {
-                if !db_password.is_empty() {
+            } else if db_vendor_lower.contains("postgres")
+                && !db_password.is_empty() {
                     env_flags.push_str(&format!(" -e PGPASSWORD={}", shell_quote_docker(&db_password)));
                 }
-            }
 
             let sq = cmd_with_user.replace('\'', "'\\''");
             Ok(format!("{rt} exec{env} {cn} sh -c '{cmd}'", rt = runtime, env = env_flags, cn = cname, cmd = sq))
@@ -425,11 +424,10 @@ fn execute_device_ssh(
                 if !db_password.is_empty() {
                     env_prefix.push_str(&format!("MYSQL_PWD={} ", shell_quote_docker(&db_password)));
                 }
-            } else if db_vendor_lower.contains("postgres") {
-                if !db_password.is_empty() {
+            } else if db_vendor_lower.contains("postgres")
+                && !db_password.is_empty() {
                     env_prefix.push_str(&format!("PGPASSWORD={} ", shell_quote_docker(&db_password)));
                 }
-            }
             Ok(format!("{env}{cmd}", env = env_prefix, cmd = cmd_with_user))
         }
     };
@@ -1148,6 +1146,8 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
         }
         cancels.remove(&batch_id);
     }
+    // 给在途 SSH 任务一小段窗口检测取消标志并停止，减少竞态
+    std::thread::sleep(std::time::Duration::from_millis(300));
 
     let conn = state.db.lock();
 
@@ -1158,6 +1158,16 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
     );
     crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
         .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
+
+    // 收集已有的报告文件路径，用于重置后清理磁盘（避免 NULL 后文件永久孤立）
+    let report_files: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(rusqlite::params![batch_id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
 
     let now = now_str();
 
@@ -1173,6 +1183,11 @@ pub fn restart_batch(batch_id: i64, state: State<AppState>) -> Result<(), String
         rusqlite::params![now, batch_id],
     )
     .map_err(|e| e.to_string())?;
+
+    // 清理磁盘上的旧报告文件
+    for path in &report_files {
+        crate::commands::reports::safe_remove_report(path);
+    }
 
     // Set batch status to "pending"
     conn.execute(

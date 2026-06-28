@@ -57,21 +57,6 @@ pub(crate) fn validate_shell_identifier(field: &str, label: &str) -> Result<(), 
     }
 }
 
-/// 对双引号上下文转义：外层 `sh -c "..."` 的双引号会展开 `$` `` ` `` `\` `"`，
-/// 密码含这些字符需转义，否则被外层 shell 提前解释/执行。
-#[allow(dead_code)]
-pub(crate) fn shell_escape_dq(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' | '$' | '`' | '\\' => out.push('\\'),
-            _ => {}
-        }
-        out.push(c);
-    }
-    out
-}
-
 /// 单引号包裹并转义内部单引号（用于 sh -c 内层 `'...'` 段）。
 pub(crate) fn shell_quote_single(s: &str) -> String {
     s.replace('\'', "'\\''")
@@ -212,6 +197,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
     };
 
     let ssh_port = validate_port(data.ssh_port.unwrap_or(22))?;
+    let db_port = validate_port(data.db_port.unwrap_or(3306))?;
     let status = data.status.as_deref().unwrap_or("unknown");
 
     // 4. 插入数据库
@@ -239,7 +225,7 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
             data.instance_name,
             data.db_username,
             encrypted_db_password,
-            data.db_port.unwrap_or(3306),
+            i64::from(db_port),
             data.kernel_version,
         ],
     )
@@ -275,6 +261,10 @@ pub fn update_device(
 
     // 验证 SSH 端口（如果提供）
     if let Some(port) = data.ssh_port {
+        validate_port(port)?;
+    }
+    // 验证数据库端口（如果提供）
+    if let Some(port) = data.db_port {
         validate_port(port)?;
     }
 
@@ -380,6 +370,16 @@ pub fn update_device(
 pub fn delete_device(device_id: i64, state: State<AppState>) -> Result<(), String> {
     let mut conn = state.db.lock();
 
+    // 先收集关联的巡检记录 report_path，用于事务提交后清理磁盘文件
+    let report_files: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT report_path FROM inspection_records WHERE device_id = ?1 AND report_path IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(rusqlite::params![device_id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // 先删除关联的巡检记录
@@ -403,6 +403,11 @@ pub fn delete_device(device_id: i64, state: State<AppState>) -> Result<(), Strin
 
     tx.commit().map_err(|e| e.to_string())?;
 
+    // 事务成功后清理磁盘上的报告文件（失败不影响 DB 一致性）
+    for path in &report_files {
+        crate::commands::reports::safe_remove_report(path);
+    }
+
     Ok(())
 }
 
@@ -414,6 +419,20 @@ pub fn batch_delete_devices(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     }
 
     let mut conn = state.db.lock();
+
+    // 先收集所有关联的巡检记录 report_path，用于事务提交后清理磁盘文件
+    let mut report_files: Vec<String> = Vec::new();
+    for id in &ids {
+        let mut stmt = conn
+            .prepare("SELECT report_path FROM inspection_records WHERE device_id = ?1 AND report_path IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let paths: Vec<String> = stmt
+            .query_map(rusqlite::params![id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        report_files.extend(paths);
+    }
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -430,6 +449,11 @@ pub fn batch_delete_devices(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     }
 
     tx.commit().map_err(|e| e.to_string())?;
+
+    // 事务成功后清理磁盘上的报告文件（失败不影响 DB 一致性）
+    for path in &report_files {
+        crate::commands::reports::safe_remove_report(path);
+    }
 
     Ok(())
 }
