@@ -333,6 +333,31 @@ pub fn update_device(
         updater.push_raw("auth_message", Option::<String>::None);
     }
 
+    // 静态信息相关字段变更时清除已缓存的旧数据，下次检测时重新获取
+    let auth_changed = data.ssh_password_encrypted.is_some()
+        || data.ssh_username.is_some()
+        || data.db_password_encrypted.is_some()
+        || data.db_username.is_some()
+        || data.ip.is_some()
+        || data.ssh_port.is_some()
+        || data.db_port.is_some()
+        || data.deployment.is_some()
+        || data.vendor.is_some();
+    if auth_changed {
+        updater.push_raw("auth_status", "unknown".to_string());
+        updater.push_raw("auth_message", Option::<String>::None);
+        // 清除旧的静态信息，避免用错误凭据获取的数据持久化
+        updater.push_raw("sysname", Option::<String>::None);
+        updater.push_raw("model", Option::<String>::None);
+        updater.push_raw("serial_number", Option::<String>::None);
+        updater.push_raw("manufacturing_date", Option::<String>::None);
+        updater.push_raw("cpu_cores", Option::<i64>::None);
+        updater.push_raw("memory_gb", Option::<i64>::None);
+        updater.push_raw("kernel_version", Option::<String>::None);
+        updater.push_raw("db_version", Option::<String>::None);
+        updater.push_raw("instance_name", Option::<String>::None);
+    }
+
     if updater.is_empty() {
         return Ok(existing);
     }
@@ -524,15 +549,27 @@ pub async fn check_device_status(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let db = state.db.clone();
-    let result = tokio::task::spawn_blocking(move || check_device_status_inner(&db, device_id))
+    let db_for_check = db.clone();
+    let inner = tokio::task::spawn_blocking(move || check_device_status_inner(&db_for_check, device_id))
         .await
         .map_err(|e| {
             let msg = format!("检测任务失败: {}", e);
             tracing::error!("[check_device_status] {}", msg);
             msg
         })?;
+    let result = inner?;
+    // 如果设备在线，清除旧静态信息后重新检测（解决凭据/连接信息变更后旧数据过期的问题）
+    if result.get("status").and_then(|v| v.as_str()) == Some("online") {
+        let _ = db.lock().execute(
+            "UPDATE devices SET sysname=NULL, model=NULL, serial_number=NULL, manufacturing_date=NULL, \
+             cpu_cores=NULL, memory_gb=NULL, kernel_version=NULL, db_version=NULL, instance_name=NULL \
+             WHERE id=?1 AND (sysname IS NOT NULL OR model IS NOT NULL OR db_version IS NOT NULL)",
+            rusqlite::params![device_id],
+        );
+        detect_static_info_if_missing(device_id, &db);
+    }
     tracing::info!("[check_device_status] device_id={} 完成", device_id);
-    result
+    Ok(result)
 }
 
 /// 检查所有设备连通状态（并发）
