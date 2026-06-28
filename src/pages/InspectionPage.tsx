@@ -499,26 +499,46 @@ export default function InspectionPage() {
 
       {/* Delete confirmation modal */}
       <Modal open={confirmDelete !== null} title="删除巡检任务" onClose={() => setConfirmDelete(null)}>
-        <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，所有相关巡检记录也将被删除。</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <Button variant="ghost" onClick={() => setConfirmDelete(null)}>取消</Button>
-          <Button variant="danger" onClick={async () => {
-            if (confirmDelete === null) return;
-            try { await invoke("delete_batch", { batchId: confirmDelete }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(typeof e === "string" ? e : JSON.stringify(e)); setConfirmDelete(null); }
-          }}>确认删除</Button>
-        </div>
+        {(() => {
+          const hasReport = confirmDelete !== null && batches.find((b: any) => b.id === confirmDelete)?.records?.some((r: any) => r.report_path);
+          return <>
+            <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，所有相关巡检记录将被删除。</p>
+            {hasReport && <p className="text-sm text-[hsl(var(--warning))] mt-2">该任务已生成报告文件。</p>}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="ghost" onClick={() => setConfirmDelete(null)}>取消</Button>
+              {hasReport && <Button variant="danger" onClick={async () => {
+                const id = confirmDelete!;
+                try { await invoke("delete_batch", { batchId: id, deleteReports: true }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); setConfirmDelete(null); }
+              }}>删除任务+报告</Button>}
+              <Button variant={hasReport ? "ghost" : "danger"} onClick={async () => {
+                const id = confirmDelete!;
+                try { await invoke("delete_batch", { batchId: id }); setConfirmDelete(null); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); setConfirmDelete(null); }
+              }}>{hasReport ? "仅删任务" : "确认删除"}</Button>
+            </div>
+          </>;
+        })()}
       </Modal>
 
       {/* Batch delete confirmation */}
       <Modal open={confirmBatchDelete} title={`批量删除 (${batchDeleteIds.size} 个任务)`} onClose={() => setConfirmBatchDelete(false)}>
-        <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，所有相关巡检记录和报告文件也将被删除。</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <Button variant="ghost" onClick={() => setConfirmBatchDelete(false)}>取消</Button>
-          <Button variant="danger" loading={batchDeleting} onClick={async () => {
-            setBatchDeleting(true);
-            try { await invoke("batch_delete_batches", { ids: Array.from(batchDeleteIds) }); setBatchDeleteIds(new Set()); setConfirmBatchDelete(false); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); } finally { setBatchDeleting(false); }
-          }}>确认删除</Button>
-        </div>
+        {(() => {
+          const hasReports = Array.from(batchDeleteIds).some(id => batches.find((b: any) => b.id === id)?.records?.some((r: any) => r.report_path));
+          return <>
+            <p className="text-sm text-[hsl(var(--text-secondary))]">此操作不可恢复，选中的 {batchDeleteIds.size} 个任务及其巡检记录将被删除。</p>
+            {hasReports && <p className="text-sm text-[hsl(var(--warning))] mt-2">部分任务已生成报告文件。</p>}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="ghost" onClick={() => setConfirmBatchDelete(false)}>取消</Button>
+              {hasReports && <Button variant="danger" loading={batchDeleting} onClick={async () => {
+                setBatchDeleting(true);
+                try { await invoke("batch_delete_batches", { ids: Array.from(batchDeleteIds), deleteReports: true }); setBatchDeleteIds(new Set()); setConfirmBatchDelete(false); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); } finally { setBatchDeleting(false); }
+              }}>删除任务+报告</Button>}
+              <Button variant={hasReports ? "ghost" : "danger"} loading={hasReports ? false : batchDeleting} onClick={async () => {
+                if (hasReports) setBatchDeleting(true);
+                try { await invoke("batch_delete_batches", { ids: Array.from(batchDeleteIds) }); setBatchDeleteIds(new Set()); setConfirmBatchDelete(false); loadBatches(); selectedIdRef.current = null; setSelectedBatch(null); } catch (e: any) { console.error(String(e)); } finally { setBatchDeleting(false); }
+              }}>{hasReports ? "仅删任务" : "确认删除"}</Button>
+            </div>
+          </>;
+        })()}
       </Modal>
     </div>
   );
