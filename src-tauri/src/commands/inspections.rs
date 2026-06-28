@@ -1449,85 +1449,59 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
 }
 
 /// 删除指定批次及其关联的所有记录。
+/// `delete_reports`: 是否同时删除磁盘上的报告文件（默认 false，保留报告作为归档）。
 #[tauri::command]
-pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String> {
+pub fn delete_batch(batch_id: i64, delete_reports: Option<bool>, state: State<AppState>) -> Result<(), String> {
+    let delete_reports = delete_reports.unwrap_or(false);
     let mut conn = state.db.lock();
 
-    // 删除前检查批次状态，运行中的批次需先停止
-    let sql = format!(
-        "SELECT {} FROM inspection_batches WHERE id = ?1",
-        BATCH_COLUMNS
-    );
+    let sql = format!("SELECT {} FROM inspection_batches WHERE id = ?1", BATCH_COLUMNS);
     if let Some(batch) = crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)? {
         if batch.status == "running" {
             return Err("巡检任务正在运行中，请先停止后再删除".to_string());
         }
     }
 
-    // 设置取消标志，确保残留 SSH 任务停止
     if let Some(cancel) = state.batch_cancels.lock().get(&batch_id) {
         cancel.store(true, Ordering::Relaxed);
     }
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    // 删除前收集所有关联的报告文件路径，在事务外清理磁盘文件
-    let report_files: Vec<String> = {
+    let report_files: Vec<String> = if delete_reports {
         let mut stmt = tx
             .prepare("SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''")
             .map_err(|e| e.to_string())?;
-        let paths: Vec<String> = stmt
-            .query_map(rusqlite::params![batch_id], |r| r.get::<_, String>(0))
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
-        paths
-    };
-    // 同时检查批次综合报告
-    let combined_path: Option<String> = tx
-        .query_row(
-            "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
-            rusqlite::params![batch_id],
-            |r| r.get(0),
-        )
-        .ok()
-        .filter(|s: &String| !s.is_empty());
+        let rows = stmt.query_map(rusqlite::params![batch_id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    } else { Vec::new() };
+    let combined_path: Option<String> = if delete_reports {
+        tx.query_row("SELECT combined_report_path FROM inspection_batches WHERE id = ?1", rusqlite::params![batch_id], |r| r.get(0))
+            .ok().filter(|s: &String| !s.is_empty())
+    } else { None };
 
-    // Delete associated records
-    tx.execute(
-        "DELETE FROM inspection_records WHERE batch_id = ?1",
-        rusqlite::params![batch_id],
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Delete the batch
-    let affected = tx
-        .execute(
-            "DELETE FROM inspection_batches WHERE id = ?1",
-            rusqlite::params![batch_id],
-        )
+    tx.execute("DELETE FROM inspection_records WHERE batch_id = ?1", rusqlite::params![batch_id])
         .map_err(|e| e.to_string())?;
-
+    let affected = tx.execute("DELETE FROM inspection_batches WHERE id = ?1", rusqlite::params![batch_id])
+        .map_err(|e| e.to_string())?;
     if affected == 0 {
         return Err(format!("巡检任务 ID {} 不存在", batch_id));
     }
-
     tx.commit().map_err(|e| e.to_string())?;
 
-    // 事务成功后清理磁盘上的报告文件（失败了不要紧，不影响 DB 一致性）
-    for path in &report_files {
-        crate::commands::reports::safe_remove_report(path);
+    if delete_reports {
+        for path in &report_files { crate::commands::reports::safe_remove_report(path); }
+        if let Some(ref path) = combined_path { crate::commands::reports::safe_remove_report(path); }
     }
-    if let Some(ref path) = combined_path {
-        crate::commands::reports::safe_remove_report(path);
-    }
-
     Ok(())
 }
 
 /// 批量删除巡检任务及其关联记录和报告文件。
+/// `delete_reports`: 是否同时删除磁盘上的报告文件（默认 false）。
 #[tauri::command]
-pub fn batch_delete_batches(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
+pub fn batch_delete_batches(ids: Vec<i64>, delete_reports: Option<bool>, state: State<AppState>) -> Result<(), String> {
+    let delete_reports = delete_reports.unwrap_or(false);
     if ids.is_empty() { return Ok(()); }
     let mut conn = state.db.lock();
 
@@ -1548,20 +1522,22 @@ pub fn batch_delete_batches(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     for &id in &ids {
-        if let Ok(mut stmt) = tx.prepare(
-            "SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''"
-        ) {
-            report_files.extend(
-                stmt.query_map(rusqlite::params![id], |r| r.get::<_, String>(0))
-                    .map_err(|e| e.to_string())?
-                    .filter_map(|r| r.ok())
-            );
-        }
-        if let Ok(path) = tx.query_row::<String, _, _>(
-            "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
-            rusqlite::params![id], |r| r.get(0)
-        ) {
-            if !path.is_empty() { combined_paths.push(path); }
+        if delete_reports {
+            if let Ok(mut stmt) = tx.prepare(
+                "SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''"
+            ) {
+                report_files.extend(
+                    stmt.query_map(rusqlite::params![id], |r| r.get::<_, String>(0))
+                        .map_err(|e| e.to_string())?
+                        .filter_map(|r| r.ok())
+                );
+            }
+            if let Ok(path) = tx.query_row::<String, _, _>(
+                "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
+                rusqlite::params![id], |r| r.get(0)
+            ) {
+                if !path.is_empty() { combined_paths.push(path); }
+            }
         }
         tx.execute("DELETE FROM inspection_records WHERE batch_id = ?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;
@@ -1570,8 +1546,10 @@ pub fn batch_delete_batches(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     }
     tx.commit().map_err(|e| e.to_string())?;
 
-    for path in &report_files { crate::commands::reports::safe_remove_report(path); }
-    for path in &combined_paths { crate::commands::reports::safe_remove_report(path); }
+    if delete_reports {
+        for path in &report_files { crate::commands::reports::safe_remove_report(path); }
+        for path in &combined_paths { crate::commands::reports::safe_remove_report(path); }
+    }
     Ok(())
 }
 
