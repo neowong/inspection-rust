@@ -1,24 +1,44 @@
 # 更新日志
 
-## v3.55.5 (2026-06-28)
+## v3.56.0 (2026-06-28)
 
 ### ✨ 新功能
 
-- **运行时 OS 版本检测**：匿名统计上报的操作系统信息从编译期 `windows`/`linux` 升级为运行时精确版本（如 `Windows 11 Pro` / `Ubuntu 26.04`）
-- **数据库客户端预检**：巡检执行前 SSH exec 检测 `which psql/mysql/redis-cli` 等，未安装则跳过该厂商所有命令并标注 `[跳过]`，避免 N 条命令逐个失败
+- **运行时 OS 版本检测**：匿名统计和反馈上报的 OS 信息从 `windows`/`linux` 升级为 `Windows 11 Pro` / `Ubuntu 26.04` 精度
+- **数据库客户端预检**：巡检前 SSH exec 检测 `which psql/mysql` 等，未安装跳过并标注 `[跳过]`
+- **批量删除巡检任务**：巡检页勾选多个任务批量删除；有报告时可选"仅删任务"或"连报告一起删"
+- **报告页删除批次报告**：工具栏"删除报告"按钮，清除磁盘文件但保留巡检记录
+- **反馈附带系统信息**：关于页展示当前版本和 OS，提交反馈时自动携带
 
 ### 🐛 Bug 修复
 
-- **PostgreSQL SQL 命令密码认证失败**：`psql` 默认走 Unix socket + peer 认证忽略 `PGPASSWORD`，现已自动补 `-h localhost -d postgres` 强制 TCP 密码认证
-- **PostgreSQL 设备版本检测不准**：`db_version` 字段原用 `psql --version` 获取客户端版本，改为 `SELECT version()` 获取真实服务端版本
-- **报告命令回显剥离不完整**：SSH 回显行含 `-U/-u/-h/-d/-p` 等注入参数，与原始命令字串不匹配导致回显行未被剥离，报告中出现重复命令行
-- **数据库设备报告提示符错误**：`device_prompt()` 未识别数据库厂商，报告命令前缀显示 `<hostname>` 而非 Linux `[user@host ~]#`
-- **种子数据清理**：移除 Linux 厂商下 `docker ps`/`podman ps` 两条耦合命令（v34 迁移同步清理已有 DB）
-- **种子数据标签修正**：`psql --version` → "psql 客户端版本"，`SELECT version()` → "PostgreSQL 服务端版本"
+**PostgreSQL:**
+- `psql` 默认 Unix socket + peer 认证忽略 `PGPASSWORD`，自动补 `-h localhost -d postgres` 强制 TCP
+- `db_version` 改用 `SHOW server_version` 替代 `SELECT version()`，返回纯净版本号
+- 种子标签 `psql --version` → "psql 客户端版本"，`SELECT version()` → "PostgreSQL 服务端版本"
 
-### 🔧 改进
+**报告:**
+- 命令回显剥离重构：识别 `PGPASSWORD`/`MYSQL_PWD` 环境变量前缀直接吃掉回显行，解决终端换行导致匹配失败
+- `device_prompt()` 对 database 设备和数据库厂商使用 Linux 风格提示符 `[user@host ~]#`
 
-- **隐私说明**：匿名统计仅收集 OS 版本、软件版本号、匿名设备 ID（SHA-256），不收集 IP、用户名、密码、巡检数据等。数据仅用于版本优化。
+**设备管理:**
+- 同 IP 不同数据库可共存（MySQL + PostgreSQL 同主机不再冲突）
+- 保存设备时若凭据变更，清除旧静态信息并立即后台重新检测
+- 手动点"检测"时在线即重新获取静态信息，不再等 60s 轮询
+- 后台轮询移除静态信息采集，仅检测在线状态
+
+**巡检:**
+- 模板命令缺失时不再静默消失，先创建 record 再读数据，失败保留错误信息
+- `retry_device` 同理：读数据失败标记 failed 而非卡在 running
+
+### 🔧 优化
+
+- `sanitize_cmd_for_display` 正则改为 `OnceLock` 静态编译 + `Cow` 避免分配
+- `validate_devices_ready` N+1 查询改为单次 `IN()` 批量
+- `vendor_profile` 集中 `is_linux_vendor()` / `is_db_vendor()` 消除 4 处重复厂商列表
+- `json_util` 提取共享解析函数，`db_helpers` 新增 `boxed_params()` 消除样板
+- `port_scanner` 委托 callback 版本删除 ~70 行重复代码
+- 统计 Dashboard 响应式适配 + 刷新不闪登录框 + 30s 自动刷新
 
 > 💡 **如需完全离线使用**：可从 [GitHub Releases](https://github.com/neowong/inspection-rust/releases) 下载 **internal 版**（仅 Windows，不含统计上报，保留问题反馈）。
 
