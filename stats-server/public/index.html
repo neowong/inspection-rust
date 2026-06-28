@@ -323,7 +323,7 @@
             <th>类型</th>
             <th>标题</th>
             <th>内容</th>
-            <th>联系方式</th>
+            <th>系统</th>
             <th>版本</th>
             <th>时间</th>
           </tr>
@@ -556,7 +556,13 @@
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">暂无反馈</td></tr>';
         return;
       }
-      tbody.innerHTML = data.map(row => `
+      tbody.innerHTML = data.map(row => {
+        let osStr = '-';
+        if (row.os) {
+          osStr = row.os;
+          if (row.os_version && row.os_version !== 'Unknown') osStr += ' ' + row.os_version;
+        }
+        return `
         <tr>
           <td>
             <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;background:${TYPE_COLORS[row.feedback_type] || '#95a5a6'}22;color:${TYPE_COLORS[row.feedback_type] || '#95a5a6'}">
@@ -565,11 +571,11 @@
           </td>
           <td style="font-weight:500">${row.title}</td>
           <td style="max-width:300px;white-space:pre-wrap;word-break:break-all">${row.content}</td>
-          <td>${row.contact || '-'}</td>
+          <td>${osStr}</td>
           <td>${row.version ? 'v' + row.version : '-'}</td>
           <td>${new Date(row.created_at).toLocaleString('zh-CN')}</td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
     }
   </script>
 </body>
