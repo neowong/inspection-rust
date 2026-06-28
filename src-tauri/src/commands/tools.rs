@@ -174,10 +174,19 @@ pub fn get_app_version() -> String {
 }
 
 /// 运行时获取操作系统版本字符串，用于匿名统计。
-/// 比 cfg!(target_os) 精确得多，可以区分 Win10/Win11/Ubuntu 22.04/Debian 12 等。
 fn os_version_string() -> String {
     let info = os_info::get();
     format!("{} {}", info.os_type(), info.version())
+}
+
+/// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
+#[tauri::command]
+pub fn get_os_info() -> serde_json::Value {
+    let info = os_info::get();
+    serde_json::json!({
+        "os": info.os_type().to_string(),
+        "os_version": info.version().to_string(),
+    })
 }
 
 /// 检查离线 IP 归属地库是否已加载
