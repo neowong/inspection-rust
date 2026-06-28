@@ -12,9 +12,9 @@
     "windows": [
       {
         "title": "AI巡检助手",
-        "width": 1400,
+        "width": 1500,
         "height": 900,
-        "minWidth": 1024,
+        "minWidth": 1200,
         "minHeight": 700,
         "resizable": true,
         "visible": true,
