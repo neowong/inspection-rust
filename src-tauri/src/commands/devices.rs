@@ -1291,13 +1291,20 @@ fn detect_db_info_sync(
         db_cmds.push(("db_detail".to_string(), format!(
             "{}mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", mysql_pwd_prefix, mysql_auth)));
     } else if vendor_lower.contains("postgres") {
-        db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
+        // 服务端版本：连库执行 SELECT version()（psql --version 只取客户端版本）
         if !db_username.is_empty() {
             let pg_env = if !db_password.is_empty() {
                 let escaped = shell_quote_single(db_password);
                 format!("PGPASSWORD='{}' ", escaped)
             } else { String::new() };
-            db_cmds.push(("db_detail".to_string(), format!("{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"", pg_env, shell_quote_single(db_username), db_port)));
+            db_cmds.push(("db_version".to_string(), format!(
+                "{}psql -U '{}' -h localhost -p {} -t -c \"SELECT version()\"",
+                pg_env, shell_quote_single(db_username), db_port)));
+            db_cmds.push(("db_detail".to_string(), format!(
+                "{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"",
+                pg_env, shell_quote_single(db_username), db_port)));
+        } else {
+            db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         }
     } else if vendor_lower.contains("oracle") {
         db_cmds.push(("db_version".to_string(), "sqlplus -v".to_string()));

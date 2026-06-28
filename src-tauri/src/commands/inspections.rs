@@ -1,3 +1,4 @@
+use std::io::Read;
 use rusqlite::types::ToSql;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -445,49 +446,143 @@ fn execute_device_ssh(
         }
     };
 
+    // ── 数据库客户端预检 ──
+    // 在包装命令前检测客户端是否安装，未安装则跳过该厂商所有命令，
+    // 避免 N 条命令逐个失败产生大量噪声
+    let mut skipped_vendors: std::collections::HashSet<String> = std::collections::HashSet::new();
+    {
+        let db_vendors: Vec<&str> = commands.iter()
+            .filter(|c| !is_os_vendor(&c.vendor))
+            .map(|c| c.vendor.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if !db_vendors.is_empty() {
+            let mut check_parts: Vec<String> = Vec::new();
+            for v in &db_vendors {
+                let v_lower = v.to_lowercase();
+                let binary = if v_lower.contains("mysql") || v_lower.contains("mariadb") {
+                    "mysql"
+                } else if v_lower.contains("postgres") {
+                    "psql"
+                } else if v_lower.contains("redis") {
+                    "redis-cli"
+                } else if v_lower.contains("mongo") {
+                    "mongosh"
+                } else if v_lower.contains("oracle") {
+                    "sqlplus"
+                } else if v_lower.contains("sql") || v_lower.contains("mssql") {
+                    "sqlcmd"
+                } else if v_lower.contains("达梦") {
+                    "disql"
+                } else {
+                    continue;
+                };
+                check_parts.push(format!(
+                    "which {} 2>/dev/null && echo '{}_OK' || echo '{}_MISSING'",
+                    binary, v, v
+                ));
+            }
+            if !check_parts.is_empty() {
+                let check_cmd = check_parts.join("; ");
+                if let Ok(check_output) = (|| -> Result<String, String> {
+                    let tcp = std::net::TcpStream::connect(format!("{}:{}", source.host, source.port))
+                        .map_err(|e| format!("TCP 连接失败: {}", e))?;
+                    tcp.set_read_timeout(Some(std::time::Duration::from_secs(10))).ok();
+                    let mut session = ssh2::Session::new()
+                        .map_err(|e| format!("创建 SSH 会话失败: {}", e))?;
+                    session.set_tcp_stream(tcp);
+                    session.handshake()
+                        .map_err(|e| format!("SSH 握手失败: {}", e))?;
+                    session.userauth_password(&source.username, &source.password)
+                        .map_err(|e| format!("SSH 认证失败: {}", e))?;
+                    let mut channel = session.channel_session()
+                        .map_err(|e| format!("打开 exec 通道失败: {}", e))?;
+                    channel.exec(&check_cmd)
+                        .map_err(|e| format!("执行预检命令失败: {}", e))?;
+                    let mut output = String::new();
+                    channel.read_to_string(&mut output)
+                        .map_err(|e| format!("读取预检输出失败: {}", e))?;
+                    channel.wait_close().ok();
+                    Ok(output)
+                })() {
+                    for v in &db_vendors {
+                        if check_output.contains(&format!("{}_MISSING", v)) {
+                            skipped_vendors.insert(v.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 收集需要跳过的命令 + 活跃命令
+    let mut skipped_commands: Vec<(String, String)> = Vec::new();
+    let active_commands: Vec<&TemplateCommandSpec> = commands.iter()
+        .filter(|c| {
+            if !is_os_vendor(&c.vendor) && skipped_vendors.contains(&c.vendor) {
+                skipped_commands.push((c.command.clone(), c.vendor.clone()));
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
     // 包装命令，同时保留原始命令→包装命令的映射
-    let cmd_strings: Vec<String> = commands.iter()
+    let cmd_strings: Vec<String> = active_commands.iter()
         .map(|s| wrap_for_deployment(&s.command, &s.vendor))
         .collect::<Result<Vec<_>, _>>()?;
     let wrapped_to_orig: std::collections::HashMap<&str, &str> = cmd_strings.iter()
-        .zip(commands.iter())
+        .zip(active_commands.iter())
         .map(|(w, o)| (w.as_str(), o.command.as_str()))
         .collect();
 
-    let result = match profile.exec_mode {
-        crate::services::vendor_profile::ExecMode::Exec => {
-            let needs_root_map: std::collections::HashMap<String, bool> = cmd_strings
-                .iter()
-                .zip(commands.iter())
-                .map(|(cmd, spec)| (cmd.clone(), spec.needs_root))
-                .collect();
-            crate::services::linux_runner::run_commands_exec(
-                &source,
-                &cmd_strings,
-                &needs_root_map,
-                Some(cancel),
-                on_progress,
-            )
-        }
-        crate::services::vendor_profile::ExecMode::Shell => {
-            inspection_runner::run_commands_with_cancel(
-                &source,
-                &device.vendor,
-                &cmd_strings,
-                on_progress,
-                Some(cancel),
-            )
+    let result = if cmd_strings.is_empty() {
+        Ok(indexmap::IndexMap::new())
+    } else {
+        match profile.exec_mode {
+            crate::services::vendor_profile::ExecMode::Exec => {
+                let needs_root_map: std::collections::HashMap<String, bool> = cmd_strings
+                    .iter()
+                    .zip(active_commands.iter())
+                    .map(|(cmd, spec)| (cmd.clone(), spec.needs_root))
+                    .collect();
+                crate::services::linux_runner::run_commands_exec(
+                    &source,
+                    &cmd_strings,
+                    &needs_root_map,
+                    Some(cancel),
+                    on_progress,
+                )
+            }
+            crate::services::vendor_profile::ExecMode::Shell => {
+                inspection_runner::run_commands_with_cancel(
+                    &source,
+                    &device.vendor,
+                    &cmd_strings,
+                    on_progress,
+                    Some(cancel),
+                )
+            }
         }
     };
 
-    // 将输出的 key 从包装后的命令映射回原始命令，使报告显示正确的命令文本
+    // 将输出的 key 映射回原始命令，并补上被跳过命令的错误信息
     result.map(|outputs| {
-        outputs.into_iter().map(|(wrapped_cmd, output)| {
+        let mut final_outputs: indexmap::IndexMap<String, String> = outputs.into_iter().map(|(wrapped_cmd, output)| {
             let orig = wrapped_to_orig.get(wrapped_cmd.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or(wrapped_cmd);
             (orig, output)
-        }).collect()
+        }).collect();
+        for (cmd, vendor) in &skipped_commands {
+            final_outputs.insert(cmd.clone(), format!(
+                "[跳过] 数据库客户端未安装（厂商: {}），请在该服务器上安装对应的命令行工具",
+                vendor
+            ));
+        }
+        final_outputs
     })
 }
 
