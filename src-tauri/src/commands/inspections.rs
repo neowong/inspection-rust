@@ -1382,7 +1382,17 @@ pub async fn retry_device(record_id: i64, state: State<'_, AppState>) -> Result<
         )
         .map_err(|e| e.to_string())?;
 
-        let (device, username, password, commands) = read_device_inspection_data(&conn, device_id)?;
+        let (device, username, password, commands) = match read_device_inspection_data(&conn, device_id) {
+            Ok(data) => data,
+            Err(e) => {
+                // 读取失败时标记记录为 failed，避免卡在 running 状态
+                let _ = conn.execute(
+                    "UPDATE inspection_records SET status='failed', error_message=?1, updated_at=?2 WHERE id=?3",
+                    rusqlite::params![e, now_str(), record_id],
+                );
+                return Err(e);
+            }
+        };
         (record_id, batch_id, device, username, password, commands)
     }; // 锁释放
 
