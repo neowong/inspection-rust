@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+      - "internal-v*"
   workflow_dispatch:
 
 permissions:
@@ -45,6 +46,7 @@ jobs:
           prerelease: false
 
   build-linux:
+    if: ${{ !startsWith(github.ref_name, 'internal-') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +85,7 @@ jobs:
           prerelease: false
 
   build-macos:
+    if: ${{ !startsWith(github.ref_name, 'internal-') }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
