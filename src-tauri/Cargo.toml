@@ -48,6 +48,7 @@ cipher = "0.4"
 rand = "0.8"
 xdb-parse = "0.2"
 hostname = "0.4"
+os_info = "3"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -173,6 +173,13 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// 运行时获取操作系统版本字符串，用于匿名统计。
+/// 比 cfg!(target_os) 精确得多，可以区分 Win10/Win11/Ubuntu 22.04/Debian 12 等。
+fn os_version_string() -> String {
+    let info = os_info::get();
+    format!("{} {}", info.os_type(), info.version())
+}
+
 /// 检查离线 IP 归属地库是否已加载
 #[tauri::command]
 pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
@@ -255,9 +262,7 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         format!("{:x}", hasher.finalize())
     };
 
-    let os = if cfg!(target_os = "windows") { "windows" }
-        else if cfg!(target_os = "linux") { "linux" }
-        else { "unknown" };
+    let os = os_version_string();
 
     let payload = serde_json::json!({
         "device_id": &device_id,
