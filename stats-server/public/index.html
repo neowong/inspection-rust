@@ -17,7 +17,9 @@
       justify-content: center;
       align-items: center;
       min-height: 100vh;
+      min-height: 100dvh; /* 动态视口，手机浏览器地址栏适配 */
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 16px;
     }
     .login-box {
       background: white;
@@ -47,7 +49,7 @@
       padding: 12px;
       border: 1px solid #ddd;
       border-radius: 6px;
-      font-size: 14px;
+      font-size: 16px; /* 避免 iOS 缩放 */
       transition: border-color 0.3s;
     }
     .form-group input:focus {
@@ -193,27 +195,31 @@
       .charts-grid { grid-template-columns: 1fr; }
     }
 
-    /* ── 手机（≤640px）: 统计2列→1列，头部堆叠 ── */
+    /* ── 手机（≤640px）: 统计2列、图表堆叠、头部折叠 ── */
     @media (max-width: 640px) {
-      .dashboard { padding: 8px; }
-      .header { flex-direction: column; align-items: flex-start; }
-      .header h1 { font-size: 16px; }
+      .dashboard { padding: 6px; }
+      .header { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .header h1 { font-size: 15px; }
       .header .user-info { width: 100%; justify-content: space-between; }
-      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-      .stat-card { padding: 12px; }
-      .stat-card .value { font-size: 22px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+      .stat-card { padding: 10px 8px; }
+      .stat-card .value { font-size: 20px; }
       .stat-card .label { font-size: 11px; }
-      .chart-card { padding: 10px; }
-      .chart-card h3 { font-size: 12px; }
-      .chart-card canvas { max-height: 200px; }
-      .recent-table th, .recent-table td { padding: 6px 8px; font-size: 11px; }
-      .login-box { padding: 24px; margin: 16px; }
+      .charts-grid { gap: 8px; }
+      .chart-card { padding: 8px; }
+      .chart-card h3 { font-size: 12px; margin-bottom: 6px; }
+      .chart-card canvas { max-height: 180px; }
+      .recent-table table { min-width: 500px; }
+      .recent-table th, .recent-table td { padding: 5px 6px; font-size: 11px; }
+      .login-box { padding: 24px 20px; margin: 0; }
+      .login-box h1 { font-size: 20px; margin-bottom: 20px; }
     }
 
     /* ── 小手机（≤400px）: 统计1列 ── */
     @media (max-width: 400px) {
       .stats-grid { grid-template-columns: 1fr; }
-      .header h1 { font-size: 14px; }
+      .header h1 { font-size: 13px; }
+      .recent-table table { min-width: 400px; }
     }
   </style>
 </head>
