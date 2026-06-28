@@ -1113,8 +1113,8 @@ fn text_cell(text: &str, width: usize, fill: Option<&str>) -> TableCell {
 /// 1. 裸命令回显（`display version`）
 /// 2. 带提示符前缀的回显（`<sysname>display version`）
 /// 3. 容器部署的多行回显（`docker exec ...` + `mysql -e ...`）
-/// 4. 包安装带环境变量前缀 + 注入参数 + 终端换行（`PGPASSWORD='xxx' psql -h localhost -d postgres -U 'root' -c "SELECT..."`）
-/// 报告随后会用 `prompt + cmd` 重新生成首行，故此处必须剥离，否则会出现重复命令行。
+/// 4. 数据库命令回显（含环境变量前缀 + 注入参数，可能因终端宽度换行）
+/// 报告随后会用 `prompt + cmd` 重新生成首行，故此处必须剥离。
 fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
     let cmd_t = cmd.trim();
@@ -1129,82 +1129,46 @@ fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
         }
     }
 
-    // 跳过命令回显行：可能是多行（终端宽度换行），拼接后匹配
+    // 跳过命令回显行
     if i < lines.len() {
         let first = lines[i].trim();
-        // 尝试拼接后续行（终端宽度截断的续行）
-        let mut joined = first.to_string();
-        let mut end = i + 1;
-        while end < lines.len() {
-            let next = lines[end].trim();
-            if next.is_empty() { end += 1; continue; }
-            // 续行不以提示符、环境变量、docker/podman 开头
-            if next.starts_with(prompt.trim()) { break; }
-            if after_env_starts_with_env_var(next) { break; }
-            if next.starts_with("docker ") || next.starts_with("podman ") { break; }
-            joined.push(' ');
-            joined.push_str(next);
-            end += 1;
-        }
-        // 剥离提示符 → 环境变量 → 注入参数
-        let mut stripped = joined
-            .strip_prefix(prompt.trim())
-            .unwrap_or(&joined)
-            .trim_start()
-            .to_string();
-        if after_env_starts_with_env_var(&stripped) {
-            stripped = strip_env_var_prefix(&stripped).to_string();
-        }
-        let stripped_ref = strip_injected_auth_flags(&stripped);
-        // 归一化空格后比较，容忍终端换行插入的空白
-        if first.eq_ignore_ascii_case(cmd_t)
-            || collapse_spaces(stripped_ref) == collapse_spaces(cmd_t)
-        {
-            i = end;
+
+        // 检测是否为数据库命令回显（以环境变量前缀开头）
+        let is_db_echo = after_env_starts_with_env_var(first);
+
+        if is_db_echo {
+            // 数据库命令回显：吃掉首行 + 可能的续行（终端换行，最多再吃 4 行）
+            i += 1;
+            let mut extra = 0;
+            while i < lines.len() && extra < 4 {
+                let next = lines[i].trim();
+                if next.is_empty() { i += 1; continue; }
+                // 续行特征：以空白开头（shell 续行缩进），或不像是输出开头
+                let looks_like_continuation = lines[i].starts_with(' ')
+                    || lines[i].starts_with('\t')
+                    || (!next.contains(':') && !next.contains("错误") && !next.contains("ERROR"));
+                if looks_like_continuation {
+                    i += 1;
+                    extra += 1;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            // 非数据库命令：尝试精确匹配（剥离提示符后比较）
+            let after_prompt = first
+                .strip_prefix(prompt.trim())
+                .unwrap_or(first)
+                .trim_start();
+            if first.eq_ignore_ascii_case(cmd_t)
+                || after_prompt.eq_ignore_ascii_case(cmd_t)
+            {
+                i += 1;
+            }
         }
     }
 
     lines[i..].join("\n")
-}
-
-/// 去掉执行引擎注入的数据库认证/连接参数，使回显命令行可与原始裸命令匹配。
-/// 注入参数包括：-U 'user' / -u'user' / -h localhost / -d postgres / -p port
-fn strip_injected_auth_flags<'a>(s: &'a str) -> &'a str {
-    let mut result = s.trim_start();
-    loop {
-        let before = result;
-        result = result
-            // PostgreSQL: -U 'username' 或 -U "username"
-            .trim_start()
-            .strip_prefix("-U '").and_then(|r| r.find('\'').map(|i| &r[i+1..]))
-            .or_else(|| result.trim_start().strip_prefix("-U \"").and_then(|r| r.find('"').map(|i| &r[i+1..])))
-            // MySQL: -u'username'
-            .or_else(|| result.trim_start().strip_prefix("-u'").and_then(|r| r.find('\'').map(|i| &r[i+1..])))
-            // -h localhost / -d postgres / -d dbname / -p port
-            .or_else(|| result.trim_start().strip_prefix("-h localhost").map(|r| r.trim_start()))
-            .or_else(|| result.trim_start().strip_prefix("-d ").and_then(|r| {
-                // 吃掉后面的一个标识符（不含空格引号）
-                let rest = r.trim_start();
-                if rest.is_empty() { return None; }
-                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-                if end == 0 { None } else { Some(&rest[end..]) }
-            }))
-            .or_else(|| result.trim_start().strip_prefix("-p ").and_then(|r| {
-                let rest = r.trim_start();
-                if rest.is_empty() { return None; }
-                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-                if end == 0 { None } else { Some(&rest[end..]) }
-            }))
-            .unwrap_or(result);
-        if result.len() == before.len() { break; }
-        result = result.trim_start();
-    }
-    result
-}
-
-/// 归一化空格：将连续空白压缩为单个空格，用于容忍终端换行插入的多余空格
-fn collapse_spaces(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// 检查字符串是否以 KEY='VALUE' 或 KEY=VALUE 环境变量前缀开头
@@ -1216,30 +1180,6 @@ fn after_env_starts_with_env_var(s: &str) -> bool {
     } else {
         false
     }
-}
-
-/// 去掉开头的 KEY='VALUE' 或 KEY=VALUE 环境变量前缀
-fn strip_env_var_prefix(s: &str) -> &str {
-    if let Some(eq_pos) = s.find('=') {
-        let after_eq = &s[eq_pos + 1..];
-        // 跳过引号包裹的值
-        if after_eq.starts_with('\'') {
-            if let Some(end) = after_eq[1..].find('\'') {
-                return after_eq[end + 2..].trim_start();
-            }
-        } else if after_eq.starts_with('"') {
-            if let Some(end) = after_eq[1..].find('"') {
-                return after_eq[end + 2..].trim_start();
-            }
-        } else {
-            // 无引号：跳到下一个空格
-            if let Some(end) = after_eq.find(char::is_whitespace) {
-                return after_eq[end..].trim_start();
-            }
-            return "";
-        }
-    }
-    s
 }
 
 fn truncate_output(output: &str, max_lines: i32) -> String {
