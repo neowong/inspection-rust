@@ -451,6 +451,7 @@ pub fn run() {
             std::thread::sleep(std::time::Duration::from_secs(60));
         }
     });
+
     // 启动后立即触发一次所有缺静态信息设备的检测（server + database + 网络设备）
     // detect_static_info_if_missing 内部按已有信息/凭据判断是否真正执行，故全量遍历安全
     std::thread::spawn(move || {
@@ -592,6 +593,7 @@ pub fn run() {
             commands::tools::has_ip_db,
             commands::tools::download_ip_db,
             commands::tools::check_update,
+            commands::tools::submit_feedback,
             commands::tools::trace_route,
             // Stats
             get_stats,

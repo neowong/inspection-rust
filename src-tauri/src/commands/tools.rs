@@ -236,6 +236,101 @@ pub async fn check_update(
     }
 }
 
+/// 提交问题反馈到统计服务端（静默，失败忽略）
+#[tauri::command]
+pub async fn submit_feedback(
+    feedback_type: String,
+    title: String,
+    content: String,
+    contact: Option<String>,
+    version: String,
+) -> Result<(), String> {
+    let device_id = {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mac = get_mac_address().unwrap_or_default();
+        let raw = format!("{}:{}", hostname, mac);
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let payload = serde_json::json!({
+        "device_id": &device_id,
+        "feedback_type": &feedback_type,
+        "title": &title,
+        "content": &content,
+        "contact": contact.unwrap_or_default(),
+        "version": &version,
+    });
+
+    let api_url = "https://neowong.eu.org/stats/api/feedback";
+    tracing::info!("[feedback] 提交反馈: type={}, title={}", feedback_type, title);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let resp = client.post(api_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("提交反馈失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("提交失败，服务器返回 {}", resp.status()));
+    }
+
+    tracing::info!("[feedback] 反馈提交成功");
+    Ok(())
+}
+
+/// 获取本机 MAC 地址
+fn get_mac_address() -> Option<String> {
+    // 读取 /sys/class/net/*/address (Linux) 或通过网络接口获取
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_dir("/sys/class/net").ok()?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name != "lo" && !name.starts_with("docker") && !name.starts_with("br-")
+            })
+            .filter_map(|entry| {
+                let path = entry.path().join("address");
+                std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+            })
+            .next()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 通过 ipconfig /all 获取
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("ipconfig")
+            .args(["/all"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()
+            .and_then(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout.lines()
+                    .find(|line| line.contains("Physical Address") || line.contains("物理地址"))
+                    .and_then(|line| {
+                        line.split(':').last().map(|s| s.trim().replace('-', ":"))
+                    })
+            })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 /// 静默下载 ip2region_v4.xdb 到二进制同目录，完成后自动加载到内存
 /// 前端通过 listen("ip-db-download-progress") 监听进度 {percent, downloaded, total}
 #[tauri::command]
