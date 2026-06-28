@@ -388,9 +388,22 @@ fn execute_device_ssh(
             let user_flag = if !db_username.is_empty() {
                 format!(" -U '{}'", crate::commands::devices::shell_quote_single(&db_username))
             } else { String::new() };
+            // 强制 TCP 连接避免 Unix socket + peer 认证（peer 忽略 PGPASSWORD 导致密码错）
+            let host_flag = if cmd.contains(" -h ") || cmd.starts_with("-h ") {
+                ""
+            } else {
+                " -h localhost"
+            };
+            // 指定 postgres 维护库，避免 psql 默认尝试连接与用户名同名的库（通常不存在）
+            let db_flag = if cmd.contains(" -d ") || cmd.contains(" --dbname=") {
+                ""
+            } else {
+                " -d postgres"
+            };
             if cmd.starts_with("psql ") || cmd == "psql" {
                 let rest = cmd.strip_prefix("psql").unwrap_or(cmd);
-                format!("psql{uf}{rest}", uf = user_flag, rest = rest)
+                // 只插入主机/库名标志，不插入 -U（在用户标志后统一拼接）
+                format!("psql{host}{db}{uf}{rest}", host = host_flag, db = db_flag, uf = user_flag, rest = rest)
             } else {
                 cmd.to_string()
             }

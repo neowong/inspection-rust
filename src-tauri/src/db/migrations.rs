@@ -906,6 +906,16 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 33: {}", e))?;
     }
 
+    // ── v34: 清理 Linux 厂商中耦合 docker/podman 前缀的命令 ──
+    // docker ps / podman ps 已从种子数据移除，但已有数据库可能存留。
+    if version < 34 {
+        conn.execute_batch(
+            "DELETE FROM command_pool WHERE vendor = 'Linux' AND (command LIKE 'docker %' OR command LIKE 'podman %');"
+        ).map_err(|e| format!("migration 34: {}", e))?;
+        conn.execute_batch("PRAGMA user_version = 34;")
+            .map_err(|e| format!("migration 34: {}", e))?;
+    }
+
     Ok(())
 }
 
