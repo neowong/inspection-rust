@@ -227,8 +227,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("MySQL", "mysql -e \"SELECT user, host, plugin FROM mysql.user\"", "用户认证方式列表", "security", 0),
         ("MySQL", "mysql -e 'SHOW VARIABLES LIKE \"innodb_flush_log_at_trx_commit\"'", "事务提交刷盘策略", "general", 0),
         // ==================== PostgreSQL ====================
-        ("PostgreSQL", "psql --version", "PostgreSQL 版本", "version", 0),
-        ("PostgreSQL", "psql -c 'SELECT version()'", "PostgreSQL 详细版本", "version", 0),
+        ("PostgreSQL", "psql --version", "psql 客户端版本", "version", 0),
+        ("PostgreSQL", "psql -c 'SELECT version()'", "PostgreSQL 服务端版本", "version", 0),
         ("PostgreSQL", "psql -c 'SELECT pid, usename, application_name, client_addr, state, now()-xact_start AS xact_age FROM pg_stat_activity WHERE state != $$idle$$'", "当前活跃查询", "general", 0),
         ("PostgreSQL", "psql -c 'SELECT count(*) AS total_connections FROM pg_stat_activity'", "当前连接总数", "general", 0),
         ("PostgreSQL", "psql -c \"SELECT state, count(*) FROM pg_stat_activity GROUP BY state\"", "连接状态分布", "general", 0),
