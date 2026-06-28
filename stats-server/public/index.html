@@ -12,6 +12,15 @@
       background: #f5f5f5;
       color: #333;
     }
+    /* 初始隐藏，避免 token 校验时的登录框闪烁 */
+    #loginPage, #dashboardPage { display: none; }
+    .loading-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
     .login-container {
       display: flex;
       justify-content: center;
@@ -224,6 +233,10 @@
   </style>
 </head>
 <body>
+  <!-- 加载中 -->
+  <div id="loadingPage" class="loading-container">
+    <p style="color:#999;font-size:16px;">加载中...</p>
+  </div>
   <!-- 登录页面 -->
   <div id="loginPage" class="login-container">
     <div class="login-box">
@@ -380,14 +393,18 @@
         const res = await fetch(`${API_BASE}/api/verify`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-
         if (res.ok) {
+          document.getElementById('loadingPage').style.display = 'none';
           showDashboard();
         } else {
+          document.getElementById('loadingPage').style.display = 'none';
+          document.getElementById('loginPage').style.display = 'flex';
           localStorage.removeItem('token');
           localStorage.removeItem('username');
         }
       } catch (err) {
+        document.getElementById('loadingPage').style.display = 'none';
+        document.getElementById('loginPage').style.display = 'flex';
         localStorage.removeItem('token');
         localStorage.removeItem('username');
       }
