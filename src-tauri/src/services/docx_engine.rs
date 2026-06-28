@@ -1113,7 +1113,7 @@ fn text_cell(text: &str, width: usize, fill: Option<&str>) -> TableCell {
 /// 1. 裸命令回显（`display version`）
 /// 2. 带提示符前缀的回显（`<sysname>display version`）
 /// 3. 容器部署的多行回显（`docker exec ...` + `mysql -e ...`）
-/// 4. 包安装带环境变量前缀（`MYSQL_PWD='xxx' mysql -e ...`）
+/// 4. 包安装带环境变量前缀 + 执行引擎注入的参数（`PGPASSWORD='xxx' psql -U 'root' -h localhost -d postgres -c "SELECT..."`）
 /// 报告随后会用 `prompt + cmd` 重新生成首行，故此处必须剥离，否则会出现重复命令行。
 fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
     let mut remaining: Vec<&str> = output.lines().collect();
@@ -1127,28 +1127,63 @@ fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
         }
     }
 
-    // 跳过裸命令或带提示符前缀的回显行（含环境变量前缀的情况）
+    // 跳过裸命令或带前缀的回显行
     if let Some(first) = remaining.first() {
         let first_t = first.trim();
-        let after_prompt = first_t
+        let mut after_strip = first_t
             .strip_prefix(prompt.trim())
             .unwrap_or(first_t)
             .trim_start();
-        // 去掉 MYSQL_PWD='xxx' / PGPASSWORD='xxx' 前缀后再比较
-        let after_env = if after_env_starts_with_env_var(after_prompt) {
-            strip_env_var_prefix(after_prompt)
-        } else {
-            after_prompt
-        };
+        // 1) 去掉 MYSQL_PWD='xxx' / PGPASSWORD='xxx' 环境变量前缀
+        if after_env_starts_with_env_var(after_strip) {
+            after_strip = strip_env_var_prefix(after_strip);
+        }
+        // 2) 去掉执行引擎注入的认证/连接参数（-U 'user' / -u'user' / -h localhost / -d postgres / -p port）
+        //    这样 after_strip 才能匹配回原始裸命令
+        after_strip = strip_injected_auth_flags(after_strip);
         if first_t.eq_ignore_ascii_case(cmd_t)
-            || after_prompt.eq_ignore_ascii_case(cmd_t)
-            || after_env.eq_ignore_ascii_case(cmd_t)
+            || after_strip.eq_ignore_ascii_case(cmd_t)
         {
             remaining.remove(0);
         }
     }
 
     remaining.join("\n")
+}
+
+/// 去掉执行引擎注入的数据库认证/连接参数，使回显命令行可与原始裸命令匹配。
+/// 注入参数包括：-U 'user' / -u'user' / -h localhost / -d postgres / -p port
+fn strip_injected_auth_flags<'a>(s: &'a str) -> &'a str {
+    let mut result = s.trim_start();
+    loop {
+        let before = result;
+        result = result
+            // PostgreSQL: -U 'username' 或 -U "username"
+            .trim_start()
+            .strip_prefix("-U '").and_then(|r| r.find('\'').map(|i| &r[i+1..]))
+            .or_else(|| result.trim_start().strip_prefix("-U \"").and_then(|r| r.find('"').map(|i| &r[i+1..])))
+            // MySQL: -u'username'
+            .or_else(|| result.trim_start().strip_prefix("-u'").and_then(|r| r.find('\'').map(|i| &r[i+1..])))
+            // -h localhost / -d postgres / -d dbname / -p port
+            .or_else(|| result.trim_start().strip_prefix("-h localhost").map(|r| r.trim_start()))
+            .or_else(|| result.trim_start().strip_prefix("-d ").and_then(|r| {
+                // 吃掉后面的一个标识符（不含空格引号）
+                let rest = r.trim_start();
+                if rest.is_empty() { return None; }
+                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+                if end == 0 { None } else { Some(&rest[end..]) }
+            }))
+            .or_else(|| result.trim_start().strip_prefix("-p ").and_then(|r| {
+                let rest = r.trim_start();
+                if rest.is_empty() { return None; }
+                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+                if end == 0 { None } else { Some(&rest[end..]) }
+            }))
+            .unwrap_or(result);
+        if result.len() == before.len() { break; }
+        result = result.trim_start();
+    }
+    result
 }
 
 /// 检查字符串是否以 KEY='VALUE' 或 KEY=VALUE 环境变量前缀开头
