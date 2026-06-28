@@ -90,12 +90,17 @@ db.serialize(() => {
       content TEXT NOT NULL,
       contact TEXT,
       version TEXT,
+      os TEXT,
+      os_version TEXT,
       ip TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_feedbacks_created ON feedbacks(created_at)`);
+  // 兼容旧表：添加 os/os_version 列
+  db.run(`ALTER TABLE feedbacks ADD COLUMN os TEXT`, () => {});
+  db.run(`ALTER TABLE feedbacks ADD COLUMN os_version TEXT`, () => {});
 
   // 创建管理员账户（必须通过环境变量设置密码）
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -304,7 +309,7 @@ app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
 
 // 提交反馈（无需认证，限流 + 输入校验）
 app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, res) => {
-  const { device_id, feedback_type, title, content, contact, version } = req.body;
+  const { device_id, feedback_type, title, content, contact, version, os, os_version } = req.body;
 
   if (!feedback_type || !title || !content) {
     return res.status(400).json({ error: '反馈类型、标题和内容不能为空' });
@@ -320,10 +325,11 @@ app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, re
   }
 
   db.run(
-    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version, os, os_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [String(device_id || '').slice(0, 128), feedback_type,
      String(title).slice(0, 200), String(content).slice(0, 5000),
-     contact ? String(contact).slice(0, 200) : null, String(version || '').slice(0, 32)],
+     contact ? String(contact).slice(0, 200) : null, String(version || '').slice(0, 32),
+     String(os || '').slice(0, 32), String(os_version || '').slice(0, 64)],
     (err) => {
       if (err) {
         console.error('记录反馈失败:', err);
@@ -338,7 +344,7 @@ app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, re
 app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   db.all(
-    `SELECT id, device_id, feedback_type, title, content, contact, version, created_at
+    `SELECT id, device_id, feedback_type, title, content, contact, version, os, os_version, created_at
      FROM feedbacks
      ORDER BY created_at DESC
      LIMIT ?`,
