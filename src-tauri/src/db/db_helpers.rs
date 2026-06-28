@@ -50,3 +50,9 @@ impl DynamicUpdate {
         self.set_parts.is_empty()
     }
 }
+
+/// 将 `Vec<Box<dyn ToSql>>` 转为 `Vec<&dyn ToSql>`，消除代码中重复的
+/// `params.iter().map(|p| p.as_ref()).collect::<Vec<_>>()` 样板代码。
+pub fn boxed_params(params: &[Box<dyn ToSql>]) -> Vec<&dyn ToSql> {
+    params.iter().map(|p| p.as_ref()).collect()
+}

@@ -12,24 +12,27 @@ pub enum ExecMode {
     Exec,
 }
 
+/// 判断厂商是否为 Linux 系统（OS 层面，非数据库/网络设备）
+pub fn is_linux_vendor(vendor: &str) -> bool {
+    matches!(vendor.to_lowercase().as_str(),
+        "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux")
+}
+
+/// 判断厂商是否为数据库（需要注入认证信息、使用数据库客户端执行命令）
+pub fn is_db_vendor(vendor: &str) -> bool {
+    matches!(vendor.to_lowercase().as_str(),
+        "mysql" | "mariadb" | "postgresql" | "postgres" | "mongodb" | "redis" |
+        "oracle" | "sql" | "mssql" | "达梦")
+}
+
 /// 厂商行为配置
 pub struct VendorProfile {
     pub exec_mode: ExecMode,
 }
 
 /// 根据厂商名称获取对应的 VendorProfile
-///
-/// 匹配规则：精确匹配 → 小写模糊匹配 → 默认 Shell
 pub fn get_profile(vendor: &str) -> VendorProfile {
-    let lower = vendor.to_lowercase();
-    match lower.as_str() {
-        "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux" => {
-            VendorProfile {
-                exec_mode: ExecMode::Exec,
-            }
-        }
-        _ => VendorProfile {
-            exec_mode: ExecMode::Shell,
-        },
+    VendorProfile {
+        exec_mode: if is_linux_vendor(vendor) { ExecMode::Exec } else { ExecMode::Shell },
     }
 }

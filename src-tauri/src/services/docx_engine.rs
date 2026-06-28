@@ -1254,13 +1254,10 @@ fn device_prompt(device: &Device, _record: &InspectionRecord) -> String {
             }
         });
     let vendor_lower = device.vendor.to_lowercase();
-    let device_type_lower = device.device_type.to_lowercase();
     // Linux 服务器 / 数据库设备：按用户名决定 root(#) 或普通用户($)
-    let is_linux_like = matches!(
-        vendor_lower.as_str(),
-        "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux"
-    ) || device_type_lower == "database"   // 数据库设备运行在 Linux 上，使用 Linux 风格提示符
-        || matches!(vendor_lower.as_str(), "mysql" | "mariadb" | "postgresql" | "postgres" | "mongodb" | "redis");
+    let is_linux_like = crate::services::vendor_profile::is_linux_vendor(&device.vendor)
+        || device.device_type.to_lowercase() == "database"
+        || crate::services::vendor_profile::is_db_vendor(&device.vendor);
     if is_linux_like {
         let user = device
             .ssh_username

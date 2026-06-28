@@ -25,14 +25,19 @@ fn shell_quote_docker(val: &str) -> String {
 
 /// 脱敏命令字符串中的敏感信息（如 docker exec -e 中的密码、MYSQL_PWD 环境变量），用于进度显示和 DB 存储。
 fn sanitize_cmd_for_display(cmd: &str) -> String {
-    let mut result = cmd.to_string();
-    // 去掉 docker exec -e 'KEY=VALUE' 或 -e KEY=VALUE 模式
-    let re1 = regex::Regex::new(r#"-e\s+(?:'[^']*'|"[^"]*"|\S+)"#).unwrap();
-    result = re1.replace_all(&result, "-e ***").to_string();
-    // 去掉 MYSQL_PWD='xxx' 或 PGPASSWORD='xxx' 环境变量前缀
-    let re2 = regex::Regex::new(r#"(?:MYSQL_PWD|PGPASSWORD)=(?:'[^']*'|"[^"]*"|\S+)\s*"#).unwrap();
-    result = re2.replace_all(&result, "").to_string();
-    result
+    use std::sync::OnceLock;
+    static RE_DOCKER_E: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_ENV_PWD: OnceLock<regex::Regex> = OnceLock::new();
+    let re1 = RE_DOCKER_E.get_or_init(|| {
+        regex::Regex::new(r#"-e\s+(?:'[^']*'|"[^"]*"|\S+)"#).unwrap()
+    });
+    let re2 = RE_ENV_PWD.get_or_init(|| {
+        regex::Regex::new(r#"(?:MYSQL_PWD|PGPASSWORD)=(?:'[^']*'|"[^"]*"|\S+)\s*"#).unwrap()
+    });
+    // Cow 避免无匹配时多余的 to_string() 分配
+    let step1 = re1.replace_all(cmd, "-e ***");
+    let result = re2.replace_all(&step1, "");
+    result.into_owned()
 }
 
 #[derive(Debug, Clone)]
@@ -360,17 +365,12 @@ fn execute_device_ssh(
     let db_username = device.db_username.clone().unwrap_or_default();
     let db_vendor_lower = device.vendor.to_lowercase();
 
-    // OS 厂商的命令在宿主机执行，不进容器
-    let is_os_vendor = |v: &str| -> bool {
-        matches!(v.to_lowercase().as_str(), "linux" | "ubuntu" | "centos" | "rocky" | "debian" | "rhel" | "suse" | "fedora" | "almalinux")
-    };
-
     // 按命令的 vendor 和部署方式决定包装策略：
     // - OS 厂商命令 → 宿主机直接执行（不注入认证）
     // - 容器部署的数据库命令 → docker/podman exec 进容器，密码用 -e 传递
     // - 包安装的数据库命令 → 直接注入认证（MYSQL_PWD='xxx' mysql -u'root' ...）
     let wrap_for_deployment = |cmd: &str, cmd_vendor: &str| -> Result<String, String> {
-        if is_os_vendor(cmd_vendor) {
+        if crate::services::vendor_profile::is_linux_vendor(cmd_vendor) {
             return Ok(cmd.to_string());
         }
 
@@ -452,7 +452,7 @@ fn execute_device_ssh(
     let mut skipped_vendors: std::collections::HashSet<String> = std::collections::HashSet::new();
     {
         let db_vendors: Vec<&str> = commands.iter()
-            .filter(|c| !is_os_vendor(&c.vendor))
+            .filter(|c| !crate::services::vendor_profile::is_linux_vendor(&c.vendor))
             .map(|c| c.vendor.as_str())
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
@@ -520,7 +520,7 @@ fn execute_device_ssh(
     let mut skipped_commands: Vec<(String, String)> = Vec::new();
     let active_commands: Vec<&TemplateCommandSpec> = commands.iter()
         .filter(|c| {
-            if !is_os_vendor(&c.vendor) && skipped_vendors.contains(&c.vendor) {
+            if !crate::services::vendor_profile::is_linux_vendor(&c.vendor) && skipped_vendors.contains(&c.vendor) {
                 skipped_commands.push((c.command.clone(), c.vendor.clone()));
                 false
             } else {
@@ -738,20 +738,28 @@ pub fn get_batch(batch_id: i64, state: State<AppState>) -> Result<serde_json::Va
 
 /// 校验设备是否都配置了模板和 SSH 密码
 fn validate_devices_ready(conn: &rusqlite::Connection, device_ids: &[i64]) -> Result<(), String> {
+    if device_ids.is_empty() { return Ok(()); }
+    // 单次 IN() 查询替代 N 次单独查询
+    let placeholders: Vec<String> = device_ids.iter().enumerate()
+        .map(|(i, _)| format!("?{}", i + 1))
+        .collect();
+    let sql = format!(
+        "SELECT id, name, ip, ssh_password_encrypted FROM devices WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params: Vec<Box<dyn rusqlite::types::ToSql>> = device_ids.iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))
+    }).map_err(|e| e.to_string())?;
     let mut no_password: Vec<String> = Vec::new();
-    for &id in device_ids {
-        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-        if let Ok(Some(device)) =
-            crate::db::query::query_one(conn, &sql, rusqlite::params![id], device_from_row)
-        {
-            let has_pwd = device
-                .ssh_password_encrypted
-                .as_ref()
-                .map(|s| !s.is_empty())
-                .unwrap_or(false);
-            if !has_pwd {
-                no_password.push(format!("{} ({})", device.name, device.ip));
-            }
+    for row in rows {
+        let (name, ip, pwd) = row.map_err(|e| e.to_string())?;
+        if pwd.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+            no_password.push(format!("{} ({})", name, ip));
         }
     }
     if !no_password.is_empty() {
