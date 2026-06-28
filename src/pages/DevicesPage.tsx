@@ -566,28 +566,16 @@ export default function DevicesPage() {
           {
             key: "actions",
             header: "操作",
-            width: "180px",
+            width: "260px",
             noTruncate: true,
             render: (r) => (
-              <div className="flex" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="!px-1.5 !text-[11px]"
-                  loading={checkingIds.has(r.id)}
-                  onClick={() => handleCheckDevice(r)}
-                >
-                  {checkingIds.has(r.id) ? "中" : "检"}
+              <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                <Button size="sm" variant="ghost" loading={checkingIds.has(r.id)} onClick={() => handleCheckDevice(r)}>
+                  {checkingIds.has(r.id) ? "检测中" : "检测"}
                 </Button>
-                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => openEdit(r)}>
-                  编
-                </Button>
-                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => duplicateDevice(r)}>
-                  复
-                </Button>
-                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => setDeleteConfirm(r.id)}>
-                  删
-                </Button>
+                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button>
+                <Button size="sm" variant="ghost" onClick={() => duplicateDevice(r)}>复制</Button>
+                <Button size="sm" variant="ghost" onClick={() => setDeleteConfirm(r.id)}>删除</Button>
               </div>
             ),
           },
