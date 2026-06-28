@@ -1238,47 +1238,14 @@ async fn chat_with_ai(
     Ok("AI 对话已达到最大轮次，请简化请求或重试".to_string())
 }
 
-/// 静态信息检测冷却：同一设备 10 分钟内不重复触发（防止状态抖动反复 SSH）
-const STATIC_DETECT_COOLDOWN_SECS: i64 = 600;
-/// 进程内记录每设备最近一次静态检测时间戳（epoch 秒），用于冷却去重
-static LAST_STATIC_DETECT: std::sync::OnceLock<Mutex<std::collections::HashMap<i64, i64>>> =
-    std::sync::OnceLock::new();
-
-fn last_detect_map() -> &'static Mutex<std::collections::HashMap<i64, i64>> {
-    LAST_STATIC_DETECT.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-/// 原子化检查并标记：如果不在冷却期则标记并返回 true，否则返回 false
-fn try_mark_detected(device_id: i64, now_epoch: i64) -> bool {
-    let mut map = last_detect_map().lock();
-    if let Some(&last) = map.get(&device_id) {
-        if now_epoch - last < STATIC_DETECT_COOLDOWN_SECS {
-            return false; // 冷却期内，跳过
-        }
-    }
-    map.insert(device_id, now_epoch);
-    true
-}
-
-fn now_epoch() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-/// Background poller: TCP-connect each device's SSH port in parallel and update status.
-/// After status update, triggers static-info SSH detection for newly-online devices
-/// that don't yet have model/sysname (带冷却去重，防止状态抖动反复 SSH).
 fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     // Phase 1: read id/ip/port + model/sysname/status — model/sysname 用于跳过冗余 SSH，
     // status 用于判断是否变更（仅变更时写状态日志）
     #[allow(clippy::type_complexity)]
-    let devices: Vec<(i64, String, i64, Option<String>, Option<String>, String)> = {
+    let devices: Vec<(i64, String, i64, String)> = {
         let conn = db.lock();
         let mut stmt = match conn.prepare(
-            "SELECT id, ip, ssh_port, model, sysname, status FROM devices",
+            "SELECT id, ip, ssh_port, status FROM devices",
         ) {
             Ok(s) => s,
             Err(_) => return,
@@ -1289,9 +1256,7 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(3)?,
                 ))
             })
             .ok()
@@ -1309,21 +1274,16 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let online_count = std::sync::atomic::AtomicU32::new(0);
     let offline_count = std::sync::atomic::AtomicU32::new(0);
-    // Collect device IDs that came online and need static info detection
-    let needs_detect: Mutex<Vec<i64>> = Mutex::new(Vec::new());
     // 收集 (id, new_status, old_status)，scope 结束后一次性持锁批量更新，避免 try_lock 丢更新
     let results: Mutex<Vec<(i64, String, String)>> = Mutex::new(Vec::new());
 
     // 分批并发：每批 50 台，避免一次性创建过多 OS 线程
     std::thread::scope(|s| {
         for chunk in devices.chunks(50) {
-            for (id, ip, port, model, sysname, old_status) in chunk {
+            for (id, ip, port, old_status) in chunk {
             let online_ref = &online_count;
             let offline_ref = &offline_count;
-            let needs_detect = &needs_detect;
             let results = &results;
-            let has_static = model.as_ref().filter(|s| !s.is_empty()).is_some()
-                || sysname.as_ref().filter(|s| !s.is_empty()).is_some();
             let id = *id;
             let old_status = old_status.clone();
             s.spawn(move || {
@@ -1358,11 +1318,6 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
                 };
 
                 results.lock().push((id, new_status.to_string(), old_status));
-
-                // 在线且无静态信息的设备 → 标记待 SSH 采集
-                if new_status == "online" && !has_static {
-                    needs_detect.lock().push(id);
-                }
             });
         }
         }
@@ -1393,32 +1348,6 @@ fn poll_device_statuses(db: &Arc<parking_lot::Mutex<rusqlite::Connection>>) {
         offline_count.load(std::sync::atomic::Ordering::Relaxed),
     );
 
-    // Phase 2: 对需要采集静态信息的在线设备做后台 SSH 检测（带冷却去重）
-    // 每批最多 3 台并发，完成后再取下一批
-    let pending = needs_detect.lock();
-    if !pending.is_empty() {
-        let now = now_epoch();
-        let filtered: Vec<i64> = pending
-            .iter()
-            .filter(|id| try_mark_detected(**id, now))
-            .copied()
-            .collect();
-        let skipped = pending.len() - filtered.len();
-        tracing::info!(
-            "后台静态信息采集: {} 台需要检测，{} 台冷却中跳过（每批并发 3）",
-            filtered.len(), skipped
-        );
-        for chunk in filtered.chunks(3) {
-            std::thread::scope(|s| {
-                for id in chunk {
-                    let db = Arc::clone(db);
-                    s.spawn(move || {
-                        commands::devices::detect_static_info_if_missing(*id, &db);
-                    });
-                }
-            });
-        }
-    }
 }
 
 /// Load optional config from `inspection.toml` next to the exe.
