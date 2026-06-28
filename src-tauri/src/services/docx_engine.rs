@@ -1113,42 +1113,58 @@ fn text_cell(text: &str, width: usize, fill: Option<&str>) -> TableCell {
 /// 1. 裸命令回显（`display version`）
 /// 2. 带提示符前缀的回显（`<sysname>display version`）
 /// 3. 容器部署的多行回显（`docker exec ...` + `mysql -e ...`）
-/// 4. 包安装带环境变量前缀 + 执行引擎注入的参数（`PGPASSWORD='xxx' psql -U 'root' -h localhost -d postgres -c "SELECT..."`）
+/// 4. 包安装带环境变量前缀 + 注入参数 + 终端换行（`PGPASSWORD='xxx' psql -h localhost -d postgres -U 'root' -c "SELECT..."`）
 /// 报告随后会用 `prompt + cmd` 重新生成首行，故此处必须剥离，否则会出现重复命令行。
 fn strip_command_echo(output: &str, cmd: &str, prompt: &str) -> String {
-    let mut remaining: Vec<&str> = output.lines().collect();
+    let lines: Vec<&str> = output.lines().collect();
     let cmd_t = cmd.trim();
 
-    // 跳过容器 exec 回显行（如 `docker exec mysql sh -c '...'`）
-    if let Some(first) = remaining.first() {
-        let ft = first.trim();
+    let mut i = 0;
+
+    // 跳过容器 exec 回显行
+    if i < lines.len() {
+        let ft = lines[i].trim();
         if ft.starts_with("docker exec ") || ft.starts_with("podman exec ") || ft.starts_with("docker-compose exec ") {
-            remaining.remove(0);
+            i += 1;
         }
     }
 
-    // 跳过裸命令或带前缀的回显行
-    if let Some(first) = remaining.first() {
-        let first_t = first.trim();
-        let mut after_strip = first_t
+    // 跳过命令回显行：可能是多行（终端宽度换行），拼接后匹配
+    if i < lines.len() {
+        let first = lines[i].trim();
+        // 尝试拼接后续行（终端宽度截断的续行）
+        let mut joined = first.to_string();
+        let mut end = i + 1;
+        while end < lines.len() {
+            let next = lines[end].trim();
+            if next.is_empty() { end += 1; continue; }
+            // 续行不以提示符、环境变量、docker/podman 开头
+            if next.starts_with(prompt.trim()) { break; }
+            if after_env_starts_with_env_var(next) { break; }
+            if next.starts_with("docker ") || next.starts_with("podman ") { break; }
+            joined.push(' ');
+            joined.push_str(next);
+            end += 1;
+        }
+        // 剥离提示符 → 环境变量 → 注入参数
+        let mut stripped = joined
             .strip_prefix(prompt.trim())
-            .unwrap_or(first_t)
-            .trim_start();
-        // 1) 去掉 MYSQL_PWD='xxx' / PGPASSWORD='xxx' 环境变量前缀
-        if after_env_starts_with_env_var(after_strip) {
-            after_strip = strip_env_var_prefix(after_strip);
+            .unwrap_or(&joined)
+            .trim_start()
+            .to_string();
+        if after_env_starts_with_env_var(&stripped) {
+            stripped = strip_env_var_prefix(&stripped).to_string();
         }
-        // 2) 去掉执行引擎注入的认证/连接参数（-U 'user' / -u'user' / -h localhost / -d postgres / -p port）
-        //    这样 after_strip 才能匹配回原始裸命令
-        after_strip = strip_injected_auth_flags(after_strip);
-        if first_t.eq_ignore_ascii_case(cmd_t)
-            || after_strip.eq_ignore_ascii_case(cmd_t)
+        let stripped_ref = strip_injected_auth_flags(&stripped);
+        // 归一化空格后比较，容忍终端换行插入的空白
+        if first.eq_ignore_ascii_case(cmd_t)
+            || collapse_spaces(stripped_ref) == collapse_spaces(cmd_t)
         {
-            remaining.remove(0);
+            i = end;
         }
     }
 
-    remaining.join("\n")
+    lines[i..].join("\n")
 }
 
 /// 去掉执行引擎注入的数据库认证/连接参数，使回显命令行可与原始裸命令匹配。
@@ -1184,6 +1200,11 @@ fn strip_injected_auth_flags<'a>(s: &'a str) -> &'a str {
         result = result.trim_start();
     }
     result
+}
+
+/// 归一化空格：将连续空白压缩为单个空格，用于容忍终端换行插入的多余空格
+fn collapse_spaces(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// 检查字符串是否以 KEY='VALUE' 或 KEY=VALUE 环境变量前缀开头
