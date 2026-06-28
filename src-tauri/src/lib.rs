@@ -885,7 +885,7 @@ async fn execute_tool(
                 kernel_version: None,
             };
             tracing::info!("execute_tool update_device: device_id={}, name={:?}, parsed_args={}", device_id, data.name, args);
-            match commands::devices::update_device(device_id, data, state) {
+            match commands::devices::update_device(device_id, data, state).await {
                 Ok(d) => {
                     tracing::info!("execute_tool update_device 成功: id={}, name={}", d.id, d.name);
                     Ok(serde_json::json!({
@@ -927,7 +927,7 @@ async fn execute_tool(
                 db_port: None,
                 kernel_version: None,
             };
-            match commands::devices::create_device(data, state) {
+            match commands::devices::create_device(data, state).await {
                 Ok(d) => Ok(serde_json::json!({
                     "id": d.id, "name": d.name, "ip": d.ip, "device_type": d.device_type, "vendor": d.vendor, "status": d.status,
                 }).to_string()),

@@ -168,7 +168,7 @@ pub fn list_devices(
 
 /// 创建设备
 #[tauri::command]
-pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Device, String> {
+pub async fn create_device(data: DeviceCreate, state: State<'_, AppState>) -> Result<Device, String> {
     // 1. 验证 IP 地址
     validate_ip(&data.ip)?;
 
@@ -180,214 +180,222 @@ pub fn create_device(data: DeviceCreate, state: State<AppState>) -> Result<Devic
         validate_shell_identifier(u, "数据库用户名")?;
     }
 
-    let conn = state.db.lock();
+    let device = {
+        let conn = state.db.lock();
 
-    // 2. 检查名称和 IP 唯一性
-    check_unique(&conn, &data.name, &data.ip, &data.device_type, None)?;
+        // 2. 检查名称和 IP 唯一性
+        check_unique(&conn, &data.name, &data.ip, &data.device_type, None)?;
 
-    // 3. 加密 SSH 密码（如果提供）
-    let encrypted_password = match data.ssh_password_encrypted {
-        Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
-        _ => None,
+        // 3. 加密 SSH 密码（如果提供）
+        let encrypted_password = match data.ssh_password_encrypted {
+            Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
+            _ => None,
+        };
+        // 3b. 加密数据库密码（如果提供）
+        let encrypted_db_password = match data.db_password_encrypted {
+            Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
+            _ => None,
+        };
+
+        let ssh_port = validate_port(data.ssh_port.unwrap_or(22))?;
+        let db_port = validate_port(data.db_port.unwrap_or(3306))?;
+        let status = data.status.as_deref().unwrap_or("unknown");
+
+        // 4. 插入数据库
+        conn.execute(
+            "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            rusqlite::params![
+                data.name,
+                data.ip,
+                data.device_type,
+                data.vendor,
+                data.model,
+                data.ssh_username,
+                encrypted_password,
+                i64::from(ssh_port),
+                data.template_id,
+                status,
+                data.last_checked_at,
+                data.serial_number,
+                data.manufacturing_date,
+                data.sysname,
+                data.cpu_cores,
+                data.memory_gb,
+                data.deployment,
+                data.db_version,
+                data.instance_name,
+                data.db_username,
+                encrypted_db_password,
+                i64::from(db_port),
+                data.kernel_version,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let last_id = conn.last_insert_rowid();
+
+        // 5. 返回新创建的设备
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        crate::db::query::query_one(&conn, &sql, rusqlite::params![last_id], device_from_row)?
+            .ok_or_else(|| "创建设备后查询失败".to_string())?
     };
-    // 3b. 加密数据库密码（如果提供）
-    let encrypted_db_password = match data.db_password_encrypted {
-        Some(ref pass) if !pass.is_empty() => Some(CryptoService::encrypt(pass)?),
-        _ => None,
-    };
 
-    let ssh_port = validate_port(data.ssh_port.unwrap_or(22))?;
-    let db_port = validate_port(data.db_port.unwrap_or(3306))?;
-    let status = data.status.as_deref().unwrap_or("unknown");
+    // 6. 后台获取静态信息（不阻塞 UI 返回）
+    let device_id = device.id;
+    let db = state.db.clone();
+    tokio::spawn(async move {
+        tokio::task::spawn_blocking(move || {
+            detect_static_info_if_missing(device_id, &db);
+        }).await.ok();
+    });
 
-    // 4. 插入数据库
-    conn.execute(
-        "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, status, last_checked_at, serial_number, manufacturing_date, sysname, cpu_cores, memory_gb, deployment, db_version, instance_name, db_username, db_password_encrypted, db_port, kernel_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
-        rusqlite::params![
-            data.name,
-            data.ip,
-            data.device_type,
-            data.vendor,
-            data.model,
-            data.ssh_username,
-            encrypted_password,
-            i64::from(ssh_port),
-            data.template_id,
-            status,
-            data.last_checked_at,
-            data.serial_number,
-            data.manufacturing_date,
-            data.sysname,
-            data.cpu_cores,
-            data.memory_gb,
-            data.deployment,
-            data.db_version,
-            data.instance_name,
-            data.db_username,
-            encrypted_db_password,
-            i64::from(db_port),
-            data.kernel_version,
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let last_id = conn.last_insert_rowid();
-
-    // 5. 返回新创建的设备
-    let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    crate::db::query::query_one(&conn, &sql, rusqlite::params![last_id], device_from_row)?
-        .ok_or_else(|| "创建设备后查询失败".to_string())
+    Ok(device)
 }
 
 /// 更新设备信息
 #[tauri::command]
-pub fn update_device(
+pub async fn update_device(
     device_id: i64,
     data: DeviceUpdate,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Device, String> {
-    let conn = state.db.lock();
+    let (device, need_redetect) = {
+        let conn = state.db.lock();
 
-    // 验证设备存在
-    let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    let existing =
-        crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
-            .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
+        // 验证设备存在
+        let sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        let existing =
+            crate::db::query::query_one(&conn, &sql, rusqlite::params![device_id], device_from_row)?
+                .ok_or_else(|| format!("设备 ID {} 不存在", device_id))?;
 
-    // 验证 IP（如果提供）
-    if let Some(ref ip) = data.ip {
-        validate_ip(ip)?;
-    }
+        // 验证 IP（如果提供）
+        if let Some(ref ip) = data.ip {
+            validate_ip(ip)?;
+        }
+        if let Some(port) = data.ssh_port {
+            validate_port(port)?;
+        }
+        if let Some(port) = data.db_port {
+            validate_port(port)?;
+        }
+        if let Some(ref n) = data.instance_name {
+            validate_shell_identifier(n, "容器/实例名")?;
+        }
+        if let Some(ref u) = data.db_username {
+            validate_shell_identifier(u, "数据库用户名")?;
+        }
 
-    // 验证 SSH 端口（如果提供）
-    if let Some(port) = data.ssh_port {
-        validate_port(port)?;
-    }
-    // 验证数据库端口（如果提供）
-    if let Some(port) = data.db_port {
-        validate_port(port)?;
-    }
+        // 检查唯一性
+        let new_name = data.name.as_deref().unwrap_or(&existing.name);
+        let new_ip = data.ip.as_deref().unwrap_or(&existing.ip);
+        if data.name.is_some() || data.ip.is_some() {
+            let device_type = data.device_type.as_deref().unwrap_or(&existing.device_type);
+            check_unique(&conn, new_name, new_ip, device_type, Some(device_id))?;
+        }
 
-    // 校验会被拼入远端 shell 的标识符（防止命令注入）
-    if let Some(ref n) = data.instance_name {
-        validate_shell_identifier(n, "容器/实例名")?;
-    }
-    if let Some(ref u) = data.db_username {
-        validate_shell_identifier(u, "数据库用户名")?;
-    }
+        let mut updater = crate::db::db_helpers::DynamicUpdate::new();
+        updater.push_opt("name", &data.name);
+        updater.push_opt("ip", &data.ip);
+        updater.push_opt("device_type", &data.device_type);
+        updater.push_opt("vendor", &data.vendor);
+        updater.push_opt("model", &data.model);
+        updater.push_opt("ssh_username", &data.ssh_username);
+        updater.push_opt("ssh_port", &data.ssh_port);
+        updater.push_opt("template_id", &data.template_id);
+        updater.push_opt("status", &data.status);
+        updater.push_opt("last_checked_at", &data.last_checked_at);
+        updater.push_opt("serial_number", &data.serial_number);
+        updater.push_opt("manufacturing_date", &data.manufacturing_date);
+        updater.push_opt("sysname", &data.sysname);
+        updater.push_opt("cpu_cores", &data.cpu_cores);
+        updater.push_opt("memory_gb", &data.memory_gb);
+        updater.push_opt("deployment", &data.deployment);
+        updater.push_opt("db_version", &data.db_version);
+        updater.push_opt("instance_name", &data.instance_name);
+        updater.push_opt("db_username", &data.db_username);
+        updater.push_opt("db_port", &data.db_port);
+        updater.push_opt("kernel_version", &data.kernel_version);
 
-    // 检查唯一性（如果名称或 IP 变更）
-    let new_name = data.name.as_deref().unwrap_or(&existing.name);
-    let new_ip = data.ip.as_deref().unwrap_or(&existing.ip);
-    if data.name.is_some() || data.ip.is_some() {
-        let device_type = data.device_type.as_deref().unwrap_or(&existing.device_type);
-        check_unique(&conn, new_name, new_ip, device_type, Some(device_id))?;
-    }
-
-    // 构建动态 UPDATE
-    let mut updater = crate::db::db_helpers::DynamicUpdate::new();
-    updater.push_opt("name", &data.name);
-    updater.push_opt("ip", &data.ip);
-    updater.push_opt("device_type", &data.device_type);
-    updater.push_opt("vendor", &data.vendor);
-    updater.push_opt("model", &data.model);
-    updater.push_opt("ssh_username", &data.ssh_username);
-    updater.push_opt("ssh_port", &data.ssh_port);
-    updater.push_opt("template_id", &data.template_id);
-    updater.push_opt("status", &data.status);
-    updater.push_opt("last_checked_at", &data.last_checked_at);
-    updater.push_opt("serial_number", &data.serial_number);
-    updater.push_opt("manufacturing_date", &data.manufacturing_date);
-    updater.push_opt("sysname", &data.sysname);
-    updater.push_opt("cpu_cores", &data.cpu_cores);
-    updater.push_opt("memory_gb", &data.memory_gb);
-    updater.push_opt("deployment", &data.deployment);
-    updater.push_opt("db_version", &data.db_version);
-    updater.push_opt("instance_name", &data.instance_name);
-    updater.push_opt("db_username", &data.db_username);
-    updater.push_opt("db_port", &data.db_port);
-    updater.push_opt("kernel_version", &data.kernel_version);
-    if let Some(ref pass) = data.db_password_encrypted {
-        if !pass.is_empty() {
-            let enc = CryptoService::encrypt(pass)?;
-            updater.push_raw("db_password_encrypted", enc);
-            // 数据库密码变更后旧的 auth_status 失效，重置为 unknown 等待重新验证
+        if let Some(ref pass) = data.db_password_encrypted {
+            if !pass.is_empty() {
+                let enc = CryptoService::encrypt(pass)?;
+                updater.push_raw("db_password_encrypted", enc);
+                updater.push_raw("auth_status", "unknown".to_string());
+                updater.push_raw("auth_message", Option::<String>::None);
+            }
+        }
+        if let Some(ref pass) = data.ssh_password_encrypted {
+            if !pass.is_empty() {
+                let encrypted = CryptoService::encrypt(pass)?;
+                updater.push_raw("ssh_password_encrypted", encrypted);
+                updater.push_raw("auth_status", "unknown".to_string());
+                updater.push_raw("auth_message", Option::<String>::None);
+            }
+        }
+        if data.ssh_username.is_some() {
             updater.push_raw("auth_status", "unknown".to_string());
             updater.push_raw("auth_message", Option::<String>::None);
         }
-    }
 
-    // 处理密码加密
-    if let Some(ref pass) = data.ssh_password_encrypted {
-        if !pass.is_empty() {
-            let encrypted = CryptoService::encrypt(pass)?;
-            updater.push_raw("ssh_password_encrypted", encrypted);
-            // 密码变更后旧的 auth_status 失效，重置为 unknown 等待重新验证
+        let auth_changed = data.ssh_password_encrypted.is_some()
+            || data.ssh_username.is_some()
+            || data.db_password_encrypted.is_some()
+            || data.db_username.is_some()
+            || data.ip.is_some()
+            || data.ssh_port.is_some()
+            || data.db_port.is_some()
+            || data.deployment.is_some()
+            || data.vendor.is_some();
+        if auth_changed {
             updater.push_raw("auth_status", "unknown".to_string());
             updater.push_raw("auth_message", Option::<String>::None);
+            updater.push_raw("sysname", Option::<String>::None);
+            updater.push_raw("model", Option::<String>::None);
+            updater.push_raw("serial_number", Option::<String>::None);
+            updater.push_raw("manufacturing_date", Option::<String>::None);
+            updater.push_raw("cpu_cores", Option::<i64>::None);
+            updater.push_raw("memory_gb", Option::<i64>::None);
+            updater.push_raw("kernel_version", Option::<String>::None);
+            updater.push_raw("db_version", Option::<String>::None);
+            updater.push_raw("instance_name", Option::<String>::None);
         }
+
+        if updater.is_empty() {
+            return Ok(existing);
+        }
+
+        updater.push_raw("updated_at", now_str());
+
+        let (set_parts, mut params) = updater.finish();
+        let idx = params.len() as i32 + 1;
+        let update_sql = format!(
+            "UPDATE devices SET {} WHERE id = ?{}",
+            set_parts.join(", "), idx
+        );
+        params.push(Box::new(device_id));
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        conn.execute(&update_sql, param_refs.as_slice())
+            .map_err(|e| e.to_string())?;
+
+        let query_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
+        let device = crate::db::query::query_one(
+            &conn, &query_sql, rusqlite::params![device_id], device_from_row,
+        )?
+        .ok_or_else(|| format!("更新后查询设备 ID {} 失败", device_id))?;
+        (device, auth_changed)
+    }; // 释放 DB 锁
+
+    // 凭据变更后立即后台获取静态信息，不等 60s 轮询
+    if need_redetect {
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                detect_static_info_if_missing(device_id, &db);
+            }).await.ok();
+        });
     }
-    // 用户名变更也重置 auth_status
-    if data.ssh_username.is_some() {
-        updater.push_raw("auth_status", "unknown".to_string());
-        updater.push_raw("auth_message", Option::<String>::None);
-    }
 
-    // 静态信息相关字段变更时清除已缓存的旧数据，下次检测时重新获取
-    let auth_changed = data.ssh_password_encrypted.is_some()
-        || data.ssh_username.is_some()
-        || data.db_password_encrypted.is_some()
-        || data.db_username.is_some()
-        || data.ip.is_some()
-        || data.ssh_port.is_some()
-        || data.db_port.is_some()
-        || data.deployment.is_some()
-        || data.vendor.is_some();
-    if auth_changed {
-        updater.push_raw("auth_status", "unknown".to_string());
-        updater.push_raw("auth_message", Option::<String>::None);
-        // 清除旧的静态信息，避免用错误凭据获取的数据持久化
-        updater.push_raw("sysname", Option::<String>::None);
-        updater.push_raw("model", Option::<String>::None);
-        updater.push_raw("serial_number", Option::<String>::None);
-        updater.push_raw("manufacturing_date", Option::<String>::None);
-        updater.push_raw("cpu_cores", Option::<i64>::None);
-        updater.push_raw("memory_gb", Option::<i64>::None);
-        updater.push_raw("kernel_version", Option::<String>::None);
-        updater.push_raw("db_version", Option::<String>::None);
-        updater.push_raw("instance_name", Option::<String>::None);
-    }
-
-    if updater.is_empty() {
-        return Ok(existing);
-    }
-
-    // 统一用 now_str()（Local 时间），与 create/check 等路径一致，避免 updated_at 时区不一致
-    updater.push_raw("updated_at", now_str());
-
-    let (set_parts, mut params) = updater.finish();
-    let idx = params.len() as i32 + 1;
-
-    let update_sql = format!(
-        "UPDATE devices SET {} WHERE id = ?{}",
-        set_parts.join(", "),
-        idx
-    );
-    params.push(Box::new(device_id));
-
-    let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    conn.execute(&update_sql, param_refs.as_slice())
-        .map_err(|e| e.to_string())?;
-
-    // 返回更新后的设备
-    let query_sql = format!("SELECT {} FROM devices WHERE id = ?1", DEVICE_COLUMNS);
-    crate::db::query::query_one(
-        &conn,
-        &query_sql,
-        rusqlite::params![device_id],
-        device_from_row,
-    )?
-    .ok_or_else(|| format!("更新后查询设备 ID {} 失败", device_id))
+    Ok(device)
 }
 
 /// 删除设备
