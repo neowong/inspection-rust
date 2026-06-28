@@ -557,7 +557,7 @@ pub fn run() {
             commands::inspections::retry_device,
             commands::inspections::delete_batch,
             commands::inspections::batch_delete_batches,
-            commands::inspections::batch_delete_record_reports,
+            commands::inspections::delete_batch_reports,
             // Reports & AI
             commands::reports::get_record,
             commands::reports::analyze_batch,
