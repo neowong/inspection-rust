@@ -1044,16 +1044,26 @@ async fn inspect_one_device(
         return Err((device_id, "巡检已停止".to_string()));
     }
 
-    // 读取数据
-    let (device, username, password, commands) = {
-        let conn = db.lock();
-        read_device_inspection_data(&conn, device_id).map_err(|e| (device_id, e))?
-    };
-
-    // 创建/重置记录
+    // 先创建记录（即使后续读取数据失败，记录也能留存错误信息）
     let record_id = {
         let conn = db.lock();
         create_or_reset_record(&conn, batch_id, device_id).map_err(|e| (device_id, e))?
+    };
+
+    // 读取数据
+    let (device, username, password, commands) = {
+        let conn = db.lock();
+        match read_device_inspection_data(&conn, device_id) {
+            Ok(data) => data,
+            Err(e) => {
+                // 将错误写入记录，让前端可查看
+                let _ = conn.execute(
+                    "UPDATE inspection_records SET status='failed', error_message=?1, updated_at=?2 WHERE id=?3",
+                    rusqlite::params![e, now_str(), record_id],
+                );
+                return Err((device_id, e));
+            }
+        }
     };
 
     if cancel.load(Ordering::Relaxed) {
