@@ -1575,28 +1575,29 @@ pub fn batch_delete_batches(ids: Vec<i64>, state: State<AppState>) -> Result<(),
     Ok(())
 }
 
-/// 批量删除巡检记录的报告文件（清除 report_path 并删除磁盘文件）。
+/// 删除整个批次的报告文件（逐个记录 report_path + 综合报告 combined_report_path）。
 #[tauri::command]
-pub fn batch_delete_record_reports(record_ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
-    if record_ids.is_empty() { return Ok(()); }
+pub fn delete_batch_reports(batch_id: i64, state: State<AppState>) -> Result<(), String> {
     let conn = state.db.lock();
-    let placeholders: Vec<String> = record_ids.iter().enumerate()
-        .map(|(i, _)| format!("?{}", i + 1)).collect();
-    let sql = format!(
-        "SELECT report_path FROM inspection_records WHERE id IN ({}) AND report_path IS NOT NULL AND report_path != ''",
-        placeholders.join(",")
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let params: Vec<Box<dyn rusqlite::types::ToSql>> = record_ids.iter()
-        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let paths: Vec<String> = stmt.query_map(param_refs.as_slice(), |r| r.get::<_, String>(0))
+    // 收集所有报告路径
+    let mut stmt = conn.prepare(
+        "SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''"
+    ).map_err(|e| e.to_string())?;
+    let mut paths: Vec<String> = stmt.query_map(rusqlite::params![batch_id], |r| r.get::<_, String>(0))
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok()).collect();
-    conn.execute(&format!(
-        "UPDATE inspection_records SET report_path = NULL WHERE id IN ({})",
-        placeholders.join(",")
-    ), param_refs.as_slice()).map_err(|e| e.to_string())?;
+    // 综合报告
+    if let Ok(p) = conn.query_row::<String, _, _>(
+        "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
+        rusqlite::params![batch_id], |r| r.get(0)
+    ) {
+        if !p.is_empty() { paths.push(p); }
+    }
+    // 清除 DB 中的路径
+    conn.execute("UPDATE inspection_records SET report_path = NULL WHERE batch_id = ?1", rusqlite::params![batch_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("UPDATE inspection_batches SET combined_report_path = NULL WHERE id = ?1", rusqlite::params![batch_id])
+        .map_err(|e| e.to_string())?;
     for path in &paths { crate::commands::reports::safe_remove_report(path); }
     Ok(())
 }
