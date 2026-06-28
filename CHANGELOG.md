@@ -1,35 +1,26 @@
 # 更新日志
 
-## v3.55.2 (2026-06-28)
+## v3.55.5 (2026-06-28)
 
 ### ✨ 新功能
 
-- **数据库客户端预检**：巡检执行前自动检测服务器是否安装数据库命令行工具（`psql`/`mysql`/`redis-cli` 等），未安装时跳过该厂商所有命令并标注 `[跳过]`，避免 N 条命令逐个失败
+- **运行时 OS 版本检测**：匿名统计上报的操作系统信息从编译期 `windows`/`linux` 升级为运行时精确版本（如 `Windows 11 Pro` / `Ubuntu 26.04`）
+- **数据库客户端预检**：巡检执行前 SSH exec 检测 `which psql/mysql/redis-cli` 等，未安装则跳过该厂商所有命令并标注 `[跳过]`，避免 N 条命令逐个失败
 
 ### 🐛 Bug 修复
 
+- **PostgreSQL SQL 命令密码认证失败**：`psql` 默认走 Unix socket + peer 认证忽略 `PGPASSWORD`，现已自动补 `-h localhost -d postgres` 强制 TCP 密码认证
 - **PostgreSQL 设备版本检测不准**：`db_version` 字段原用 `psql --version` 获取客户端版本，改为 `SELECT version()` 获取真实服务端版本
+- **报告命令回显剥离不完整**：SSH 回显行含 `-U/-u/-h/-d/-p` 等注入参数，与原始命令字串不匹配导致回显行未被剥离，报告中出现重复命令行
+- **数据库设备报告提示符错误**：`device_prompt()` 未识别数据库厂商，报告命令前缀显示 `<hostname>` 而非 Linux `[user@host ~]#`
+- **种子数据清理**：移除 Linux 厂商下 `docker ps`/`podman ps` 两条耦合命令（v34 迁移同步清理已有 DB）
 - **种子数据标签修正**：`psql --version` → "psql 客户端版本"，`SELECT version()` → "PostgreSQL 服务端版本"
-
-## v3.55.1 (2026-06-28)
-
-### 🐛 Bug 修复
-
-- **PostgreSQL SQL 命令密码认证失败**：`psql` 默认走 Unix socket + peer 认证，忽略 `PGPASSWORD` 环境变量导致密码错。现已自动补 `-h localhost -d postgres` 强制 TCP 密码认证
-- **数据库设备报告提示符错误**：报告命令前缀显示 `<hostname>`（网络设备风格）而非 Linux `[user@host ~]#`，因 `device_prompt()` 未识别数据库厂商。现已对 database 设备和 MySQL/PostgreSQL 等厂商使用 Linux 风格提示符
-- **种子数据残留 docker/podman 前缀命令**：移除 Linux 厂商下 `docker ps` / `podman ps` 两条耦合命令（v34 迁移同步清理已有 DB）
-
-## v3.55.0 (2026-06-28)
-
-### ✨ 新功能
-
-- **运行时 OS 版本检测**：匿名统计上报的操作系统信息从编译期 `windows`/`linux` 升级为运行时精确版本（如 `Windows 11 Pro` / `Ubuntu 26.04`），用于分版本优化兼容性
 
 ### 🔧 改进
 
-- **隐私说明**：匿名统计仅收集操作系统版本、软件版本号、匿名设备标识（机器名+MAC 的 SHA-256 哈希），**不收集** IP 地址、用户名、设备密码、巡检数据等任何敏感信息。数据仅用于问题定位和版本优化。
+- **隐私说明**：匿名统计仅收集 OS 版本、软件版本号、匿名设备 ID（SHA-256），不收集 IP、用户名、密码、巡检数据等。数据仅用于版本优化。
 
-> 💡 **如需完全离线使用**：可从 [GitHub Releases](https://github.com/neowong/inspection-rust/releases) 下载 **internal 版**（仅 Windows，不含统计上报功能，保留问题反馈）。
+> 💡 **如需完全离线使用**：可从 [GitHub Releases](https://github.com/neowong/inspection-rust/releases) 下载 **internal 版**（仅 Windows，不含统计上报，保留问题反馈）。
 
 ## v3.54.1 (2026-06-28)
 

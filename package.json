@@ -1,6 +1,6 @@
 {
   "name": "inspection-rust",
-  "version": "3.55.2",
+  "version": "3.55.5",
   "private": true,
   "type": "module",
   "scripts": {
