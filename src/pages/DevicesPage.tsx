@@ -526,13 +526,14 @@ export default function DevicesPage() {
               />
             ),
           },
-          { key: "name", header: "名称", render: (r) => r.name },
-          { key: "ip", header: "IP", render: (r) => r.ip },
-          { key: "vendor", header: "厂商", render: (r) => r.vendor },
-          { key: "model", header: "型号", render: (r) => r.model || "-" },
+          { key: "name", header: "名称", width: "100px", render: (r) => r.name },
+          { key: "ip", header: "IP", width: "105px", render: (r) => r.ip },
+          { key: "vendor", header: "厂商", width: "70px", render: (r) => r.vendor },
+          { key: "model", header: "型号", width: "90px", render: (r) => r.model || "-" },
           {
             key: "status",
             header: "状态",
+            width: "110px",
             noTruncate: true,
             render: (r) => {
               // 离线时只显示离线徽章——账号无法验证不算"账号错误"，避免误导
@@ -551,7 +552,7 @@ export default function DevicesPage() {
             },
           },
           {
-            key: "template_id", header: "关联模板", render: (r) => {
+            key: "template_id", header: "模板", width: "80px", render: (r) => {
               const t = templates.find((t) => t.id === r.template_id);
               return t ? t.name : "-";
             },
@@ -565,30 +566,27 @@ export default function DevicesPage() {
           {
             key: "actions",
             header: "操作",
-            width: "280px",
+            width: "180px",
             noTruncate: true,
             render: (r) => (
-              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+              <div className="flex" onClick={(e) => e.stopPropagation()}>
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="!px-1.5 !text-[11px]"
                   loading={checkingIds.has(r.id)}
                   onClick={() => handleCheckDevice(r)}
                 >
-                  {checkingIds.has(r.id) ? "检测中" : "检测"}
+                  {checkingIds.has(r.id) ? "中" : "检"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
-                  编辑
+                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => openEdit(r)}>
+                  编
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => duplicateDevice(r)}>
-                  复制
+                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => duplicateDevice(r)}>
+                  复
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setDeleteConfirm(r.id)}
-                >
-                  删除
+                <Button size="sm" variant="ghost" className="!px-1.5 !text-[11px]" onClick={() => setDeleteConfirm(r.id)}>
+                  删
                 </Button>
               </div>
             ),
