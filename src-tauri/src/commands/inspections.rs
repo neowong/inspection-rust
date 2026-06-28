@@ -1525,3 +1525,79 @@ pub fn delete_batch(batch_id: i64, state: State<AppState>) -> Result<(), String>
     Ok(())
 }
 
+/// 批量删除巡检任务及其关联记录和报告文件。
+#[tauri::command]
+pub fn batch_delete_batches(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
+    if ids.is_empty() { return Ok(()); }
+    let mut conn = state.db.lock();
+
+    for &id in &ids {
+        let status: Option<String> = conn
+            .query_row("SELECT status FROM inspection_batches WHERE id = ?1", rusqlite::params![id], |r| r.get(0))
+            .ok();
+        if status.as_deref() == Some("running") {
+            return Err(format!("巡检任务 #{} 正在运行中，请先停止后再删除", id));
+        }
+        if let Some(cancel) = state.batch_cancels.lock().get(&id) {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let mut report_files: Vec<String> = Vec::new();
+    let mut combined_paths: Vec<String> = Vec::new();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    for &id in &ids {
+        if let Ok(mut stmt) = tx.prepare(
+            "SELECT report_path FROM inspection_records WHERE batch_id = ?1 AND report_path IS NOT NULL AND report_path != ''"
+        ) {
+            report_files.extend(
+                stmt.query_map(rusqlite::params![id], |r| r.get::<_, String>(0))
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+            );
+        }
+        if let Ok(path) = tx.query_row::<String, _, _>(
+            "SELECT combined_report_path FROM inspection_batches WHERE id = ?1",
+            rusqlite::params![id], |r| r.get(0)
+        ) {
+            if !path.is_empty() { combined_paths.push(path); }
+        }
+        tx.execute("DELETE FROM inspection_records WHERE batch_id = ?1", rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM inspection_batches WHERE id = ?1", rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+
+    for path in &report_files { crate::commands::reports::safe_remove_report(path); }
+    for path in &combined_paths { crate::commands::reports::safe_remove_report(path); }
+    Ok(())
+}
+
+/// 批量删除巡检记录的报告文件（清除 report_path 并删除磁盘文件）。
+#[tauri::command]
+pub fn batch_delete_record_reports(record_ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
+    if record_ids.is_empty() { return Ok(()); }
+    let conn = state.db.lock();
+    let placeholders: Vec<String> = record_ids.iter().enumerate()
+        .map(|(i, _)| format!("?{}", i + 1)).collect();
+    let sql = format!(
+        "SELECT report_path FROM inspection_records WHERE id IN ({}) AND report_path IS NOT NULL AND report_path != ''",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params: Vec<Box<dyn rusqlite::types::ToSql>> = record_ids.iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let paths: Vec<String> = stmt.query_map(param_refs.as_slice(), |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok()).collect();
+    conn.execute(&format!(
+        "UPDATE inspection_records SET report_path = NULL WHERE id IN ({})",
+        placeholders.join(",")
+    ), param_refs.as_slice()).map_err(|e| e.to_string())?;
+    for path in &paths { crate::commands::reports::safe_remove_report(path); }
+    Ok(())
+}
+
