@@ -582,10 +582,26 @@ fn run_traceroute_stream(
     // 等待进程结束
     let status = child.wait().map_err(|e| format!("等待进程结束失败: {}", e))?;
     if !status.success() {
-        tracing::warn!("[trace_route] 退出码: {}", status);
+        // 退出码 2 通常是 DNS 解析失败，读 stderr 获取具体错误
+        let stderr_output = child.stderr.take()
+            .and_then(|s| {
+                let mut buf = String::new();
+                std::io::BufReader::new(s).read_line(&mut buf).ok().map(|_| buf)
+            })
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let msg = if stderr_output.is_empty() {
+            format!("路由跟踪失败（退出码 {}）", status.code().unwrap_or(-1))
+        } else {
+            format!("路由跟踪失败: {}", stderr_output)
+        };
+        tracing::warn!("[trace_route] {}", msg);
+        let _ = app.emit("trace-done", serde_json::json!({ "success": false }));
+        return Err(msg);
     }
 
     // 通知前端完成
-    let _ = app.emit("trace-done", serde_json::json!({ "success": status.success() }));
+    let _ = app.emit("trace-done", serde_json::json!({ "success": true }));
     Ok(())
 }

@@ -249,17 +249,17 @@ export default function ReportManagementPage() {
   );
 
   const recordColumns = useMemo(() => [
-    { key: "device", header: "设备", render: (r: any) => {
+    { key: "device", header: "设备", width: "200px", maxWidth: "300px", render: (r: any) => {
       const d = deviceMap.get(r.device_id);
       return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`;
     }},
-    { key: "status", header: "巡检状态", width: "w-24", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
-    { key: "ai_status", header: "AI", width: "w-20", render: (r: any) =>
+    { key: "status", header: "巡检状态", width: "90px", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+    { key: "ai_status", header: "AI", width: "80px", render: (r: any) =>
       r.ai_status === "completed" ? <span className="text-[hsl(var(--success))] text-xs font-medium">已完成</span>
         : r.ai_status === "processing" ? <span className="text-[hsl(var(--warning))] text-xs">分析中</span>
         : (r.ai_status === "none" || r.ai_status === "pending") ? "-" : r.ai_status
     },
-    { key: "report", header: "报告", width: "w-16", render: (r: any) =>
+    { key: "report", header: "报告", width: "70px", render: (r: any) =>
       r.report_path ? <span className="text-[hsl(var(--success))] text-xs">已生成</span> : "-" },
     { key: "actions", header: "操作", width: "120px", noTruncate: true,
       render: (r: any) => (

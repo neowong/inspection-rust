@@ -411,20 +411,26 @@ export default function TemplatesPage() {
           </Toolbar>
           <DataTable<InspectionTemplate>
             columns={[
-              { key: "name", header: "名称", render: (r) => r.name },
-              { key: "vendor", header: "厂商", render: (r) => r.vendor },
+              { key: "name", header: "名称", width: "200px", maxWidth: "300px", render: (r) => r.name },
+              { key: "vendor", header: "厂商", width: "80px", noTruncate: true, render: (r) => r.vendor },
               { key: "command_count", header: "命令数", width: "80px", render: (r) => String((r.config?.commands || []).length) },
-              { key: "report_template", header: "报告模板", width: "140px", render: (r) => {
+              { key: "report_template", header: "报告模板", width: "160px", maxWidth: "240px", render: (r) => {
                 const rt = reportTemplates.find(t => t.id === r.report_template_id);
                 return rt ? rt.name : <span className="text-[hsl(var(--text-tertiary))]">跟随默认</span>;
               }},
               { key: "description", header: "描述", wrap: true, render: (r) => r.description || "-" },
-              { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
-              { key: "actions", header: "操作", width: "210px", noTruncate: true, render: (r) => (
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" onClick={() => openEditTemplate(r)}>编辑</Button>
-                  <Button size="sm" variant="ghost" onClick={() => duplicateTemplate(r)}>复制</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)}>删除</Button>
+              { key: "updated_at", header: "更新时间", width: "160px", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
+              { key: "actions", header: "操作", width: "150px", noTruncate: true, render: (r) => (
+                <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                  <Button size="icon" variant="ghost" onClick={() => openEditTemplate(r)} title="编辑">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => duplicateTemplate(r)} title="复制">
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)} title="删除">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               )},
             ]}
@@ -474,24 +480,28 @@ export default function TemplatesPage() {
           </Toolbar>
           <DataTable<ReportTemplate>
             columns={[
-              { key: "name", header: "名称", render: (r) => (
+              { key: "name", header: "名称", width: "200px", maxWidth: "300px", render: (r) => (
                 <div className="flex items-center gap-1">
                   {r.is_default ? <Star size={12} className="text-[hsl(var(--warning))]" /> : null}
                   <span>{r.name}</span>
                 </div>
               )},
-              { key: "vendor", header: "厂商", render: (r) => r.vendor || "通用" },
+              { key: "vendor", header: "厂商", width: "80px", noTruncate: true, render: (r) => r.vendor || "通用" },
               { key: "description", header: "描述", wrap: true, render: (r) => r.description || "-" },
-              { key: "updated_at", header: "更新时间", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
-              { key: "actions", header: "操作", width: "200px", noTruncate: true, render: (r) => (
+              { key: "updated_at", header: "更新时间", width: "160px", render: (r) => new Date(r.updated_at).toLocaleString("zh-CN") },
+              { key: "actions", header: "操作", width: "180px", noTruncate: true, render: (r) => (
                 <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="ghost" onClick={() => openEditReport(r)}>编辑</Button>
                   {!r.is_default && (
                     <Button size="sm" variant="ghost" onClick={() => handleSetDefault(r.id)}>设为默认</Button>
                   )}
-                  <Button size="sm" variant="ghost" onClick={() => handleCopyReport(r)}><Copy size={12} /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => handleCopyReport(r)} title="复制">
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
                   {!r.is_default && (
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteReport(r.id)}><Trash2 size={12} /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteReport(r.id)} title="删除">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
               )},

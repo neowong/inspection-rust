@@ -9,6 +9,7 @@ import Button from "../components/ui/Button";
 import DataTable from "../components/DataTable";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
+import { Radio, Pencil, Trash2 } from "lucide-react";
 
 interface ConfigForm {
   name: string;
@@ -139,28 +140,28 @@ export default function SettingsPage() {
 
         <DataTable<AiModelConfig>
           columns={[
-            { key: "name", header: "名称", render: (r) => r.name },
-            { key: "provider", header: "API 格式", render: (r) => API_FORMATS.find(f => f.value === r.provider)?.label || r.provider },
-            { key: "model_id", header: "模型", render: (r) => r.model_id },
-            { key: "base_url", header: "Base URL", render: (r) => r.base_url || "-" },
+            { key: "name", header: "名称", width: "180px", maxWidth: "240px", render: (r) => r.name },
+            { key: "provider", header: "API 格式", width: "100px", noTruncate: true, render: (r) => API_FORMATS.find(f => f.value === r.provider)?.label || r.provider },
+            { key: "model_id", header: "模型", width: "160px", maxWidth: "240px", render: (r) => r.model_id },
+            { key: "base_url", header: "Base URL", width: "200px", maxWidth: "300px", render: (r) => r.base_url || "-" },
             {
               key: "is_active", header: "状态", width: "80px", render: (r) => (
                 <StatusBadge status={r.is_active ? "active" : "inactive"} />
               ),
             },
             {
-              key: "actions", header: "操作", width: "220px", render: (r) => (
+              key: "actions", header: "操作", width: "160px", noTruncate: true, render: (r) => (
                 <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="ghost"
                     loading={testing === r.id}
                     disabled={testing !== null}
-                    onClick={() => handleTest(r.id)}>测试</Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button>
+                    onClick={() => handleTest(r.id)} title="测试连接"><Radio size={14} /></Button>
+                  <Button size="sm" variant="ghost" onClick={() => openEdit(r)} title="编辑"><Pencil size={14} /></Button>
                   {r.is_active
                     ? <Button size="sm" variant="ghost" onClick={() => handleDeactivate(r.id)}>停用</Button>
                     : <Button size="sm" variant="ghost" onClick={() => handleActivate(r.id)}>激活</Button>
                   }
-                  <Button size="sm" variant="ghost" onClick={() => setDeleteConfirm(r.id)}>删除</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setDeleteConfirm(r.id)} title="删除"><Trash2 size={14} /></Button>
                 </div>
               ),
             },

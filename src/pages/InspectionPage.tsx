@@ -321,11 +321,11 @@ export default function InspectionPage() {
                 <h3 className="text-sm font-semibold mb-3">巡检记录 ({selectedBatch.records.length})</h3>
                 <DataTable
                   columns={[
-                    { key: "device", header:"设备", render: (r: any) => { const d = deviceMap.get(r.device_id); return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`; }},
-                    { key: "status", header:"巡检状态", width: "w-24", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
+                    { key: "device", header:"设备", width: "200px", maxWidth: "300px", render: (r: any) => { const d = deviceMap.get(r.device_id); return d ? <span>{d.name} <span className="text-[hsl(var(--text-tertiary))]">{d.ip}</span></span> : `#${r.device_id}`; }},
+                    { key: "status", header:"巡检状态", width: "90px", noTruncate: true, render: (r: any) => <StatusBadge status={batchStatusColor(r.status)} /> },
                     { key: "progress", header:"详情", wrap: true, render: (r: any) => (r.status === "failed" && r.error_message) ? <span className="text-xs text-[hsl(var(--danger))]">{r.error_message}</span> : r.status === "running" ? <span className="text-xs text-[hsl(var(--warning))]">执行中...</span> : r.status === "completed" ? <span className="text-xs text-[hsl(var(--text-secondary))]">{r.completed_at?.slice(0, 19) || "已完成"}</span> : <span className="text-xs text-[hsl(var(--text-secondary))]">{r.status}</span> },
                     {
-                      key: "actions", header:"操作", width: "w-24", noTruncate: true,
+                      key: "actions", header:"操作", width: "150px", noTruncate: true,
                       render: (r: any) => (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); setExpandedRecordId(r.id); }}>详情</Button>

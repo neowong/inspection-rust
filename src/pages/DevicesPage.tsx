@@ -13,6 +13,7 @@ import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
 import AuthBadge from "../components/AuthBadge";
+import { Radio, Pencil, Copy, Trash2 } from "lucide-react";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
@@ -526,10 +527,10 @@ export default function DevicesPage() {
               />
             ),
           },
-          { key: "name", header: "名称", width: "100px", render: (r) => r.name },
-          { key: "ip", header: "IP", width: "105px", render: (r) => r.ip },
-          { key: "vendor", header: "厂商", width: "70px", render: (r) => r.vendor },
-          { key: "model", header: "型号", width: "90px", render: (r) => r.model || "-" },
+          { key: "name", header: "名称", width: "160px", maxWidth: "240px", render: (r) => r.name },
+          { key: "ip", header: "IP", width: "140px", noTruncate: true, render: (r) => r.ip },
+          { key: "vendor", header: "厂商", width: "70px", noTruncate: true, render: (r) => r.vendor },
+          { key: "model", header: "型号", width: "160px", noTruncate: true, render: (r) => r.model || "-" },
           {
             key: "status",
             header: "状态",
@@ -537,7 +538,7 @@ export default function DevicesPage() {
             noTruncate: true,
             render: (r) => {
               // 离线时只显示离线徽章——账号无法验证不算"账号错误"，避免误导
-              // 在线时：账号正常/未验证 → 仅在线徽章；账号异常 → 在线 + 异常徽章
+              // 在线时：账号正常/未验证 → 仅在线徽章；账号异常 → 仅异常徽章（隐藏"在线"以免误导）
               const showAuth =
                 r.status === "online" &&
                 r.auth_status &&
@@ -545,14 +546,14 @@ export default function DevicesPage() {
                 r.auth_status !== "unknown";
               return (
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <StatusBadge status={r.status} />
+                  {!showAuth && <StatusBadge status={r.status} />}
                   {showAuth && <AuthBadge status={r.auth_status} message={r.auth_message} />}
                 </div>
               );
             },
           },
           {
-            key: "template_id", header: "模板", width: "80px", render: (r) => {
+            key: "template_id", header: "模板", width: "130px", maxWidth: "220px", render: (r) => {
               const t = templates.find((t) => t.id === r.template_id);
               return t ? t.name : "-";
             },
@@ -566,16 +567,22 @@ export default function DevicesPage() {
           {
             key: "actions",
             header: "操作",
-            width: "260px",
+            width: "150px",
             noTruncate: true,
             render: (r) => (
               <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-                <Button size="sm" variant="ghost" loading={checkingIds.has(r.id)} onClick={() => handleCheckDevice(r)}>
-                  {checkingIds.has(r.id) ? "检测中" : "检测"}
+                <Button size="icon" variant="ghost" loading={checkingIds.has(r.id)} onClick={() => handleCheckDevice(r)} title="检测连通性">
+                  {!checkingIds.has(r.id) && <Radio className="h-3.5 w-3.5" />}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>编辑</Button>
-                <Button size="sm" variant="ghost" onClick={() => duplicateDevice(r)}>复制</Button>
-                <Button size="sm" variant="ghost" onClick={() => setDeleteConfirm(r.id)}>删除</Button>
+                <Button size="icon" variant="ghost" onClick={() => openEdit(r)} title="编辑">
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => duplicateDevice(r)} title="复制">
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(r.id)} title="删除">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             ),
           },
