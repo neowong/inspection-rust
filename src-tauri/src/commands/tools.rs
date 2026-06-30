@@ -173,6 +173,12 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// 运行时获取操作系统版本字符串，用于匿名统计。
+fn os_version_string() -> String {
+    let info = os_info::get();
+    format!("{} {}", info.os_type(), info.version())
+}
+
 /// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
 #[tauri::command]
 pub fn get_os_info() -> serde_json::Value {
@@ -244,6 +250,53 @@ pub async fn check_update(
     } else {
         Ok(None)
     }
+}
+
+/// 匿名使用统计上报（静默，失败忽略）
+/// 统计内容：匿名 device_id、版本号、OS、时间戳
+/// 不收集 IP、用户名、设备数据等敏感信息
+/// 日志不写入本地文件（仅 debug 级别，RUST_LOG=debug 时才显示）
+/// 非前端 invoke，由 lib.rs 启动线程 block_on 调用
+pub async fn track_usage(version: String) -> Result<(), String> {
+    // 生成匿名 device_id：机器名 + MAC 地址的 SHA-256 哈希，不可逆
+    let device_id = {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mac = get_mac_address().unwrap_or_default();
+        let raw = format!("{}:{}", hostname, mac);
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let os = os_version_string();
+
+    let payload = serde_json::json!({
+        "device_id": &device_id,
+        "version": &version,
+        "os": os,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    // 统计接口地址
+    let api_url = "https://neowong.eu.org/stats/api/track";
+
+    // 仅 debug 级别日志，不写入本地日志文件
+    tracing::debug!("[track] device_id={}, version={}, os={}", device_id, version, os);
+
+    // 实际上报（静默，失败忽略）
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+    let _ = client.post(api_url)
+        .json(&payload)
+        .send()
+        .await;
+
+    Ok(())
 }
 
 /// 提交问题反馈到统计服务端（静默，失败忽略）

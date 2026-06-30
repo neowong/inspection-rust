@@ -451,6 +451,14 @@ pub fn run() {
             std::thread::sleep(std::time::Duration::from_secs(60));
         }
     });
+    // 启动后匿名统计上报（后台，不阻塞）
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2)); // 等网络就绪
+        let _ = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(commands::tools::track_usage(version));
+    });
 
     // 启动后立即触发一次所有缺静态信息设备的检测（server + database + 网络设备）
     // detect_static_info_if_missing 内部按已有信息/凭据判断是否真正执行，故全量遍历安全

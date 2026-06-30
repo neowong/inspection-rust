@@ -1,8 +1,9 @@
-name: Release (Windows Only)
+name: Release
 
 on:
   push:
     tags:
+      - "v*"
       - "internal-v*"
   workflow_dispatch:
 
@@ -43,3 +44,94 @@ jobs:
           releaseBody: "详见 [更新日志](./CHANGELOG.md)"
           releaseDraft: false
           prerelease: false
+
+  build-linux:
+    if: ${{ !startsWith(github.ref_name, 'internal-') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "AI巡检助手 ${{ github.ref_name }}"
+          releaseBody: "详见 [更新日志](./CHANGELOG.md)"
+          releaseDraft: false
+          prerelease: false
+
+  build-macos:
+    if: ${{ !startsWith(github.ref_name, 'internal-') }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri app (Universal)
+        run: npx tauri build --target universal-apple-darwin --bundles dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      - name: Find DMG
+        id: find-dmg
+        run: |
+          DMG=$(find src-tauri/target -name "*.dmg" | head -1)
+          echo "dmg_path=$DMG" >> $GITHUB_OUTPUT
+          echo "Found DMG: $DMG"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: src-tauri/target/**/bundle/dmg/*.dmg
+          if-no-files-found: warn
+
+      - name: Upload to Release
+        if: steps.find-dmg.outputs.dmg_path != ''
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ steps.find-dmg.outputs.dmg_path }}
