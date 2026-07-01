@@ -170,8 +170,15 @@ pub fn update_template(
     .ok_or_else(|| format!("更新后查询巡检模板 ID {} 失败", template_id))
 }
 
+/// 查询引用此模板的设备名称列表（前端在打开删除确认框前调用）
+#[tauri::command]
+pub fn check_template_devices(template_id: i64, state: State<AppState>) -> Result<Vec<String>, String> {
+    let conn = state.db.lock();
+    Ok(get_referencing_devices_inner(&conn, template_id))
+}
+
 /// 查询引用此模板的设备名称列表
-fn get_referencing_devices(conn: &rusqlite::Connection, template_id: i64) -> Vec<String> {
+fn get_referencing_devices_inner(conn: &rusqlite::Connection, template_id: i64) -> Vec<String> {
     let mut stmt = conn.prepare("SELECT name FROM devices WHERE template_id = ?1").ok();
     stmt.as_mut()
         .and_then(|s| {
@@ -193,7 +200,7 @@ pub struct DeleteTemplateResult {
 pub async fn delete_template(template_id: i64, state: State<'_, AppState>) -> Result<DeleteTemplateResult, String> {
     let conn = state.db.lock();
 
-    let devices = get_referencing_devices(&conn, template_id);
+    let devices = get_referencing_devices_inner(&conn, template_id);
     if !devices.is_empty() {
         let msg = format!(
             "该模板被 {} 台设备引用，无法删除：{}",
@@ -224,7 +231,7 @@ pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(
     let conn = state.db.lock();
     let mut blocked: Vec<String> = Vec::new();
     for id in &ids {
-        let devices = get_referencing_devices(&conn, *id);
+        let devices = get_referencing_devices_inner(&conn, *id);
         if !devices.is_empty() {
             // 获取模板名称
             let tpl_name: String = conn

@@ -86,6 +86,8 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(getEmptyTemplateForm());
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
+  const [deleteBlockedDevices, setDeleteBlockedDevices] = useState<string[]>([]);
+  const [deleteChecking, setDeleteChecking] = useState(false);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -492,7 +494,14 @@ export default function TemplatesPage() {
                   <Button size="icon" variant="ghost" onClick={() => duplicateTemplate(r)} title="复制">
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteTemplate(r.id)} title="删除">
+                  <Button size="icon" variant="ghost" onClick={() => {
+                    setConfirmDeleteTemplate(r.id);
+                    setDeleteBlockedDevices([]);
+                    setDeleteChecking(true);
+                    invoke<string[]>("check_template_devices", { templateId: r.id })
+                      .then(devs => { setDeleteBlockedDevices(devs); setDeleteChecking(false); })
+                      .catch(() => setDeleteChecking(false));
+                  }} title="删除">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -759,15 +768,32 @@ export default function TemplatesPage() {
         open={confirmDeleteTemplate !== null}
         title="确认删除"
         width="max-w-sm"
-        onClose={() => setConfirmDeleteTemplate(null)}
+        onClose={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}
         footer={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setConfirmDeleteTemplate(null)}>取消</Button>
-            <Button variant="danger" onClick={() => handleDeleteTemplate(confirmDeleteTemplate!)}>删除</Button>
+            <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}>取消</Button>
+            {deleteChecking ? (
+              <span className="text-xs text-[hsl(var(--text-secondary))] self-center">检查中...</span>
+            ) : deleteBlockedDevices.length > 0 ? (
+              <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}>知道了</Button>
+            ) : (
+              <Button variant="danger" onClick={() => handleDeleteTemplate(confirmDeleteTemplate!)}>删除</Button>
+            )}
           </div>
         }
       >
-        <p>确定要删除此模板吗？此操作不可恢复。</p>
+        {deleteChecking ? (
+          <p className="text-sm text-[hsl(var(--text-secondary))]">正在检查设备引用...</p>
+        ) : deleteBlockedDevices.length > 0 ? (
+          <div>
+            <p className="text-sm text-[hsl(var(--danger))] font-medium mb-2">无法删除：以下设备正在使用此模板</p>
+            <ul className="text-xs text-[hsl(var(--text-secondary))] list-disc list-inside space-y-1 max-h-32 overflow-y-auto">
+              {deleteBlockedDevices.map((name, i) => <li key={i}>{name}</li>)}
+            </ul>
+          </div>
+        ) : (
+          <p>确定要删除此模板吗？此操作不可恢复。</p>
+        )}
       </Modal>
 
       {/* ===== Command Modal ===== */}
