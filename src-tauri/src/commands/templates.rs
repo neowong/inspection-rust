@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tauri::State;
 use rusqlite::types::ToSql;
 
@@ -180,11 +181,17 @@ fn get_referencing_devices(conn: &rusqlite::Connection, template_id: i64) -> Vec
         .unwrap_or_default()
 }
 
+/// 删除巡检模板的返回结果
+#[derive(Debug, Serialize)]
+pub struct DeleteTemplateResult {
+    ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
 /// 删除巡检模板（检查设备引用）
-///
-/// 返回 `{ ok: true }` 或 `{ ok: false, error: "..." }`，避免 Tauri sync 命令 Err 不触发 JS reject 的问题
 #[tauri::command]
-pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<serde_json::Value, String> {
+pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<DeleteTemplateResult, String> {
     let conn = state.db.lock();
 
     let devices = get_referencing_devices(&conn, template_id);
@@ -195,7 +202,7 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<serde
             devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
         );
         tracing::warn!("[delete_template] template_id={} blocked: {}", template_id, msg);
-        return Ok(serde_json::json!({ "ok": false, "error": msg }));
+        return Ok(DeleteTemplateResult { ok: false, error: Some(msg) });
     }
 
     conn.execute(
@@ -205,7 +212,7 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<serde
     .map_err(|e| format!("删除模板失败: {}", e))?;
 
     tracing::info!("[delete_template] template_id={} 删除成功", template_id);
-    Ok(serde_json::json!({ "ok": true }))
+    Ok(DeleteTemplateResult { ok: true, error: None })
 }
 
 /// 批量删除巡检模板（检查设备引用）
