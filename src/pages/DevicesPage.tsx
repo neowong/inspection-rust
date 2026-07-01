@@ -952,18 +952,18 @@ export default function DevicesPage() {
           {/* 示例提示 */}
           <div className="p-2 bg-[hsl(var(--bg-hover))] rounded text-xs text-[hsl(var(--text-secondary))] leading-relaxed font-mono whitespace-pre">
             {importTab === "network" &&
-`# 必填：name / ip / type / vendor / ssh_username / template
-# ssh_password 可选（导入时不填则在编辑页面补填）
+`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
+# 其余可选：ssh_port / model / sysname 等
 name,ip,type,vendor,ssh_username,ssh_password,template
 核心交换机-01,10.0.1.1,交换机,H3C,admin,pass123,H3C基础巡检`}
             {importTab === "server" &&
-`# 必填：name / ip / type / vendor / ssh_username / template
-# ssh_password 可选
+`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
+# 其余可选：ssh_port / kernel_version 等
 name,ip,type,vendor,ssh_username,ssh_password,template
 Web服务器,10.0.2.10,服务器,Linux,root,root123,Linux通用`}
             {importTab === "database" &&
-`# 必填：name / ip / type / vendor / ssh_username / template
-# 可选：ssh_password / deployment / instance_name / db_username / db_port 等
+`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
+# 其余可选：deployment / instance_name / db_username / db_port 等
 name,ip,type,vendor,ssh_username,ssh_password,template
 MySQL主库,10.0.3.1,数据库,MySQL,root,dbpass456,MySQL巡检`}
           </div>

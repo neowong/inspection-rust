@@ -2023,7 +2023,7 @@ pub async fn import_devices_csv(
         (map, 0)
     };
 
-    for required in &["name", "ip", "type", "vendor"] {
+    for required in &["name", "ip", "type", "vendor", "ssh_password"] {
         if !col_map.contains_key(required) {
             return Err(format!("CSV 缺少必要列: {}", required));
         }
@@ -2087,7 +2087,13 @@ pub async fn import_devices_csv(
 
         let ssh_username = get(&col_map, &fields, "ssh_username").unwrap_or_default();
         let ssh_port: i64 = get(&col_map, &fields, "ssh_port").and_then(|v| v.parse().ok()).unwrap_or(22);
-        let ssh_password = get(&col_map, &fields, "ssh_password").unwrap_or_default();
+        let ssh_password = match get(&col_map, &fields, "ssh_password") {
+            Some(p) => p,
+            None => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: name.clone(), error: "SSH 密码不能为空".to_string() });
+                continue;
+            }
+        };
         let model = get(&col_map, &fields, "model").unwrap_or_default();
         let sysname = get(&col_map, &fields, "sysname").unwrap_or_default();
         let serial_number = get(&col_map, &fields, "serial_number").unwrap_or_default();
@@ -2112,13 +2118,11 @@ pub async fn import_devices_csv(
         }
 
         let ssh_username_opt = if ssh_username.is_empty() { None } else { Some(ssh_username) };
-        let ssh_password_opt = if ssh_password.is_empty() { None } else {
-            match crate::services::crypto::CryptoService::encrypt(&ssh_password) {
-                Ok(enc) => Some(enc),
-                Err(e) => {
-                    result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: format!("密码加密失败: {}", e) });
-                    continue;
-                }
+        let ssh_password_opt = match crate::services::crypto::CryptoService::encrypt(&ssh_password) {
+            Ok(enc) => Some(enc),
+            Err(e) => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: format!("密码加密失败: {}", e) });
+                continue;
             }
         };
         let db_password_opt = if db_password.is_empty() { None } else {
