@@ -1296,16 +1296,16 @@ function TftpServer() {
     <div className="space-y-4">
       <div className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[250px]">
-          <label className={labelClass}>升级文件</label>
+          <label className={labelClass}>TFTP 根目录</label>
           <div className="flex gap-2">
-            <input value={filePath} onChange={e => setFilePath(e.target.value)} readOnly
+            <input value={filePath} readOnly
               className="flex-1 px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm text-[hsl(var(--text-primary))] cursor-default"
-              placeholder="未选择文件" />
+              placeholder="未选择目录" />
             <button onClick={async () => {
-              const selected = await open({ multiple: false });
+              const selected = await open({ multiple: false, directory: true });
               if (selected) setFilePath(selected as string);
             }} className="px-3 py-2 rounded-lg text-xs border border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-hover))] shrink-0">
-              选择文件
+              选择目录
             </button>
           </div>
         </div>

@@ -615,17 +615,14 @@ pub async fn start_tftp_server(
 
     let port = port.unwrap_or(69);
     let bind_addr = format!("0.0.0.0:{}", port);
-    tracing::info!("[tftp] 启动服务, 文件: {}, 端口: {}", file_path, port);
-
-    // 预读文件到内存
-    let file_data = fs::read(&file_path).await.map_err(|e| format!("无法读取文件: {}", e))?;
-    let file_name = std::path::Path::new(&file_path)
-        .file_name().map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".into());
-    let file_size = file_data.len() as u64;
+    let base_dir = std::path::PathBuf::from(&file_path);
+    if !base_dir.is_dir() {
+        return Err("选择的路径不是有效目录".into());
+    }
+    tracing::info!("[tftp] 启动服务, 目录: {}, 端口: {}", file_path, port);
 
     let _ = app.emit("tftp-log", serde_json::json!({
-        "msg": format!("TFTP 服务已启动，文件: {} ({} KB)", file_name, file_size / 1024),
+        "msg": format!("TFTP 服务已启动，根目录: {}", file_path),
         "type": "info"
     }));
 
@@ -639,10 +636,19 @@ pub async fn start_tftp_server(
             }
         };
 
-        let mut buf = vec![0u8; 516]; // TFTP 标准块大小 512 + 4 头
+        let mut buf = vec![0u8; 516];
         let block_size: u16 = 512;
-        // 跟踪每个客户端的当前块号
-        let mut clients: HashMap<String, u16> = HashMap::new();
+        // 跟踪每个客户端的传输状态: (file_name, file_data, current_block)
+        let mut clients: HashMap<String, (String, Vec<u8>, u16)> = HashMap::new();
+
+        /// 发送 TFTP 错误包
+        async fn send_error(socket: &UdpSocket, dst: std::net::SocketAddr, code: u16, msg: &str) {
+            let mut err_pkt = vec![0u8; 5 + msg.len() + 1];
+            err_pkt[0] = 0; err_pkt[1] = 5; // ERROR opcode
+            err_pkt[2] = (code >> 8) as u8; err_pkt[3] = code as u8;
+            err_pkt[4..4 + msg.len()].copy_from_slice(msg.as_bytes());
+            let _ = socket.send_to(&err_pkt, dst).await;
+        }
 
         loop {
             if !TFTP_RUNNING.load(Ordering::SeqCst) {
@@ -661,77 +667,86 @@ pub async fn start_tftp_server(
             let client_key = src.to_string();
 
             match opcode {
-                1 => { // RRQ - 读请求（设备下载文件）
-                    // 解析文件名
+                1 => { // RRQ - 读请求
                     let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
                     let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+                    // 防止路径穿越：只取文件名部分
+                    let safe_name = std::path::Path::new(req_name.as_ref())
+                        .file_name().map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| req_name.to_string());
+                    let full_path = base_dir.join(&safe_name);
 
                     let _ = app.emit("tftp-log", serde_json::json!({
-                        "msg": format!("{} → RRQ 请求下载: {}", src.ip(), req_name),
+                        "msg": format!("{} → RRQ 请求下载: {}", src.ip(), safe_name),
                         "type": "info"
                     }));
 
-                    // 发送第一个数据块
-                    let block_num = 1u16;
-                    clients.insert(client_key.clone(), block_num);
+                    match fs::read(&full_path).await {
+                        Ok(data) => {
+                            let file_size = data.len() as u64;
+                            let block_num = 1u16;
+                            let chunk_end = std::cmp::min(block_size as usize, data.len());
+                            let chunk = data[..chunk_end].to_vec();
+                            clients.insert(client_key.clone(), (safe_name, data, block_num));
 
-                    let offset = 0usize;
-                    let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
-                    let chunk = &file_data[offset..chunk_end];
-
-                    let mut pkt = vec![0u8; 4 + chunk.len()];
-                    pkt[0] = 0; pkt[1] = 3; // DATA opcode
-                    pkt[2] = (block_num >> 8) as u8;
-                    pkt[3] = block_num as u8;
-                    pkt[4..].copy_from_slice(chunk);
-
-                    if let Err(e) = socket.send_to(&pkt, src).await {
-                        let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
+                            let mut pkt = vec![0u8; 4 + chunk.len()];
+                            pkt[0] = 0; pkt[1] = 3;
+                            pkt[2] = (block_num >> 8) as u8;
+                            pkt[3] = block_num as u8;
+                            pkt[4..].copy_from_slice(&chunk);
+                            let _ = socket.send_to(&pkt, src).await;
+                            let _ = app.emit("tftp-progress", serde_json::json!({
+                                "ip": src.ip().to_string(),
+                                "bytes": chunk.len() as u64,
+                                "total": file_size,
+                                "done": false
+                            }));
+                        }
+                        Err(_) => {
+                            let _ = app.emit("tftp-log", serde_json::json!({
+                                "msg": format!("{} → 文件未找到: {}", src.ip(), safe_name),
+                                "type": "error"
+                            }));
+                            send_error(&socket, src, 1, "File not found").await;
+                        }
                     }
                 }
                 4 => { // ACK
                     let block = u16::from_be_bytes([buf[2], buf[3]]);
-                    let current = *clients.get(&client_key).unwrap_or(&0);
+                    let client_info = clients.get(&client_key).cloned();
+                    if let Some((fname, file_data, current)) = client_info {
+                        if block == current {
+                            let file_size = file_data.len() as u64;
+                            let next_block = block.wrapping_add(1);
+                            let offset = (block as usize) * block_size as usize;
 
-                    if block == current {
-                        let next_block = block + 1;
-                        let offset = (block as usize) * block_size as usize;
-
-                        if offset >= file_data.len() {
-                            // 传输完成
-                            clients.remove(&client_key);
-                            let _ = app.emit("tftp-log", serde_json::json!({
-                                "msg": format!("{} → 传输完成 ✓ ({:.1} KB)", src.ip(), file_size as f64 / 1024.0),
-                                "type": "success"
-                            }));
-                            let _ = app.emit("tftp-progress", serde_json::json!({
-                                "ip": src.ip().to_string(),
-                                "bytes": file_size,
-                                "total": file_size,
-                                "done": true
-                            }));
-                        } else {
-                            let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
-                            let chunk = &file_data[offset..chunk_end];
-
-                            let mut pkt = vec![0u8; 4 + chunk.len()];
-                            pkt[0] = 0; pkt[1] = 3;
-                            pkt[2] = (next_block >> 8) as u8;
-                            pkt[3] = next_block as u8;
-                            pkt[4..].copy_from_slice(chunk);
-
-                            if let Err(e) = socket.send_to(&pkt, src).await {
-                                let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
+                            if offset >= file_data.len() {
                                 clients.remove(&client_key);
-                            } else {
-                                clients.insert(client_key.clone(), next_block);
-                                let bytes_sent = offset as u64 + chunk.len() as u64;
-                                let _ = app.emit("tftp-progress", serde_json::json!({
-                                    "ip": src.ip().to_string(),
-                                    "bytes": bytes_sent.min(file_size),
-                                    "total": file_size,
-                                    "done": false
+                                let _ = app.emit("tftp-log", serde_json::json!({
+                                    "msg": format!("{} → 下载完成 ✓ {} ({:.1} KB)", src.ip(), fname, file_size as f64 / 1024.0),
+                                    "type": "success"
                                 }));
+                                let _ = app.emit("tftp-progress", serde_json::json!({
+                                    "ip": src.ip().to_string(), "bytes": file_size, "total": file_size, "done": true
+                                }));
+                            } else {
+                                let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
+                                let chunk = file_data[offset..chunk_end].to_vec();
+                                let mut pkt = vec![0u8; 4 + chunk.len()];
+                                pkt[0] = 0; pkt[1] = 3;
+                                pkt[2] = (next_block >> 8) as u8;
+                                pkt[3] = next_block as u8;
+                                pkt[4..].copy_from_slice(&chunk);
+                                if let Err(e) = socket.send_to(&pkt, src).await {
+                                    let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
+                                    clients.remove(&client_key);
+                                } else {
+                                    clients.insert(client_key.clone(), (fname.clone(), file_data.clone(), next_block));
+                                    let bytes_sent = offset as u64 + chunk.len() as u64;
+                                    let _ = app.emit("tftp-progress", serde_json::json!({
+                                        "ip": src.ip().to_string(), "bytes": bytes_sent.min(file_size), "total": file_size, "done": false
+                                    }));
+                                }
                             }
                         }
                     }
@@ -739,15 +754,16 @@ pub async fn start_tftp_server(
                 2 => { // WRQ - 写请求（设备上传文件）
                     let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
                     let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+                    let safe_name = std::path::Path::new(req_name.as_ref())
+                        .file_name().map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| req_name.to_string());
 
                     let _ = app.emit("tftp-log", serde_json::json!({
                         "msg": format!("{} → WRQ 上传请求: {}", src.ip(), req_name),
                         "type": "info"
                     }));
 
-                    let save_path = std::path::Path::new(&file_path).parent()
-                        .map(|d| d.join(&*req_name))
-                        .unwrap_or_else(|| std::path::PathBuf::from(req_name.as_ref()));
+                    let save_path = base_dir.join(&*safe_name);
 
                     let save_path_clone = save_path.clone();
                     let app_clone = app.clone();
