@@ -639,7 +639,7 @@ pub async fn start_tftp_server(
             }
         };
 
-        let buf = vec![0u8; 516]; // TFTP 标准块大小 512 + 4 头
+        let mut buf = vec![0u8; 516]; // TFTP 标准块大小 512 + 4 头
         let block_size: u16 = 512;
         // 跟踪每个客户端的当前块号
         let mut clients: HashMap<String, u16> = HashMap::new();
@@ -759,7 +759,7 @@ pub async fn start_tftp_server(
 
                     // 接收文件
                     tokio::spawn(async move {
-                        let mut recv_socket = match UdpSocket::bind("0.0.0.0:0").await {
+                        let recv_socket = match UdpSocket::bind("0.0.0.0:0").await {
                             Ok(s) => s,
                             Err(e) => {
                                 let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": format!("创建接收socket失败: {}", e), "type": "error" }));
