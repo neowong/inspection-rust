@@ -604,48 +604,87 @@ use tokio::fs;
 static TFTP_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// Linux 下绑定低端口 (<1024) 需要授权，尝试用 pkexec setcap
-async fn bind_privileged_port(port: u16, service_name: &str) -> Result<UdpSocket, String> {
+#[cfg(target_os = "linux")]
+async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
     let addr = format!("0.0.0.0:{}", port);
     match UdpSocket::bind(&addr).await {
-        Ok(s) => Ok(s),
-        Err(_) if port < 1024 && cfg!(target_os = "linux") => {
-            if let Ok(exe) = std::env::current_exe() {
-                let binary = exe.to_string_lossy().to_string();
-                // 检查是否已有 cap（已授权但当前进程未重启）
-                let has_cap = std::process::Command::new("getcap")
-                    .arg(&binary)
-                    .output()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).contains("cap_net_bind_service"))
-                    .unwrap_or(false);
-                if has_cap {
-                    return Err(format!(
-                        "{} 权限已设置，但当前进程未加载。\n请重启应用后使用 {}。",
-                        service_name, service_name
-                    ));
-                }
-                // 首次使用：弹出 pkexec 认证对话框
-                let status = std::process::Command::new("pkexec")
-                    .args(["setcap", "cap_net_bind_service=+ep", &binary])
-                    .status();
-                match status {
-                    Ok(s) if s.success() => {
-                        return Err(format!(
-                            "授权成功！请重启应用后使用 {}。",
-                            service_name
-                        ));
-                    }
-                    _ => {
-                        return Err(format!(
-                            "端口 {} 绑定失败。请手动执行:\n  sudo setcap cap_net_bind_service=+ep '{}'\n然后重启应用",
-                            port, binary
-                        ));
-                    }
-                }
-            }
-            Err(format!("端口 {} 绑定失败，需要 root 权限", port))
-        }
-        Err(e) => Err(format!("端口 {} 绑定失败: {}", port, e)),
+        Ok(s) => return Ok(s),
+        Err(_) => {} // EACCES, fall through to pkexec
     }
+
+    // Linux: 用 pkexec 启动当前二进制子进程 bind 端口，通过 Unix socket 传回 fd
+    use std::os::unix::io::{FromRawFd, AsRawFd};
+    use std::os::unix::net::UnixStream;
+    let (parent, child) = UnixStream::pair().map_err(|e| format!("创建 socket pair 失败: {}", e))?;
+    parent.set_nonblocking(false).ok();
+
+    let exe = std::env::current_exe().map_err(|e| format!("无法获取程序路径: {}", e))?;
+    let child_fd = child.as_raw_fd();
+    let port_str = port.to_string();
+
+    let mut cmd = std::process::Command::new("pkexec");
+    cmd.arg(&exe)
+        .arg("--bind-privileged-port")
+        .arg(&port_str)
+        .arg(child_fd.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    // 保持 child fd 在子进程中可用
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(move || {
+            // 不清除 fd
+            Ok(())
+        });
+    }
+
+    let mut child_proc = cmd.spawn().map_err(|e| format!("启动授权进程失败: {}", e))?;
+
+    // 关闭子进程端的 fd（父进程只读）
+    drop(child);
+
+    // 通过 Unix socket 接收 fd（SCM_RIGHTS）
+    let mut buf = [0u8; 1];
+    let mut cmsg_buf = [0u8; 32]; // SCM_RIGHTS 需要的控制消息缓冲区
+    let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: 1 };
+    let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
+    hdr.msg_iov = &mut iov;
+    hdr.msg_iovlen = 1;
+    hdr.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
+    hdr.msg_controllen = cmsg_buf.len();
+
+    let n = unsafe { libc::recvmsg(parent.as_raw_fd(), &mut hdr, 0) };
+    if n < 0 {
+        child_proc.kill().ok();
+        return Err("接收授权端口失败".into());
+    }
+
+    let sock_fd = unsafe {
+        let cmsg = libc::CMSG_FIRSTHDR(&hdr);
+        if cmsg.is_null() || (*cmsg).cmsg_type != libc::SCM_RIGHTS {
+            child_proc.kill().ok();
+            return Err("未收到端口文件描述符".into());
+        }
+        let fd_ptr = libc::CMSG_DATA(cmsg) as *const libc::c_int;
+        *fd_ptr
+    };
+
+    // 等待子进程退出
+    let _ = child_proc.wait();
+
+    // 从 fd 创建 std::net::UdpSocket，再转为 tokio 异步
+    let std_sock = unsafe { std::net::UdpSocket::from_raw_fd(sock_fd) };
+    std_sock.set_nonblocking(true).ok();
+    let socket = UdpSocket::from_std(std_sock).map_err(|e| format!("转换 socket 失败: {}", e))?;
+    Ok(socket)
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
+    let addr = format!("0.0.0.0:{}", port);
+    UdpSocket::bind(&addr).await.map_err(|e| format!("端口 {} 绑定失败: {}", port, e))
 }
 
 #[tauri::command]
@@ -665,7 +704,7 @@ pub async fn start_tftp_server(
         return Err("选择的路径不是有效目录".into());
     }
 
-    let socket = bind_privileged_port(port, "TFTP").await.map_err(|e| {
+    let socket = bind_privileged_port(port).await.map_err(|e| {
         TFTP_RUNNING.store(false, Ordering::SeqCst);
         e
     })?;
@@ -911,7 +950,7 @@ pub async fn start_syslog_server(
 
     let port = port.unwrap_or(514);
 
-    let socket = bind_privileged_port(port, "Syslog").await.map_err(|e| {
+    let socket = bind_privileged_port(port).await.map_err(|e| {
         SYSLOG_RUNNING.store(false, Ordering::SeqCst);
         e
     })?;

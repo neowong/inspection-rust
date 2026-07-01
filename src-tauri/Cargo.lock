@@ -1798,6 +1798,7 @@ dependencies = [
  "hmac",
  "hostname",
  "indexmap 2.14.0",
+ "libc",
  "md-5",
  "os_info",
  "parking_lot",
