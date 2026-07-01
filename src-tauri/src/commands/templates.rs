@@ -181,8 +181,10 @@ fn get_referencing_devices(conn: &rusqlite::Connection, template_id: i64) -> Vec
 }
 
 /// 删除巡检模板（检查设备引用）
+///
+/// 返回 `{ ok: true }` 或 `{ ok: false, error: "..." }`，避免 Tauri sync 命令 Err 不触发 JS reject 的问题
 #[tauri::command]
-pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), String> {
+pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<serde_json::Value, String> {
     let conn = state.db.lock();
 
     let devices = get_referencing_devices(&conn, template_id);
@@ -193,28 +195,17 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
             devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
         );
         tracing::warn!("[delete_template] template_id={} blocked: {}", template_id, msg);
-        return Err(msg);
+        return Ok(serde_json::json!({ "ok": false, "error": msg }));
     }
 
-    let affected = conn
-        .execute(
-            "DELETE FROM inspection_templates WHERE id = ?1",
-            rusqlite::params![template_id],
-        )
-        .map_err(|e| {
-            let msg = format!("删除模板失败: {}", e);
-            tracing::error!("[delete_template] template_id={} error: {}", template_id, msg);
-            msg
-        })?;
-
-    if affected == 0 {
-        let msg = format!("巡检模板 ID {} 不存在", template_id);
-        tracing::warn!("[delete_template] {}", msg);
-        return Err(msg);
-    }
+    conn.execute(
+        "DELETE FROM inspection_templates WHERE id = ?1",
+        rusqlite::params![template_id],
+    )
+    .map_err(|e| format!("删除模板失败: {}", e))?;
 
     tracing::info!("[delete_template] template_id={} 删除成功", template_id);
-    Ok(())
+    Ok(serde_json::json!({ "ok": true }))
 }
 
 /// 批量删除巡检模板（检查设备引用）
