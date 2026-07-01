@@ -836,7 +836,7 @@ pub async fn start_tftp_server(
                         let mut recv_buf = vec![0u8; 516];
                         let mut file_buf: Vec<u8> = Vec::new();
                         let mut expected_block = 1u16;
-                        let mut last_ack_sent = [0u8, 4, 0, 0];
+                        let mut last_ack = [0u8, 4, 0, 0];
 
                         loop {
                             if !TFTP_RUNNING.load(Ordering::SeqCst) { break; }
@@ -848,6 +848,7 @@ pub async fn start_tftp_server(
                                 Ok(Ok(v)) if v.1 == src_clone => v,
                                 _ => break, // 超时或非该客户端，结束
                             };
+                            let _ = src2; // 已在上面的 if 中过滤
                             if n < 4 { break; }
                             let op = u16::from_be_bytes([recv_buf[0], recv_buf[1]]);
                             if op != 3 { break; } // 不是 DATA
@@ -860,7 +861,7 @@ pub async fn start_tftp_server(
                             // ACK 当前块
                             let ack = [0u8, 4, recv_buf[2], recv_buf[3]];
                             let _ = socket_iter.send_to(&ack, src_clone).await;
-                            last_ack_sent = ack;
+                            last_ack = ack;
 
                             let _ = app_inner.emit("tftp-progress", serde_json::json!({
                                 "ip": src_clone.ip().to_string(),
@@ -879,7 +880,7 @@ pub async fn start_tftp_server(
                                     ).await {
                                         if n2 == 4 {
                                             // 空 DATA，再发一个 ACK
-                                            let _ = socket_iter.send_to(&last_ack_sent, src_clone).await;
+                                            let _ = socket_iter.send_to(&last_ack, src_clone).await;
                                         }
                                     }
                                 }
