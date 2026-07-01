@@ -188,6 +188,20 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
     Ok(())
 }
 
+/// 批量删除巡检模板
+#[tauri::command]
+pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let conn = state.db.lock();
+    for id in &ids {
+        conn.execute("DELETE FROM inspection_templates WHERE id = ?1", rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ============================================================
 // Command Pool Query Commands
 // ============================================================

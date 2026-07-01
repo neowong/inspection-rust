@@ -542,6 +542,7 @@ pub fn run() {
             commands::templates::create_template,
             commands::templates::update_template,
             commands::templates::delete_template,
+            commands::templates::batch_delete_templates,
             // Command Pool
             commands::templates::list_commands,
             commands::templates::create_command,

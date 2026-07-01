@@ -86,6 +86,7 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(getEmptyTemplateForm());
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { shakeFields, triggerShake } = useShakeValidation();
@@ -279,6 +280,23 @@ export default function TemplatesPage() {
       .catch(console.error);
   };
 
+  const handleBatchDeleteTemplates = () => {
+    if (selectedTemplateIds.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedTemplateIds.size} 个模板？此操作不可撤销。`)) return;
+    const ids = Array.from(selectedTemplateIds);
+    invoke<void>("batch_delete_templates", { ids })
+      .then(() => { setSelectedTemplateIds(new Set()); loadTemplates(); })
+      .catch(console.error);
+  };
+
+  const toggleTemplateSelect = (id: number) => {
+    setSelectedTemplateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   // ----- Command handlers -----
   const openAddCmd = () => {
     setEditingCmd(null); setCmdForm(getEmptyCommandForm()); setCmdSaveError(null);
@@ -408,9 +426,38 @@ export default function TemplatesPage() {
               {allVendors.map((v) => <option key={v} value={v}>{v}</option>)}
             </Select>
             <SearchInput value={templateSearch} onChange={setTemplateSearch} placeholder="搜索模板..." />
+            {selectedTemplateIds.size > 0 && (
+              <Button variant="danger" size="sm" onClick={handleBatchDeleteTemplates}>
+                批量删除 ({selectedTemplateIds.size})
+              </Button>
+            )}
           </Toolbar>
           <DataTable<InspectionTemplate>
             columns={[
+              { key: "checkbox", header: (
+                <input
+                  type="checkbox"
+                  checked={filteredTemplates.length > 0 && selectedTemplateIds.size === filteredTemplates.length}
+                  ref={(el) => { if (el) el.indeterminate = selectedTemplateIds.size > 0 && selectedTemplateIds.size < filteredTemplates.length; }}
+                  onChange={() => {
+                    if (selectedTemplateIds.size === filteredTemplates.length) {
+                      setSelectedTemplateIds(new Set());
+                    } else {
+                      setSelectedTemplateIds(new Set(filteredTemplates.map(t => t.id)));
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-[hsl(var(--accent))]"
+                />
+              ), width: "36px", noTruncate: true, render: (r) => (
+                <input
+                  type="checkbox"
+                  checked={selectedTemplateIds.has(r.id)}
+                  onChange={() => toggleTemplateSelect(r.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-[hsl(var(--accent))]"
+                />
+              )},
               { key: "name", header: "名称", width: "200px", maxWidth: "300px", render: (r) => r.name },
               { key: "vendor", header: "厂商", width: "80px", noTruncate: true, render: (r) => r.vendor },
               { key: "command_count", header: "命令数", width: "80px", render: (r) => String((r.config?.commands || []).length) },
