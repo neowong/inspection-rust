@@ -69,6 +69,18 @@ const EMPTY_REPORT_FORM = (): ReportForm => ({
 });
 
 // ============================================================
+// Shared helpers
+// ============================================================
+
+/** 命令类别 → 大类分组 */
+function catGroup(cat: string): string {
+  if (cat === "fan" || cat === "power") return "hardware";
+  if (cat === "cpu" || cat === "memory") return "performance";
+  if (cat === "vlan") return "interface";
+  return cat;
+}
+
+// ============================================================
 // TemplatesPage
 // ============================================================
 
@@ -86,7 +98,7 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<InspectionTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(getEmptyTemplateForm());
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<number | null>(null);
-  const [deleteBlockedDevices, setDeleteBlockedDevices] = useState<string[]>([]);
+  const [deleteBlockedDevices, setDeleteBlockedDevices] = useState<string[] | null>(null);
   const [deleteChecking, setDeleteChecking] = useState(false);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -499,11 +511,11 @@ export default function TemplatesPage() {
                   </Button>
                   <Button size="icon" variant="ghost" onClick={() => {
                     setConfirmDeleteTemplate(r.id);
-                    setDeleteBlockedDevices([]);
+                    setDeleteBlockedDevices(null);
                     setDeleteChecking(true);
                     invoke<string[]>("check_template_devices", { templateId: r.id })
                       .then(devs => { setDeleteBlockedDevices(devs); setDeleteChecking(false); })
-                      .catch(() => setDeleteChecking(false));
+                      .catch(() => { setDeleteBlockedDevices(null); setDeleteChecking(false); });
                   }} title="删除">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -771,14 +783,16 @@ export default function TemplatesPage() {
         open={confirmDeleteTemplate !== null}
         title="确认删除"
         width="max-w-sm"
-        onClose={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}
+        onClose={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices(null); }}
         footer={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}>取消</Button>
+            <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices(null); }}>取消</Button>
             {deleteChecking ? (
               <span className="text-xs text-[hsl(var(--text-secondary))] self-center">检查中...</span>
+            ) : deleteBlockedDevices === null ? (
+              <span className="text-xs text-[hsl(var(--danger))] self-center">检查失败，请重试</span>
             ) : deleteBlockedDevices.length > 0 ? (
-              <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices([]); }}>知道了</Button>
+              <Button variant="secondary" onClick={() => { setConfirmDeleteTemplate(null); setDeleteBlockedDevices(null); }}>知道了</Button>
             ) : (
               <Button variant="danger" onClick={() => handleDeleteTemplate(confirmDeleteTemplate!)}>删除</Button>
             )}
@@ -787,6 +801,8 @@ export default function TemplatesPage() {
       >
         {deleteChecking ? (
           <p className="text-sm text-[hsl(var(--text-secondary))]">正在检查设备引用...</p>
+        ) : deleteBlockedDevices === null ? (
+          <p className="text-sm text-[hsl(var(--danger))]">检查设备引用失败，请关闭后重试</p>
         ) : deleteBlockedDevices.length > 0 ? (
           <div>
             <p className="text-sm text-[hsl(var(--danger))] font-medium mb-2">无法删除：以下设备正在使用此模板</p>
@@ -1906,12 +1922,6 @@ function CommandList({
     });
   };
 
-  const catGroup = (cat: string) => {
-    if (cat === "fan" || cat === "power") return "hardware";
-    if (cat === "cpu" || cat === "memory") return "performance";
-    if (cat === "vlan") return "interface";
-    return cat;
-  };
 
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();
@@ -1983,12 +1993,6 @@ function AvailableCommands({
     return next;
   });
 
-  const catGroup = (cat: string) => {
-    if (cat === "fan" || cat === "power") return "hardware";
-    if (cat === "cpu" || cat === "memory") return "performance";
-    if (cat === "vlan") return "interface";
-    return cat;
-  };
 
   const grouped = useMemo(() => {
     const map = new Map<string, CommandPool[]>();

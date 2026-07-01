@@ -346,7 +346,7 @@ export default function DevicesPage() {
 
     /** CSV 转义：含逗号/引号/换行的值用双引号包裹 */
     const esc = (v: string) => {
-      if (v.includes(",") || v.includes("\"") || v.includes("\n")) {
+      if (v.includes(",") || v.includes("\"") || v.includes("\n") || v.includes("\r")) {
         return `"${v.replace(/"/g, "\"\"")}"`;
       }
       return v;
@@ -432,9 +432,7 @@ export default function DevicesPage() {
         }
         showStatusHint(`${d.name}: 在线，正在采集静态信息...`, "info", 30000);
         return invoke<string>("detect_device_model_by_id", { deviceId: d.id })
-          .then((_json) => {
-            loadDevices();
-          })
+          .then((_json) => { /* loadDevices 在 finally 中统一调用 */ })
           .catch((e) => {
             console.error("[check] 静态信息采集失败:", e);
             showStatusHint(`${d.name}: 检测失败 — ${detectErrorHint("", e).split(":").slice(1).join(":").trim() || "SSH 异常"}`, "error");

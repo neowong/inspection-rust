@@ -1922,7 +1922,7 @@ pub async fn export_devices_csv(
             if let Some(save_path) = file_path {
                 if let Some(dest) = save_path.as_path().map(|p| p.to_path_buf()) {
                     if let Err(e) = std::fs::write(&dest, &csv_text) {
-                        eprintln!("导出 CSV 失败: {}", e);
+                        tracing::error!("导出 CSV 失败: {}", e);
                     }
                 }
             }
@@ -2041,7 +2041,27 @@ fn normalize_column_name(name: &str) -> &str {
         "内核版本" | "内核" => "kernel_version",
         "数据库版本" | "DB版本" | "db版本" => "db_version",
         "出厂日期" => "manufacturing_date",
-        _ => name,
+        _ => match name.to_lowercase().as_str() {
+            "name" | "名称" => "name", "ip" | "ip地址" | "ip address" => "ip",
+            "type" | "类型" | "device_type" => "type", "vendor" | "厂商" => "vendor",
+            "ssh_username" | "ssh用户名" | "username" => "ssh_username",
+            "ssh_password" | "ssh密码" | "password" => "ssh_password",
+            "ssh_port" | "ssh端口" | "port" => "ssh_port",
+            "template" | "模板" => "template", "model" | "型号" => "model",
+            "sysname" | "主机名" | "hostname" => "sysname",
+            "serial_number" | "sn" | "序列号" => "serial_number",
+            "cpu_cores" | "cpu" | "cpu核心" => "cpu_cores",
+            "memory_gb" | "memory" | "内存" => "memory_gb",
+            "deployment" | "部署方式" | "部署" => "deployment",
+            "instance_name" | "容器名" | "实例名" => "instance_name",
+            "db_username" | "db用户" | "数据库用户" => "db_username",
+            "db_port" | "db端口" | "数据库端口" => "db_port",
+            "db_password" | "db密码" | "数据库密码" => "db_password",
+            "kernel_version" | "内核版本" | "内核" => "kernel_version",
+            "db_version" | "db版本" | "数据库版本" => "db_version",
+            "manufacturing_date" | "出厂日期" => "manufacturing_date",
+            _ => name,
+        },
     }
 }
 
@@ -2209,6 +2229,7 @@ pub async fn import_devices_csv(
         let kernel_version = get(&col_map, &fields, "kernel_version").unwrap_or_default();
         let db_version = get(&col_map, &fields, "db_version").unwrap_or_default();
         let db_password = get(&col_map, &fields, "db_password").unwrap_or_default();
+        let manufacturing_date = get(&col_map, &fields, "manufacturing_date").unwrap_or_default();
 
         let template_id: Option<i64> = get(&col_map, &fields, "template").and_then(|tpl_name| {
             conn.query_row("SELECT id FROM inspection_templates WHERE name = ?1", rusqlite::params![tpl_name], |row| row.get(0)).ok()
@@ -2245,15 +2266,16 @@ pub async fn import_devices_csv(
         let db_username_opt = if db_username.is_empty() { None } else { Some(db_username) };
         let kernel_opt = if kernel_version.is_empty() { None } else { Some(kernel_version) };
         let db_version_opt = if db_version.is_empty() { None } else { Some(db_version) };
+        let mfg_date_opt = if manufacturing_date.is_empty() { None } else { Some(manufacturing_date) };
 
         if let Err(e) = conn.execute(
-            "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, sysname, serial_number, cpu_cores, memory_gb, deployment, instance_name, db_username, db_port, db_password_encrypted, kernel_version, db_version) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+            "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, sysname, serial_number, cpu_cores, memory_gb, deployment, instance_name, db_username, db_port, db_password_encrypted, kernel_version, db_version, manufacturing_date) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             rusqlite::params![
                 name, ip, device_type, vendor, model_opt, ssh_username_opt, ssh_password_opt,
                 ssh_port, template_id, sysname_opt, serial_number_opt, cpu_cores, memory_gb,
                 deployment_opt, instance_name_opt, db_username_opt, db_port, db_password_opt,
-                kernel_opt, db_version_opt,
+                kernel_opt, db_version_opt, mfg_date_opt,
             ],
         ) {
             result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: e.to_string() });
@@ -2266,6 +2288,7 @@ pub async fn import_devices_csv(
 }
 
 /// 导入专用的唯一性检查
+/// 导入专用唯一性检查，委托给 check_unique（exclude_id=None）
 fn check_unique_inline(
     conn: &rusqlite::Connection,
     name: &str,
@@ -2273,14 +2296,5 @@ fn check_unique_inline(
     device_type: &str,
     vendor: &str,
 ) -> Result<(), String> {
-    let name_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE name = ?1", rusqlite::params![name], |row| row.get(0)).map_err(|e| e.to_string())?;
-    if name_count > 0 { return Err(format!("设备名称 '{}' 已存在", name)); }
-    if device_type == "database" {
-        let ip_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2 AND vendor = ?3", rusqlite::params![ip, device_type, vendor], |row| row.get(0)).map_err(|e| e.to_string())?;
-        if ip_count > 0 { return Err(format!("数据库 {} 在 IP '{}' 上已存在", vendor, ip)); }
-    } else {
-        let ip_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2", rusqlite::params![ip, device_type], |row| row.get(0)).map_err(|e| e.to_string())?;
-        if ip_count > 0 { return Err(format!("同类型设备中 IP '{}' 已存在", ip)); }
-    }
-    Ok(())
+    check_unique(conn, name, ip, device_type, vendor, None)
 }

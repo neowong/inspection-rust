@@ -178,14 +178,17 @@ pub fn check_template_devices(template_id: i64, state: State<AppState>) -> Resul
 }
 
 /// 查询引用此模板的设备名称列表
+/// 数据库错误时返回空 Vec（安全策略：宁可允许删也不要因查询错误阻止）
 fn get_referencing_devices_inner(conn: &rusqlite::Connection, template_id: i64) -> Vec<String> {
-    let mut stmt = conn.prepare("SELECT name FROM devices WHERE template_id = ?1").ok();
-    stmt.as_mut()
-        .and_then(|s| {
-            s.query_map(rusqlite::params![template_id], |row| row.get::<_, String>(0)).ok()
-        })
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default()
+    let mut stmt = match conn.prepare("SELECT name FROM devices WHERE template_id = ?1") {
+        Ok(s) => s,
+        Err(e) => { tracing::error!("[get_refs] prepare failed: {}", e); return vec![]; }
+    };
+    let rows = match stmt.query_map(rusqlite::params![template_id], |row| row.get::<_, String>(0)) {
+        Ok(r) => r,
+        Err(e) => { tracing::error!("[get_refs] query failed: {}", e); return vec![]; }
+    };
+    rows.filter_map(|r| r.ok()).collect()
 }
 
 /// 删除巡检模板的返回结果
@@ -235,7 +238,8 @@ pub async fn batch_delete_templates(ids: Vec<i64>, state: State<'_, AppState>) -
     if ids.is_empty() {
         return Ok(BatchDeleteResult { ok: true, error: None, deleted: 0 });
     }
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
+    // 1. 预检查所有模板的引用情况
     let mut blocked: Vec<String> = Vec::new();
     for id in &ids {
         let devices = get_referencing_devices_inner(&conn, *id);
@@ -253,12 +257,15 @@ pub async fn batch_delete_templates(ids: Vec<i64>, state: State<'_, AppState>) -
             deleted: 0,
         });
     }
+    // 2. 在事务中批量删除（确保原子性）
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut count = 0usize;
     for id in &ids {
-        conn.execute("DELETE FROM inspection_templates WHERE id = ?1", rusqlite::params![id])
+        tx.execute("DELETE FROM inspection_templates WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;
         count += 1;
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(BatchDeleteResult { ok: true, error: None, deleted: count })
 }
 
