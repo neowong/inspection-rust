@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { CheckCircle2, XCircle, Plug, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Select, SpinInput } from "../components/ui/Input";
 
 const TOOLS = [
@@ -1294,11 +1295,19 @@ function TftpServer() {
   return (
     <div className="space-y-4">
       <div className="flex items-end gap-3 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <label className={labelClass}>升级文件路径</label>
-          <input value={filePath} onChange={e => setFilePath(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm text-[hsl(var(--text-primary))]"
-            placeholder="/path/to/firmware.bin" />
+        <div className="flex-1 min-w-[250px]">
+          <label className={labelClass}>升级文件</label>
+          <div className="flex gap-2">
+            <input value={filePath} onChange={e => setFilePath(e.target.value)} readOnly
+              className="flex-1 px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm text-[hsl(var(--text-primary))] cursor-default"
+              placeholder="未选择文件" />
+            <button onClick={async () => {
+              const selected = await open({ multiple: false });
+              if (selected) setFilePath(selected as string);
+            }} className="px-3 py-2 rounded-lg text-xs border border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-hover))] shrink-0">
+              选择文件
+            </button>
+          </div>
         </div>
         <div className="w-24">
           <label className={labelClass}>端口</label>
