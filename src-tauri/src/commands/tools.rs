@@ -735,9 +735,7 @@ pub async fn start_tftp_server(
                             "ip": src.ip().to_string(), "bytes": chunk_end as u64, "total": file_size, "done": false
                         }));
 
-                        if is_last { break; }
-
-                        // 等待 ACK（重试 10 次）
+                        // 等待 ACK（重试最多 10 次）
                         let mut retries = 0;
                         loop {
                             if !TFTP_RUNNING.load(Ordering::SeqCst) { break 'transfer; }
@@ -748,18 +746,19 @@ pub async fn start_tftp_server(
                                 Ok(Ok(v)) => v,
                                 _ => { retries += 1; if retries >= max_retries { break 'transfer; } continue; }
                             };
-                            if src2 != src { continue; } // 不是这个客户端的包，忽略
+                            if src2 != src { continue; }
                             if n2 < 4 { continue; }
                             let op = u16::from_be_bytes([buf[0], buf[1]]);
-                            if op != 4 { continue; } // 不是 ACK
+                            if op != 4 { continue; }
                             let ack = u16::from_be_bytes([buf[2], buf[3]]);
                             if ack == block_num {
-                                // 正确的 ACK，前进
+                                // 正确 ACK
+                                if is_last { break 'transfer; } // 最后一块已确认，传输完成
                                 offset = chunk_end;
                                 block_num = block_num.wrapping_add(1);
                                 break; // 发送下一块
                             }
-                            // 错误的 block number（可能是重传），重发当前块
+                            // 错误 block number，重发当前块
                             let _ = socket.send_to(&pkt, src).await;
                             retries += 1;
                             if retries >= max_retries { break 'transfer; }
