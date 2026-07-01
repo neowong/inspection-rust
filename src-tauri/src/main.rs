@@ -2,47 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    // --bind-privileged-port: Linux pkexec 子进程，bind 端口后通过 Unix socket 传回 fd
-    #[cfg(target_os = "linux")]
-    {
-        let args: Vec<String> = std::env::args().collect();
-        if args.len() >= 4 && args[1] == "--bind-privileged-port" {
-            let port: u16 = args[2].parse().expect("invalid port");
-            let parent_fd: i32 = args[3].parse().expect("invalid fd");
-            use std::os::unix::io::{FromRawFd, AsRawFd};
-            use std::os::unix::net::UnixStream;
-
-            let sock = std::net::UdpSocket::bind(format!("0.0.0.0:{}", port))
-                .expect("bind privileged port failed");
-            let fd = sock.as_raw_fd();
-
-            let stream = unsafe { UnixStream::from_raw_fd(parent_fd) };
-            let mut buf = [0u8; 1];
-            let mut cmsg_buf = [0u8; 32];
-            let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: 1 };
-            let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
-            hdr.msg_iov = &mut iov;
-            hdr.msg_iovlen = 1;
-            hdr.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
-            hdr.msg_controllen = cmsg_buf.len();
-
-            let cmsg = unsafe { libc::CMSG_FIRSTHDR(&hdr) };
-            unsafe {
-                (*cmsg).cmsg_level = libc::SOL_SOCKET;
-                (*cmsg).cmsg_type = libc::SCM_RIGHTS;
-                (*cmsg).cmsg_len = libc::CMSG_LEN(std::mem::size_of::<libc::c_int>() as u32) as _;
-                let data = libc::CMSG_DATA(cmsg) as *mut libc::c_int;
-                *data = fd;
-            }
-            hdr.msg_controllen = unsafe { (*cmsg).cmsg_len };
-
-            unsafe { libc::sendmsg(stream.as_raw_fd(), &hdr, 0) };
-            // fd 在 sock drop 时关闭，但子进程 exit 前保持 alive
-            std::mem::forget(sock);
-            std::process::exit(0);
-        }
-    }
-
     // ⚠️ panic hook 必须是第一个操作！
     // 下面任何代码崩溃都会触发它弹 MessageBox + 写日志。
     // 如果 hook 装得晚、前面代码崩了，默认 handler 在 windows_subsystem="windows"

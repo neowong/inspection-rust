@@ -609,76 +609,28 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
     let addr = format!("0.0.0.0:{}", port);
     match UdpSocket::bind(&addr).await {
         Ok(s) => return Ok(s),
-        Err(_) => {} // EACCES, fall through to pkexec
+        Err(_) if port < 1024 && cfg!(target_os = "linux") => {}
+        Err(e) => return Err(format!("端口 {} 绑定失败: {}", port, e)),
     }
 
-    // Linux: 用 pkexec 启动当前二进制子进程 bind 端口，通过 Unix socket 传回 fd
-    use std::os::unix::io::{FromRawFd, AsRawFd};
-    use std::os::unix::net::UnixStream;
-    let (parent, child) = UnixStream::pair().map_err(|e| format!("创建 socket pair 失败: {}", e))?;
-
+    // Linux 低端口 (<1024): pkexec setcap + exec 重启应用
     let exe = std::env::current_exe().map_err(|e| format!("无法获取程序路径: {}", e))?;
-    let child_fd = child.as_raw_fd();
-    let port_str = port.to_string();
+    let binary = exe.to_string_lossy().to_string();
 
-    let mut cmd = std::process::Command::new("pkexec");
-    cmd.arg(&exe)
-        .arg("--bind-privileged-port")
-        .arg(&port_str)
-        .arg(child_fd.to_string())
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+    let status = std::process::Command::new("pkexec")
+        .args(["setcap", "cap_net_bind_service=+ep", &binary])
+        .status()
+        .map_err(|e| format!("启动 pkexec 失败: {}", e))?;
 
-    // 保持 child fd 在子进程中可用
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        cmd.pre_exec(move || {
-            // 不清除 fd
-            Ok(())
-        });
+    if !status.success() {
+        return Err("授权取消或失败".into());
     }
 
-    let mut child_proc = cmd.spawn().map_err(|e| format!("启动授权进程失败: {}", e))?;
-
-    // 关闭子进程端的 fd
-    drop(child);
-    let parent_fd = parent.as_raw_fd();
-
-    // spawn_blocking: recvmsg 是阻塞调用，不能阻塞 tokio 事件循环
-    let sock_fd = tokio::task::spawn_blocking(move || -> Result<i32, String> {
-        let mut buf = [0u8; 1];
-        let mut cmsg_buf = [0u8; 32];
-        let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: 1 };
-        let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
-        hdr.msg_iov = &mut iov;
-        hdr.msg_iovlen = 1;
-        hdr.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
-        hdr.msg_controllen = cmsg_buf.len();
-
-        let n = unsafe { libc::recvmsg(parent_fd, &mut hdr, 0) };
-        if n < 0 {
-            return Err("接收授权端口失败".into());
-        }
-        let cmsg = unsafe { libc::CMSG_FIRSTHDR(&hdr) };
-        if cmsg.is_null() || unsafe { (*cmsg).cmsg_type != libc::SCM_RIGHTS } {
-            return Err("未收到端口文件描述符".into());
-        }
-        Ok(unsafe { *(libc::CMSG_DATA(cmsg) as *const libc::c_int) })
-    }).await.map_err(|e| format!("内部错误: {}", e))??;
-
-    let _ = child_proc.wait();
-
-    let std_sock = unsafe { std::net::UdpSocket::from_raw_fd(sock_fd) };
-    std_sock.set_nonblocking(true).ok();
-    let socket = UdpSocket::from_std(std_sock).map_err(|e| format!("转换 socket 失败: {}", e))?;
-    Ok(socket)
-}
-
-#[cfg(not(target_os = "linux"))]
-async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
-    let addr = format!("0.0.0.0:{}", port);
-    UdpSocket::bind(&addr).await.map_err(|e| format!("端口 {} 绑定失败: {}", port, e))
+    // exec 替换当前进程以加载新的 cap
+    use std::os::unix::process::CommandExt;
+    let args: Vec<String> = std::env::args().collect();
+    let err = std::process::Command::new(&binary).args(&args[1..]).exec();
+    Err(format!("重启失败: {}", err))
 }
 
 #[tauri::command]
