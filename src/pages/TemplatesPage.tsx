@@ -275,9 +275,14 @@ export default function TemplatesPage() {
       .finally(() => setSaving(false));
   };
   const handleDeleteTemplate = (id: number) => {
-    invoke<void>("delete_template", { templateId: id })
-      .then(() => { setConfirmDeleteTemplate(null); loadTemplates(); })
-      .catch((e) => alert(typeof e === "string" ? e : "删除失败"));
+    try {
+      invoke("delete_template", { templateId: id })
+        .then(() => { setConfirmDeleteTemplate(null); loadTemplates(); })
+        .catch((e) => { console.error("delete_template error:", e); alert(typeof e === "string" ? e : "删除失败"); });
+    } catch (e) {
+      console.error("delete_template throw:", e);
+      alert("调用失败: " + String(e));
+    }
   };
 
   const handleBatchDeleteTemplates = () => {
