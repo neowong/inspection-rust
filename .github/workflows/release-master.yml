@@ -39,7 +39,7 @@ jobs:
           releaseBody: "详见 [更新日志](./CHANGELOG.md)"
           releaseDraft: false
           prerelease: false
-          args: --target x86_64-pc-windows-gnu
+          # 不指定 target，使用 .cargo/config.toml 的 target-dir
 
   build-macos:
     runs-on: macos-latest
