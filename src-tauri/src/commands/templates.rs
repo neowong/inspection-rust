@@ -208,7 +208,6 @@ pub async fn delete_template(template_id: i64, state: State<'_, AppState>) -> Re
             devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
         );
         tracing::warn!("[delete_template] template_id={} blocked: {}", template_id, msg);
-        // DEBUG: 用不包含中文的简短消息测试
         return Ok(DeleteTemplateResult { ok: false, error: Some(msg) });
     }
 
@@ -222,18 +221,25 @@ pub async fn delete_template(template_id: i64, state: State<'_, AppState>) -> Re
     Ok(DeleteTemplateResult { ok: true, error: None })
 }
 
+/// 批量删除返回结果
+#[derive(Debug, Serialize)]
+pub struct BatchDeleteResult {
+    ok: bool,
+    error: Option<String>,
+    deleted: usize,
+}
+
 /// 批量删除巡检模板（检查设备引用）
 #[tauri::command]
-pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
+pub async fn batch_delete_templates(ids: Vec<i64>, state: State<'_, AppState>) -> Result<BatchDeleteResult, String> {
     if ids.is_empty() {
-        return Ok(());
+        return Ok(BatchDeleteResult { ok: true, error: None, deleted: 0 });
     }
     let conn = state.db.lock();
     let mut blocked: Vec<String> = Vec::new();
     for id in &ids {
         let devices = get_referencing_devices_inner(&conn, *id);
         if !devices.is_empty() {
-            // 获取模板名称
             let tpl_name: String = conn
                 .query_row("SELECT name FROM inspection_templates WHERE id = ?1", rusqlite::params![id], |row| row.get(0))
                 .unwrap_or_else(|_| format!("ID {}", id));
@@ -241,13 +247,19 @@ pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(
         }
     }
     if !blocked.is_empty() {
-        return Err(format!("{} 个模板无法删除：\n{}", blocked.len(), blocked.join("\n")));
+        return Ok(BatchDeleteResult {
+            ok: false,
+            error: Some(format!("{} 个模板无法删除：\n{}", blocked.len(), blocked.join("\n"))),
+            deleted: 0,
+        });
     }
+    let mut count = 0usize;
     for id in &ids {
         conn.execute("DELETE FROM inspection_templates WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;
+        count += 1;
     }
-    Ok(())
+    Ok(BatchDeleteResult { ok: true, error: None, deleted: count })
 }
 
 // ============================================================

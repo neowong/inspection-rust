@@ -277,35 +277,32 @@ export default function TemplatesPage() {
       .finally(() => setSaving(false));
   };
   const handleDeleteTemplate = (id: number) => {
-    console.log("[handleDeleteTemplate] called, id=", id);
-    try {
-      invoke<{ ok: boolean; error?: string }>("delete_template", { templateId: id })
-        .then((res) => {
-          console.log("[handleDeleteTemplate] resolved:", JSON.stringify(res));
-          if (res.ok) {
-            setConfirmDeleteTemplate(null);
-            loadTemplates();
-          } else {
-            alert(res.error || "删除失败");
-          }
-        })
-        .catch((e) => {
-          console.error("[handleDeleteTemplate] rejected:", e);
-          alert("删除失败: " + (typeof e === "string" ? e : JSON.stringify(e)));
-        });
-    } catch (e) {
-      console.error("[handleDeleteTemplate] throw:", e);
-      alert("调用失败: " + String(e));
-    }
+    invoke<{ ok: boolean; error?: string }>("delete_template", { templateId: id })
+      .then((res) => {
+        if (res.ok) {
+          setConfirmDeleteTemplate(null);
+          loadTemplates();
+        } else {
+          alert(res.error || "删除失败");
+        }
+      })
+      .catch((e) => { console.error("delete_template:", e); alert("删除失败: " + String(e)); });
   };
 
   const handleBatchDeleteTemplates = () => {
     if (selectedTemplateIds.size === 0) return;
     if (!confirm(`确定删除选中的 ${selectedTemplateIds.size} 个模板？此操作不可撤销。`)) return;
     const ids = Array.from(selectedTemplateIds);
-    invoke<void>("batch_delete_templates", { ids })
-      .then(() => { setSelectedTemplateIds(new Set()); loadTemplates(); })
-      .catch((e) => alert(typeof e === "string" ? e : "批量删除失败"));
+    invoke<{ ok: boolean; error?: string }>("batch_delete_templates", { ids })
+      .then((res) => {
+        if (res.ok) {
+          setSelectedTemplateIds(new Set());
+          loadTemplates();
+        } else {
+          alert(res.error || "批量删除失败");
+        }
+      })
+      .catch((e) => alert("批量删除异常: " + String(e)));
   };
 
   const toggleTemplateSelect = (id: number) => {
