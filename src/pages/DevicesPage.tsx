@@ -952,27 +952,28 @@ export default function DevicesPage() {
           {/* 示例提示 */}
           <div className="p-2 bg-[hsl(var(--bg-hover))] rounded text-xs text-[hsl(var(--text-secondary))] leading-relaxed font-mono whitespace-pre">
             {importTab === "network" &&
-`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
-# 其余可选：ssh_port / model / sysname 等
-name,ip,type,vendor,ssh_username,ssh_password,template
-核心交换机-01,10.0.1.1,交换机,H3C,admin,pass123,H3C基础巡检`}
+`# 支持逗号、Tab、空格分隔；首行可写中文表头
+# 必填：名称 / IP / 类型 / 厂商 / SSH用户名 / SSH密码 / 模板
+名称  IP  类型    厂商  SSH用户名  SSH密码  模板
+核心交换机-01  10.0.1.1  交换机  H3C  admin  pass123  H3C基础巡检
+出口路由器  10.0.2.1  路由器  华为  admin  pass456  华为巡检`}
             {importTab === "server" &&
-`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
-# 其余可选：ssh_port / kernel_version 等
-name,ip,type,vendor,ssh_username,ssh_password,template
-Web服务器,10.0.2.10,服务器,Linux,root,root123,Linux通用`}
+`# 支持逗号、Tab、空格分隔；首行可写中文表头
+# 必填：名称 / IP / 类型 / 厂商 / SSH用户名 / SSH密码 / 模板
+名称  IP  类型   厂商    SSH用户名  SSH密码  模板
+Web服务器  10.0.2.10  服务器  Linux  root  root123  Linux通用`}
             {importTab === "database" &&
-`# 必填：name / ip / type / vendor / ssh_username / ssh_password / template
-# 其余可选：deployment / instance_name / db_username / db_port 等
-name,ip,type,vendor,ssh_username,ssh_password,template
-MySQL主库,10.0.3.1,数据库,MySQL,root,dbpass456,MySQL巡检`}
+`# 支持逗号、Tab、空格分隔；首行可写中文表头
+# 必填：名称 / IP / 类型 / 厂商 / SSH用户名 / SSH密码 / 模板
+名称  IP  类型   厂商    SSH用户名  SSH密码  模板
+MySQL主库  10.0.3.1  数据库  MySQL  root  dbpass456  MySQL巡检`}
           </div>
 
           {/* 文本框 */}
           <textarea
             value={importText}
             onChange={(e) => { setImportText(e.target.value); setImportResult(null); setImportErrors([]); }}
-            placeholder={`在此粘贴 CSV 内容...\n\n参考上方示例格式`}
+            placeholder={`在此粘贴内容（逗号/Tab/空格分隔均可）...`}
             className="w-full h-40 px-3 py-2 text-xs font-mono border border-[hsl(var(--border))] rounded resize-y focus:outline-none focus:border-[hsl(var(--accent))] bg-[hsl(var(--bg-primary))] text-[hsl(var(--text-primary))]"
             spellCheck={false}
           />

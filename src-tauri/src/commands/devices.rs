@@ -1949,8 +1949,8 @@ pub struct ImportDevicesResult {
     pub errors: Vec<ImportDeviceError>,
 }
 
-/// 简单的 CSV 行解析（支持双引号包裹的值和 "" 转义）
-fn parse_csv_line(line: &str) -> Vec<String> {
+/// 解析单行：按指定分隔符 split，支持双引号包裹
+fn parse_delimited_line(line: &str, delim: char) -> Vec<String> {
     let mut fields = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
@@ -1966,7 +1966,7 @@ fn parse_csv_line(line: &str) -> Vec<String> {
                 }
             }
             '"' => in_quotes = true,
-            ',' if !in_quotes => {
+            c if !in_quotes && c == delim => {
                 fields.push(current.trim().to_string());
                 current = String::new();
             }
@@ -1977,10 +1977,78 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     fields
 }
 
-/// 导入设备 CSV：粘贴 CSV 文本 → 解析 → 逐条插入
+/// 按空白符分隔（空格/Tab 都算分隔，连续空白视为一个，支持引号）
+fn parse_whitespace_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes => {
+                if chars.peek() == Some(&'"') {
+                    current.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            }
+            '"' => in_quotes = true,
+            c if !in_quotes && c.is_ascii_whitespace() => {
+                if !current.is_empty() {
+                    fields.push(current.trim().to_string());
+                    current = String::new();
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        fields.push(current.trim().to_string());
+    }
+    fields
+}
+
+/// 自动检测分隔符：逗号优先，其次 Tab，最后空白
+fn detect_delim_and_parse(line: &str) -> (char, Vec<String>) {
+    if line.contains(',') {
+        (',', parse_delimited_line(line, ','))
+    } else if line.contains('\t') {
+        ('\t', parse_delimited_line(line, '\t'))
+    } else {
+        (' ', parse_whitespace_line(line))
+    }
+}
+
+/// 中文列名 → 英文列名映射
+fn normalize_column_name(name: &str) -> &str {
+    match name {
+        "名称" => "name", "IP地址" | "IP" | "ip" | "ip地址" => "ip",
+        "类型" | "设备类型" => "type", "厂商" | "品牌" => "vendor",
+        "SSH用户名" | "用户名" | "ssh用户" => "ssh_username",
+        "SSH密码" | "密码" | "ssh密码" => "ssh_password",
+        "SSH端口" | "端口" => "ssh_port",
+        "模板" | "巡检模板" | "关联模板" => "template",
+        "型号" => "model", "主机名" => "sysname",
+        "序列号" | "SN" => "serial_number",
+        "CPU" | "CPU核心" | "cpu" => "cpu_cores",
+        "内存" | "内存GB" | "memory" => "memory_gb",
+        "部署方式" | "部署" => "deployment",
+        "容器名" | "实例名" => "instance_name",
+        "数据库用户" | "DB用户" | "db用户" => "db_username",
+        "数据库端口" | "DB端口" | "db端口" => "db_port",
+        "数据库密码" | "DB密码" | "db密码" => "db_password",
+        "内核版本" | "内核" => "kernel_version",
+        "数据库版本" | "DB版本" | "db版本" => "db_version",
+        "出厂日期" => "manufacturing_date",
+        _ => name,
+    }
+}
+
+/// 导入设备：粘贴文本 → 按分隔符解析 → 逐条插入
 ///
-/// 自动检测首行是否为表头（含已知列名）。无表头时使用默认列顺序：
-/// name, ip, type, vendor, ssh_username, ssh_password, template
+/// 支持逗号、Tab、空格三种分隔符（自动检测）。首行含列名时自动映射。
+/// 无表头默认顺序：名称 IP 类型 厂商 SSH用户名 SSH密码 模板
 #[tauri::command]
 pub async fn import_devices_csv(
     csv_text: String,
@@ -1990,30 +2058,52 @@ pub async fn import_devices_csv(
 
     let lines: Vec<&str> = csv_text.lines().collect();
     if lines.is_empty() {
-        return Err("CSV 内容为空".to_string());
+        return Err("内容为空".to_string());
     }
 
-    // 已知列名集合（小写）
+    // 自动检测分隔符（用第一条非空非注释行）
+    let sample = lines.iter()
+        .find(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+        .unwrap_or(&lines[0]);
+    let (delim, _sample_fields) = detect_delim_and_parse(sample);
+
+    // 解析首行并判断是否为表头
+    let first_fields = if delim == ' ' {
+        parse_whitespace_line(lines[0])
+    } else {
+        parse_delimited_line(lines[0], delim)
+    };
+
+    // 已知列名 + 中文别名
     const KNOWN_COLUMNS: &[&str] = &[
         "name", "ip", "type", "vendor", "ssh_username", "ssh_password", "ssh_port",
         "template", "model", "sysname", "serial_number", "cpu_cores", "memory_gb",
         "deployment", "instance_name", "db_username", "db_port", "db_password",
         "kernel_version", "db_version", "manufacturing_date",
+        // 中文别名
+        "名称", "IP", "IP地址", "类型", "设备类型", "厂商", "品牌",
+        "SSH用户名", "用户名", "SSH密码", "密码", "SSH端口", "端口",
+        "模板", "巡检模板", "型号", "主机名", "序列号", "SN",
+        "CPU", "CPU核心", "内存", "内存GB",
+        "部署方式", "部署", "容器名", "实例名",
+        "数据库用户", "DB用户", "数据库端口", "DB端口",
+        "数据库密码", "DB密码", "内核版本", "内核",
+        "数据库版本", "DB版本", "出厂日期",
     ];
 
-    // 判断第一行是否为表头：至少一个字段匹配已知列名
-    let first_fields = parse_csv_line(lines[0]);
-    let has_header = first_fields.iter().any(|f| KNOWN_COLUMNS.contains(&f.as_str()));
+    let has_header = first_fields.iter().any(|f| {
+        let n = normalize_column_name(f);
+        KNOWN_COLUMNS.contains(&n)
+    }) && first_fields.len() >= 4;
 
     let (col_map, data_start): (std::collections::HashMap<&str, usize>, usize) = if has_header {
         let map: std::collections::HashMap<&str, usize> = first_fields
             .iter()
             .enumerate()
-            .map(|(i, name)| (name.as_str(), i))
+            .map(|(i, name)| (normalize_column_name(name), i))
             .collect();
         (map, 1)
     } else {
-        // 默认列顺序：name, ip, type, vendor, ssh_username, ssh_password, template
         let default_order = ["name", "ip", "type", "vendor", "ssh_username", "ssh_password", "template"];
         let map: std::collections::HashMap<&str, usize> = default_order
             .iter()
@@ -2025,7 +2115,11 @@ pub async fn import_devices_csv(
 
     for required in &["name", "ip", "type", "vendor", "ssh_password"] {
         if !col_map.contains_key(required) {
-            return Err(format!("CSV 缺少必要列: {}", required));
+            let labels: std::collections::HashMap<&str, &str> = [
+                ("name", "名称"), ("ip", "IP"), ("type", "类型"), ("vendor", "厂商"), ("ssh_password", "SSH密码"),
+            ].iter().cloned().collect();
+            let label = labels.get(required).unwrap_or(required);
+            return Err(format!("缺少必要列: {} ({})", label, required));
         }
     }
 
@@ -2045,9 +2139,18 @@ pub async fn import_devices_csv(
         total, success: 0, skipped: 0, errors: Vec::new(),
     };
 
+    // 行解析闭包（根据检测到的分隔符动态分发）
+    let parse_line = |line: &str| -> Vec<String> {
+        match delim {
+            ',' => parse_delimited_line(line, ','),
+            '\t' => parse_delimited_line(line, '\t'),
+            _ => parse_whitespace_line(line),
+        }
+    };
+
     for (line_idx, line) in data_lines.iter().enumerate() {
         let file_line = line_idx + data_start + 1; // 1-based 行号
-        let fields = parse_csv_line(line);
+        let fields = parse_line(line);
         let name = match get(&col_map, &fields, "name") {
             Some(n) => n,
             None => {
