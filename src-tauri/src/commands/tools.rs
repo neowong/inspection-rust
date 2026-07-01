@@ -664,8 +664,8 @@ pub async fn start_tftp_server(
     tokio::spawn(async move {
         let mut buf = vec![0u8; 516];
         let block_size: u16 = 512;
-        // 跟踪每个客户端的传输状态: (file_name, file_data, current_block)
-        let mut clients: HashMap<String, (String, Vec<u8>, u16)> = HashMap::new();
+        // 跟踪每个客户端的传输状态: (file_name, file_data_arc, current_block)
+        let mut clients: HashMap<String, (String, Arc<Vec<u8>>, u16)> = HashMap::new();
 
         /// 发送 TFTP 错误包
         async fn send_error(socket: &UdpSocket, dst: std::net::SocketAddr, code: u16, msg: &str) {
@@ -711,9 +711,10 @@ pub async fn start_tftp_server(
                         Ok(data) => {
                             let file_size = data.len() as u64;
                             let block_num = 1u16;
-                            let chunk_end = std::cmp::min(block_size as usize, data.len());
+                            let file_size = data.len();
+                            let chunk_end = std::cmp::min(block_size as usize, file_size);
                             let chunk = data[..chunk_end].to_vec();
-                            clients.insert(client_key.clone(), (safe_name, data, block_num));
+                            clients.insert(client_key.clone(), (safe_name, Arc::new(data), block_num));
 
                             let mut pkt = vec![0u8; 4 + chunk.len()];
                             pkt[0] = 0; pkt[1] = 3;
