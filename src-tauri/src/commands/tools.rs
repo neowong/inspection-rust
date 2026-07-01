@@ -608,25 +608,41 @@ async fn bind_privileged_port(port: u16, service_name: &str) -> Result<UdpSocket
     let addr = format!("0.0.0.0:{}", port);
     match UdpSocket::bind(&addr).await {
         Ok(s) => Ok(s),
-        Err(e) if port < 1024 && cfg!(target_os = "linux") => {
+        Err(_) if port < 1024 && cfg!(target_os = "linux") => {
             if let Ok(exe) = std::env::current_exe() {
-                let binary = exe.to_string_lossy();
+                let binary = exe.to_string_lossy().to_string();
+                // 检查是否已有 cap（已授权但当前进程未重启）
+                let has_cap = std::process::Command::new("getcap")
+                    .arg(&binary)
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).contains("cap_net_bind_service"))
+                    .unwrap_or(false);
+                if has_cap {
+                    return Err(format!(
+                        "{} 权限已设置，但当前进程未加载。\n请重启应用后使用 {}。",
+                        service_name, service_name
+                    ));
+                }
+                // 首次使用：弹出 pkexec 认证对话框
                 let status = std::process::Command::new("pkexec")
                     .args(["setcap", "cap_net_bind_service=+ep", &binary])
                     .status();
                 match status {
                     Ok(s) if s.success() => {
-                        return Err(format!("授权成功！请重新点击启动 {}（下次无需再次授权）", service_name));
+                        return Err(format!(
+                            "授权成功！请重启应用后使用 {}。",
+                            service_name
+                        ));
                     }
                     _ => {
                         return Err(format!(
-                            "端口 {} 需要 root 权限。请手动执行:\n  sudo setcap cap_net_bind_service=+ep '{}'\n然后重启应用",
+                            "端口 {} 绑定失败。请手动执行:\n  sudo setcap cap_net_bind_service=+ep '{}'\n然后重启应用",
                             port, binary
                         ));
                     }
                 }
             }
-            Err(format!("端口 {} 绑定失败: {}", port, e))
+            Err(format!("端口 {} 绑定失败，需要 root 权限", port))
         }
         Err(e) => Err(format!("端口 {} 绑定失败: {}", port, e)),
     }
