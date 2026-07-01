@@ -662,10 +662,10 @@ pub async fn start_tftp_server(
     }));
 
     tokio::spawn(async move {
-        let mut buf = vec![0u8; 516];
-        let block_size: u16 = 512;
-        // 跟踪每个客户端的传输状态: (file_name, file_data_arc, current_block)
-        let mut clients: HashMap<String, (String, Arc<Vec<u8>>, u16)> = HashMap::new();
+        let mut buf = vec![0u8; 4100]; // 4096 字节数据块 + 4 字节头
+        let block_size: usize = 4096;
+        // 跟踪每个客户端的传输状态: (file_name, file_data_arc, bytes_sent)
+        let mut clients: HashMap<String, (String, Arc<Vec<u8>>, u64)> = HashMap::new();
 
         /// 发送 TFTP 错误包
         async fn send_error(socket: &UdpSocket, dst: std::net::SocketAddr, code: u16, msg: &str) {
@@ -683,7 +683,7 @@ pub async fn start_tftp_server(
             }
 
             let (n, src) = match tokio::time::timeout(
-                std::time::Duration::from_secs(1), socket.recv_from(&mut buf)
+                std::time::Duration::from_secs(30), socket.recv_from(&mut buf)
             ).await {
                 Ok(Ok(v)) => v,
                 _ => continue,
@@ -714,7 +714,7 @@ pub async fn start_tftp_server(
                             let file_size = data.len();
                             let chunk_end = std::cmp::min(block_size as usize, file_size);
                             let chunk = data[..chunk_end].to_vec();
-                            clients.insert(client_key.clone(), (safe_name, Arc::new(data), block_num));
+                            clients.insert(client_key.clone(), (safe_name, Arc::new(data), chunk.len() as u64));
 
                             let mut pkt = vec![0u8; 4 + chunk.len()];
                             pkt[0] = 0; pkt[1] = 3;
@@ -739,26 +739,26 @@ pub async fn start_tftp_server(
                     }
                 }
                 4 => { // ACK
-                    let block = u16::from_be_bytes([buf[2], buf[3]]);
+                    let ack_block = u16::from_be_bytes([buf[2], buf[3]]);
                     let client_info = clients.get(&client_key).cloned();
-                    if let Some((fname, file_data, current)) = client_info {
-                        if block == current {
-                            let file_size = file_data.len() as u64;
-                            let next_block = block.wrapping_add(1);
-                            let offset = (block as usize) * block_size as usize;
-
-                            if offset >= file_data.len() {
+                    if let Some((fname, file_data, bytes_sent)) = client_info {
+                        let file_size = file_data.len() as u64;
+                        let expected = (bytes_sent / block_size as u64) as u16;
+                        if ack_block == expected {
+                            if bytes_sent >= file_size {
                                 clients.remove(&client_key);
                                 let _ = app.emit("tftp-log", serde_json::json!({
-                                    "msg": format!("{} → 下载完成 ✓ {} ({:.1} KB)", src.ip(), fname, file_size as f64 / 1024.0),
+                                    "msg": format!("{} → 下载完成 ✓ {} ({:.1} MB)", src.ip(), fname, file_size as f64 / 1048576.0),
                                     "type": "success"
                                 }));
                                 let _ = app.emit("tftp-progress", serde_json::json!({
                                     "ip": src.ip().to_string(), "bytes": file_size, "total": file_size, "done": true
                                 }));
                             } else {
-                                let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
+                                let offset = bytes_sent as usize;
+                                let chunk_end = std::cmp::min(offset + block_size, file_data.len());
                                 let chunk = file_data[offset..chunk_end].to_vec();
+                                let next_block = ack_block.wrapping_add(1);
                                 let mut pkt = vec![0u8; 4 + chunk.len()];
                                 pkt[0] = 0; pkt[1] = 3;
                                 pkt[2] = (next_block >> 8) as u8;
@@ -768,10 +768,10 @@ pub async fn start_tftp_server(
                                     let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
                                     clients.remove(&client_key);
                                 } else {
-                                    clients.insert(client_key.clone(), (fname.clone(), file_data.clone(), next_block));
-                                    let bytes_sent = offset as u64 + chunk.len() as u64;
+                                    let new_bytes = bytes_sent + chunk.len() as u64;
+                                    clients.insert(client_key.clone(), (fname.clone(), file_data.clone(), new_bytes));
                                     let _ = app.emit("tftp-progress", serde_json::json!({
-                                        "ip": src.ip().to_string(), "bytes": bytes_sent.min(file_size), "total": file_size, "done": false
+                                        "ip": src.ip().to_string(), "bytes": new_bytes.min(file_size), "total": file_size, "done": false
                                     }));
                                 }
                             }
@@ -917,7 +917,7 @@ pub async fn start_syslog_server(
             }
 
             let (n, src) = match tokio::time::timeout(
-                std::time::Duration::from_secs(1), socket.recv_from(&mut buf)
+                std::time::Duration::from_secs(30), socket.recv_from(&mut buf)
             ).await {
                 Ok(Ok(v)) => v,
                 _ => continue,
