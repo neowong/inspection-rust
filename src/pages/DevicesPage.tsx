@@ -377,7 +377,7 @@ export default function DevicesPage() {
     }
   };
 
-  /** 批量录入设备：调用后端解析 CSV 并插入 */
+  /** 批量添加设备：调用后端解析 CSV 并插入 */
   const handleImport = async () => {
     const text = importText.trim();
     if (!text) { showStatusHint("请先粘贴 CSV 内容", "warn"); return; }
@@ -550,9 +550,9 @@ export default function DevicesPage() {
 
       <Toolbar>
         <Button onClick={openAdd} size="sm">添加设备</Button>
-        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="批量录入设备">
+        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="批量添加设备">
           <Upload className="h-3.5 w-3.5 mr-1" />
-          批量录入
+          批量添加
         </Button>
         <Select
           size="sm"
@@ -909,7 +909,7 @@ export default function DevicesPage() {
       {/* ── 导入 Modal ── */}
       <Modal
         open={importOpen}
-        title="批量录入设备"
+        title="批量添加设备"
         width="max-w-2xl"
         onClose={() => setImportOpen(false)}
         footer={
