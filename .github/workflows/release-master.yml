@@ -33,7 +33,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          CARGO_TARGET_DIR: target # 覆盖 target-internal
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AI巡检助手 ${{ github.ref_name }}"
@@ -50,10 +49,8 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - name: Install Rust stable (aarch64)
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -65,14 +62,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          CARGO_TARGET_DIR: target # 覆盖 .cargo/config.toml 的 target-internal
         with:
           tagName: ${{ github.ref_name }}-macos
           releaseName: "AI巡检助手 ${{ github.ref_name }} (macOS)"
           releaseBody: "macOS 版本 (aarch64)"
           releaseDraft: false
           prerelease: false
-          args: --target aarch64-apple-darwin
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -100,7 +95,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          CARGO_TARGET_DIR: target # 覆盖 target-internal
         with:
           tagName: ${{ github.ref_name }}-linux
           releaseName: "AI巡检助手 ${{ github.ref_name }} (Linux)"
