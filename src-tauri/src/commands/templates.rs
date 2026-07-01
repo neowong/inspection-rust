@@ -185,7 +185,6 @@ fn get_referencing_devices(conn: &rusqlite::Connection, template_id: i64) -> Vec
 #[derive(Debug, Serialize)]
 pub struct DeleteTemplateResult {
     ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -202,6 +201,7 @@ pub async fn delete_template(template_id: i64, state: State<'_, AppState>) -> Re
             devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
         );
         tracing::warn!("[delete_template] template_id={} blocked: {}", template_id, msg);
+        // DEBUG: 用不包含中文的简短消息测试
         return Ok(DeleteTemplateResult { ok: false, error: Some(msg) });
     }
 
@@ -424,4 +424,21 @@ pub fn delete_command(command_id: i64, state: State<AppState>) -> Result<(), Str
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_delete_template_result_serialization() {
+        // 验证 DeleteTemplateResult 序列化正确
+        let r = DeleteTemplateResult { ok: true, error: None };
+        let json = serde_json::to_string(&r).unwrap();
+        assert_eq!(json, r#"{"ok":true}"#);
+
+        let r2 = DeleteTemplateResult { ok: false, error: Some("测试错误".to_string()) };
+        let json2 = serde_json::to_string(&r2).unwrap();
+        assert_eq!(json2, r#"{"ok":false,"error":"测试错误"}"#);
+    }
 }
