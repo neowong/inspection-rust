@@ -10,6 +10,5 @@ pub mod port_scanner;
 pub mod snmp_checker;
 pub mod web_checker;
 pub mod vendor_profile;
-pub mod zabbix_checker;
 pub mod linux_runner;
 pub mod ip_location;

@@ -11,7 +11,8 @@ const TOOLS = [
   { key: "trace", label: "路由跟踪" },
   { key: "web", label: "WEB检测" },
   { key: "snmp", label: "SNMP" },
-  { key: "zabbix", label: "Zabbix" },
+  { key: "tftp", label: "TFTP 服务" },
+  { key: "syslog", label: "Syslog" },
 ] as const;
 
 type ToolKey = (typeof TOOLS)[number]["key"];
@@ -47,16 +48,6 @@ interface SnmpResult {
   error: string | null;
   response_time_ms: number;
   raw_hex: string | null;
-}
-
-interface ZabbixAgentResult {
-  reachable: boolean;
-  version: string | null;
-  hostname: string | null;
-  ping_ok: boolean;
-  active_mode_note: string;
-  response_time_ms: number;
-  error: string | null;
 }
 
 // ---- Subnet Calculator ------------------------------------------------------
@@ -1268,142 +1259,143 @@ function SnmpChecker() {
   );
 }
 
-// ---- Zabbix Agent Checker ---------------------------------------------------
+// ---- TFTP Server ------------------------------------------------------------
 
-function ZabbixChecker() {
-  const [ip, setIp] = useState("");
-  const [port, setPort] = useState("10050");
-  const [timeout, setTimeout_] = useState("3000");
-  const [scanning, setScanning] = useState(false);
-  const [result, setResult] = useState<ZabbixAgentResult | null>(null);
-  const [error, setError] = useState("");
+function TftpServer() {
+  const [filePath, setFilePath] = useState("");
+  const [port, setPort] = useState("69");
+  const [running, setRunning] = useState(false);
+  const [logs, setLogs] = useState<{ msg: string; type: string }[]>([]);
+  const [progress, setProgress] = useState<{ ip: string; bytes: number; total: number; done: boolean } | null>(null);
 
-  const handleCheck = async () => {
-    setError("");
-    setResult(null);
-    setScanning(true);
+  useEffect(() => {
+    const unlistens: (() => void)[] = [];
+    listen<{ msg: string; type: string }>("tftp-log", (e) => {
+      setLogs(prev => [...prev.slice(-199), e.payload]);
+    }).then(f => unlistens.push(f));
+    listen<{ ip: string; bytes: number; total: number; done: boolean }>("tftp-progress", (e) => {
+      setProgress(e.payload);
+    }).then(f => unlistens.push(f));
+    return () => unlistens.forEach(f => f());
+  }, []);
+
+  const start = async () => {
+    if (!filePath.trim()) { alert("请选择要传输的文件"); return; }
     try {
-      const data = await invoke<ZabbixAgentResult>("check_zabbix_agent", {
-        ip: ip.trim(),
-        port: parseInt(port, 10) || 10050,
-        timeoutMs: parseInt(timeout, 10) || 3000,
-      });
-      setResult(data);
-    } catch (e: any) {
-      setError(typeof e === "string" ? e : e?.message || String(e));
-    } finally {
-      setScanning(false);
-    }
+      await invoke("start_tftp_server", { filePath: filePath.trim(), port: parseInt(port) || 69 });
+      setRunning(true);
+    } catch (e: any) { alert(typeof e === "string" ? e : e?.message || "启动失败"); }
+  };
+  const stop = async () => {
+    try { await invoke("stop_tftp_server"); } catch {}
+    setRunning(false); setProgress(null);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-end gap-3 flex-wrap">
-        <div>
-          <label className={labelClass}>目标 IP</label>
-          <input
-            type="text" placeholder="192.168.1.1"
-            value={ip} onChange={e => setIp(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleCheck()}
-            className={`w-40 ${inputClass}`}
-            style={{ imeMode: "disabled" }}
-          />
+        <div className="flex-1 min-w-[200px]">
+          <label className={labelClass}>升级文件路径</label>
+          <input value={filePath} onChange={e => setFilePath(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm text-[hsl(var(--text-primary))]"
+            placeholder="/path/to/firmware.bin" />
         </div>
-        <div>
+        <div className="w-24">
           <label className={labelClass}>端口</label>
-          <SpinInput
-            min={1} max={65535} step={1}
-            value={port} onChange={(v) => setPort(String(v))}
-            className="w-24"
-          />
+          <input value={port} onChange={e => setPort(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm" />
         </div>
-        <div>
-          <label className={labelClass}>超时 (ms)</label>
-          <SpinInput
-            min={500} max={10000} step={500}
-            value={timeout} onChange={(v) => setTimeout_(String(v))}
-            className="w-24"
-          />
+        <div className="flex gap-2">
+          {!running
+            ? <button onClick={start} className={btnClass}>▶ 启动</button>
+            : <button onClick={stop} className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:opacity-90">⏹ 停止</button>}
         </div>
-        <button onClick={handleCheck} disabled={scanning} className={btnClass}>
-          {scanning ? "检测中..." : "开始检测"}
-        </button>
+        {running && <span className="text-xs text-green-500">● 运行中</span>}
       </div>
-
-      {error && <p className="text-sm text-[hsl(var(--danger))]">{error}</p>}
-
-      {result && (
-        <div className="rounded-lg border border-[hsl(var(--border))] overflow-hidden">
-          <table className="w-full text-sm">
-            <tbody>
-              <tr className="border-b border-[hsl(var(--border))]">
-                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))] w-24">端口状态</td>
-                <td className="px-4 py-2.5 font-mono">
-                  {result.reachable ? (
-                    <span className="inline-flex items-center gap-1 text-[hsl(var(--success))]">
-                      <CheckCircle2 size={14} /> 可达 (TCP {port})
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[hsl(var(--danger))]">
-                      <XCircle size={14} /> 不可达
-                    </span>
-                  )}
-                </td>
-              </tr>
-              {result.reachable && (
-                <>
-                  <tr className="border-b border-[hsl(var(--border))]">
-                    <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">被动模式</td>
-                    <td className="px-4 py-2.5 font-mono">
-                      {result.ping_ok ? (
-                        <span className="text-[hsl(var(--success))]">已确认 (agent.ping 响应成功)</span>
-                      ) : (
-                        <span className="text-[hsl(var(--warning))]">未确认 ({result.error || "未知"})</span>
-                      )}
-                    </td>
-                  </tr>
-                  {result.version && (
-                    <tr className="border-b border-[hsl(var(--border))]">
-                      <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">Agent 版本</td>
-                      <td className="px-4 py-2.5 font-mono">{result.version}</td>
-                    </tr>
-                  )}
-                  {result.hostname && (
-                    <tr className="border-b border-[hsl(var(--border))]">
-                      <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">主机名</td>
-                      <td className="px-4 py-2.5 font-mono">{result.hostname}</td>
-                    </tr>
-                  )}
-                  <tr className="border-b border-[hsl(var(--border))]">
-                    <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">主动模式</td>
-                    <td className="px-4 py-2.5 text-xs text-[hsl(var(--text-secondary))]">{result.active_mode_note}</td>
-                  </tr>
-                </>
-              )}
-              <tr>
-                <td className="px-4 py-2.5 bg-[hsl(var(--muted))] text-[hsl(var(--text-secondary))]">响应时间</td>
-                <td className="px-4 py-2.5 font-mono text-[hsl(var(--text-secondary))]">{result.response_time_ms}ms</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!result && !error && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-12 h-12 rounded-full bg-[hsl(var(--muted))] flex items-center justify-center mb-4">
-            <Plug size={20} className="text-[hsl(var(--text-tertiary))]" />
+      {progress && !progress.done && (
+        <div className="p-3 border border-[hsl(var(--border))] rounded-lg">
+          <p className="text-xs text-[hsl(var(--text-secondary))] mb-1">{progress.ip} 传输中...</p>
+          <div className="w-full bg-[hsl(var(--border))] rounded-full h-3">
+            <div className="bg-[hsl(var(--accent))] h-3 rounded-full transition-all" style={{
+              width: progress.total > 0 ? `${(progress.bytes / progress.total) * 100}%` : "50%"
+            }} />
           </div>
-          <h3 className="text-sm font-medium text-[hsl(var(--text-secondary))] mb-1">Zabbix Agent 检测</h3>
-          <p className="text-xs text-[hsl(var(--text-tertiary))] max-w-md">
-            被动模式：连接 TCP 10050 端口，发送 agent.ping / agent.version / agent.hostname 协议帧<br />
-            主动模式：agent 主动连接 Zabbix server 10051 端口上报数据，无法从外部被动检测
+          <p className="text-xs text-[hsl(var(--text-tertiary))] mt-1">
+            {progress.total > 0 ? `${(progress.bytes / 1024).toFixed(0)} / ${(progress.total / 1024).toFixed(0)} KB` : `${(progress.bytes / 1024).toFixed(0)} KB`}
           </p>
         </div>
       )}
+      <div className="max-h-48 overflow-y-auto border border-[hsl(var(--border))] rounded-lg p-3 bg-[hsl(var(--bg-primary))] text-xs font-mono space-y-1">
+        {logs.length === 0 && <p className="text-[hsl(var(--text-tertiary))]">等待传输...</p>}
+        {logs.map((l, i) => (
+          <p key={i} className={l.type === "error" ? "text-red-500" : l.type === "success" ? "text-green-500" : "text-[hsl(var(--text-secondary))]"}>
+            {l.msg}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
+
+// ---- Syslog Receiver --------------------------------------------------------
+
+function SyslogReceiver() {
+  const [port, setPort] = useState("514");
+  const [running, setRunning] = useState(false);
+  const [messages, setMessages] = useState<{ time: string; ip: string; msg: string }[]>([]);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ time: string; ip: string; msg: string }>("syslog-msg", (e) => {
+      setMessages(prev => [...prev.slice(-499), e.payload]);
+      setCount(c => c + 1);
+    }).then(f => { unlisten = f; });
+    return () => unlisten?.();
+  }, []);
+
+  const start = async () => {
+    try {
+      await invoke("start_syslog_server", { port: parseInt(port) || 514 });
+      setRunning(true);
+    } catch (e: any) { alert(typeof e === "string" ? e : e?.message || "启动失败"); }
+  };
+  const stop = async () => {
+    try { await invoke("stop_syslog_server"); } catch {}
+    setRunning(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="w-24">
+          <label className={labelClass}>端口</label>
+          <input value={port} onChange={e => setPort(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm" />
+        </div>
+        <div className="flex gap-2">
+          {!running
+            ? <button onClick={start} className={btnClass}>▶ 启动</button>
+            : <button onClick={stop} className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-red-500 hover:opacity-90">⏹ 停止</button>}
+          <button onClick={() => { setMessages([]); setCount(0); }} className="px-3 py-2 rounded-lg text-xs border border-[hsl(var(--border))]">清空</button>
+        </div>
+        {running && <span className="text-xs text-green-500">● 运行中</span>}
+        <span className="text-xs text-[hsl(var(--text-secondary))] ml-auto">已接收 {count} 条</span>
+      </div>
+      <div className="max-h-80 overflow-y-auto border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-primary))] text-xs font-mono">
+        {messages.length === 0 && <p className="p-4 text-[hsl(var(--text-tertiary))] text-center">等待日志...</p>}
+        {messages.map((m, i) => (
+          <div key={i} className="flex gap-2 px-3 py-1 border-b border-[hsl(var(--border-light))] hover:bg-[hsl(var(--bg-hover))]">
+            <span className="text-[hsl(var(--text-tertiary))] shrink-0">{m.time}</span>
+            <span className="text-[hsl(var(--accent))] shrink-0">{m.ip}</span>
+            <span className="text-[hsl(var(--text-primary))] truncate">{m.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 // ---- Main page ---------------------------------------------------------------
 
@@ -1440,7 +1432,8 @@ export default function ToolsPage() {
       <div hidden={active !== "trace"}><Traceroute /></div>
       <div hidden={active !== "web"}><WebChecker /></div>
       <div hidden={active !== "snmp"}><SnmpChecker /></div>
-      <div hidden={active !== "zabbix"}><ZabbixChecker /></div>
+      <div hidden={active !== "tftp"}><TftpServer /></div>
+      <div hidden={active !== "syslog"}><SyslogReceiver /></div>
     </div>
   );
 }

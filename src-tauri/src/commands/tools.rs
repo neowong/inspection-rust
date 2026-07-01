@@ -137,20 +137,6 @@ pub async fn snmp_v3_get(
     ).await
 }
 
-#[tauri::command]
-pub async fn check_zabbix_agent(
-    ip: String,
-    port: u16,
-    timeout_ms: u64,
-) -> Result<services::zabbix_checker::ZabbixAgentResult, String> {
-    let ip_clone = ip;
-    tokio::task::spawn_blocking(move || {
-        Ok(services::zabbix_checker::check_zabbix_agent(&ip_clone, port, timeout_ms))
-    })
-    .await
-    .map_err(|e| format!("任务失败: {}", e))?
-}
-
 // ============================================================
 // 路由跟踪 (Traceroute)
 // ============================================================
@@ -603,5 +589,320 @@ fn run_traceroute_stream(
 
     // 通知前端完成
     let _ = app.emit("trace-done", serde_json::json!({ "success": true }));
+    Ok(())
+}
+
+// ============================================================
+// TFTP Server
+// ============================================================
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use tokio::net::UdpSocket;
+use tokio::fs;
+
+static TFTP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+pub async fn start_tftp_server(
+    app: tauri::AppHandle,
+    file_path: String,
+    port: Option<u16>,
+) -> Result<(), String> {
+    if TFTP_RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("TFTP 服务已在运行中".into());
+    }
+
+    let port = port.unwrap_or(69);
+    let bind_addr = format!("0.0.0.0:{}", port);
+    tracing::info!("[tftp] 启动服务, 文件: {}, 端口: {}", file_path, port);
+
+    // 预读文件到内存
+    let file_data = fs::read(&file_path).await.map_err(|e| format!("无法读取文件: {}", e))?;
+    let file_name = std::path::Path::new(&file_path)
+        .file_name().map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let file_size = file_data.len() as u64;
+
+    let _ = app.emit("tftp-log", serde_json::json!({
+        "msg": format!("TFTP 服务已启动，文件: {} ({} KB)", file_name, file_size / 1024),
+        "type": "info"
+    }));
+
+    tokio::spawn(async move {
+        let socket = match UdpSocket::bind(&bind_addr).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("绑定端口失败: {}", e), "type": "error" }));
+                TFTP_RUNNING.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        let buf = vec![0u8; 516]; // TFTP 标准块大小 512 + 4 头
+        let block_size: u16 = 512;
+        // 跟踪每个客户端的当前块号
+        let mut clients: HashMap<String, u16> = HashMap::new();
+
+        loop {
+            if !TFTP_RUNNING.load(Ordering::SeqCst) {
+                let _ = app.emit("tftp-log", serde_json::json!({ "msg": "TFTP 服务已停止", "type": "info" }));
+                break;
+            }
+
+            let (n, src) = match tokio::time::timeout(
+                std::time::Duration::from_secs(1), socket.recv_from(&mut buf)
+            ).await {
+                Ok(Ok(v)) => v,
+                _ => continue,
+            };
+
+            let opcode = u16::from_be_bytes([buf[0], buf[1]]);
+            let client_key = src.to_string();
+
+            match opcode {
+                1 => { // RRQ - 读请求（设备下载文件）
+                    // 解析文件名
+                    let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
+                    let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+
+                    let _ = app.emit("tftp-log", serde_json::json!({
+                        "msg": format!("{} → RRQ 请求下载: {}", src.ip(), req_name),
+                        "type": "info"
+                    }));
+
+                    // 发送第一个数据块
+                    let block_num = 1u16;
+                    clients.insert(client_key.clone(), block_num);
+
+                    let offset = 0usize;
+                    let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
+                    let chunk = &file_data[offset..chunk_end];
+
+                    let mut pkt = vec![0u8; 4 + chunk.len()];
+                    pkt[0] = 0; pkt[1] = 3; // DATA opcode
+                    pkt[2] = (block_num >> 8) as u8;
+                    pkt[3] = block_num as u8;
+                    pkt[4..].copy_from_slice(chunk);
+
+                    if let Err(e) = socket.send_to(&pkt, src).await {
+                        let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
+                    }
+                }
+                4 => { // ACK
+                    let block = u16::from_be_bytes([buf[2], buf[3]]);
+                    let current = *clients.get(&client_key).unwrap_or(&0);
+
+                    if block == current {
+                        let next_block = block + 1;
+                        let offset = (block as usize) * block_size as usize;
+
+                        if offset >= file_data.len() {
+                            // 传输完成
+                            clients.remove(&client_key);
+                            let _ = app.emit("tftp-log", serde_json::json!({
+                                "msg": format!("{} → 传输完成 ✓ ({:.1} KB)", src.ip(), file_size as f64 / 1024.0),
+                                "type": "success"
+                            }));
+                            let _ = app.emit("tftp-progress", serde_json::json!({
+                                "ip": src.ip().to_string(),
+                                "bytes": file_size,
+                                "total": file_size,
+                                "done": true
+                            }));
+                        } else {
+                            let chunk_end = std::cmp::min(offset + block_size as usize, file_data.len());
+                            let chunk = &file_data[offset..chunk_end];
+
+                            let mut pkt = vec![0u8; 4 + chunk.len()];
+                            pkt[0] = 0; pkt[1] = 3;
+                            pkt[2] = (next_block >> 8) as u8;
+                            pkt[3] = next_block as u8;
+                            pkt[4..].copy_from_slice(chunk);
+
+                            if let Err(e) = socket.send_to(&pkt, src).await {
+                                let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("发送失败: {}", e), "type": "error" }));
+                                clients.remove(&client_key);
+                            } else {
+                                clients.insert(client_key.clone(), next_block);
+                                let bytes_sent = offset as u64 + chunk.len() as u64;
+                                let _ = app.emit("tftp-progress", serde_json::json!({
+                                    "ip": src.ip().to_string(),
+                                    "bytes": bytes_sent.min(file_size),
+                                    "total": file_size,
+                                    "done": false
+                                }));
+                            }
+                        }
+                    }
+                }
+                2 => { // WRQ - 写请求（设备上传文件）
+                    let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
+                    let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+
+                    let _ = app.emit("tftp-log", serde_json::json!({
+                        "msg": format!("{} → WRQ 上传请求: {}", src.ip(), req_name),
+                        "type": "info"
+                    }));
+
+                    let save_path = std::path::Path::new(&file_path).parent()
+                        .map(|d| d.join(&*req_name))
+                        .unwrap_or_else(|| std::path::PathBuf::from(req_name.as_ref()));
+
+                    let save_path_clone = save_path.clone();
+                    let app_clone = app.clone();
+                    let src_clone = src;
+
+                    // 发送 ACK 0 表示准备好接收
+                    let ack = [0u8, 4, 0, 0];
+                    let _ = socket.send_to(&ack, src).await;
+
+                    // 接收文件
+                    tokio::spawn(async move {
+                        let mut recv_socket = match UdpSocket::bind("0.0.0.0:0").await {
+                            Ok(s) => s,
+                            Err(e) => {
+                                let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": format!("创建接收socket失败: {}", e), "type": "error" }));
+                                return;
+                            }
+                        };
+                        let _ = recv_socket.connect(src_clone).await;
+
+                        let mut file_buf: Vec<u8> = Vec::new();
+                        let mut rcv_buf = vec![0u8; 516];
+                        let mut expected_block = 1u16;
+
+                        loop {
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                recv_socket.recv(&mut rcv_buf)
+                            ).await {
+                                Ok(Ok(n)) => {
+                                    if n < 4 { break; }
+                                    let recv_block = u16::from_be_bytes([rcv_buf[2], rcv_buf[3]]);
+                                    if recv_block == expected_block {
+                                        file_buf.extend_from_slice(&rcv_buf[4..n]);
+                                        expected_block = expected_block.wrapping_add(1);
+                                        // ACK
+                                        let ack = [0u8, 4, rcv_buf[2], rcv_buf[3]];
+                                        let _ = recv_socket.send(&ack).await;
+                                        let _ = app_clone.emit("tftp-progress", serde_json::json!({
+                                            "ip": src_clone.ip().to_string(),
+                                            "bytes": file_buf.len() as u64,
+                                            "total": 0,
+                                            "done": false
+                                        }));
+                                        // 最后一个数据包 < 512 表示传输结束
+                                        if n < 516 {
+                                            break;
+                                        }
+                                    }
+                                }
+                                _ => break,
+                            }
+                        }
+
+                        match fs::write(&save_path, &file_buf).await {
+                            Ok(_) => {
+                                let _ = app_clone.emit("tftp-log", serde_json::json!({
+                                    "msg": format!("{} → 上传完成 ✓ 保存至: {} ({} B)", src_clone.ip(), save_path_clone.display(), file_buf.len()),
+                                    "type": "success"
+                                }));
+                                let _ = app_clone.emit("tftp-progress", serde_json::json!({
+                                    "ip": src_clone.ip().to_string(),
+                                    "bytes": file_buf.len() as u64,
+                                    "total": file_buf.len() as u64,
+                                    "done": true
+                                }));
+                            }
+                            Err(e) => {
+                                let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": format!("保存文件失败: {}", e), "type": "error" }));
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_tftp_server() -> Result<(), String> {
+    if !TFTP_RUNNING.swap(false, Ordering::SeqCst) {
+        return Err("TFTP 服务未在运行".into());
+    }
+    Ok(())
+}
+
+// ============================================================
+// Syslog 接收器
+// ============================================================
+
+static SYSLOG_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+pub async fn start_syslog_server(
+    app: tauri::AppHandle,
+    port: Option<u16>,
+) -> Result<(), String> {
+    if SYSLOG_RUNNING.swap(true, Ordering::SeqCst) {
+        return Err("Syslog 服务已在运行中".into());
+    }
+
+    let port = port.unwrap_or(514);
+    let bind_addr = format!("0.0.0.0:{}", port);
+    tracing::info!("[syslog] 启动监听, 端口: {}", port);
+
+    let _ = app.emit("syslog-log", serde_json::json!({
+        "msg": format!("Syslog 服务已启动，监听端口 {}", port),
+        "type": "info"
+    }));
+
+    tokio::spawn(async move {
+        let socket = match UdpSocket::bind(&bind_addr).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = app.emit("syslog-log", serde_json::json!({ "msg": format!("绑定失败: {}", e), "type": "error" }));
+                SYSLOG_RUNNING.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        let mut buf = vec![0u8; 4096];
+        loop {
+            if !SYSLOG_RUNNING.load(Ordering::SeqCst) {
+                let _ = app.emit("syslog-log", serde_json::json!({ "msg": "Syslog 服务已停止", "type": "info" }));
+                break;
+            }
+
+            let (n, src) = match tokio::time::timeout(
+                std::time::Duration::from_secs(1), socket.recv_from(&mut buf)
+            ).await {
+                Ok(Ok(v)) => v,
+                _ => continue,
+            };
+
+            let raw = String::from_utf8_lossy(&buf[..n]);
+            let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+
+            let _ = app.emit("syslog-msg", serde_json::json!({
+                "time": ts,
+                "ip": src.ip().to_string(),
+                "msg": raw.trim().to_string(),
+            }));
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_syslog_server() -> Result<(), String> {
+    if !SYSLOG_RUNNING.swap(false, Ordering::SeqCst) {
+        return Err("Syslog 服务未在运行".into());
+    }
     Ok(())
 }

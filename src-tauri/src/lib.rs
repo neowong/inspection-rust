@@ -594,7 +594,6 @@ pub fn run() {
             commands::tools::check_web_urls,
             commands::tools::snmp_get,
             commands::tools::snmp_v3_get,
-            commands::tools::check_zabbix_agent,
             commands::tools::get_app_version,
             commands::tools::get_os_info,
             commands::tools::has_ip_db,
@@ -602,6 +601,10 @@ pub fn run() {
             commands::tools::check_update,
             commands::tools::submit_feedback,
             commands::tools::trace_route,
+            commands::tools::start_tftp_server,
+            commands::tools::stop_tftp_server,
+            commands::tools::start_syslog_server,
+            commands::tools::stop_syslog_server,
             // Stats
             get_stats,
             // Chat
