@@ -132,6 +132,8 @@ ai-inspection/
 - **设备导入导出**: CSV 格式，Tauri dialog plugin 弹出保存框。导出 17 列（密码不导出），导入支持带/不带表头两种格式，自动检测。必填项 name/ip/type/vendor，type 支持中英文。冲突检测：同名跳过、同类型同 IP 跳过。模板按名称自动匹配。`import_devices_csv`（Rust）包含完整字段解析、唯一性检查、密码加密。前端三页签（网络设备/服务器/数据库）提供不同示例。
 - **模板删除引用检查**: 前端调用 `check_template_devices` 预查引用，模态内展示引用设备列表，有引用时隐藏删除按钮。后端 `delete_template` 和 `batch_delete_templates` 使用 `async` + `Result<Struct, String>` 模式。
 - **Tauri v2 关键坑**: sync 命令返回 `Result::Err(String)` 时，JS invoke promise 既不 resolve 也不 reject，永远 pending。必须使用 `async fn` + 返回 `Ok({ok: false, error: "..."})` 结构体，前端检查 `res.ok` 判断。
+- **TFTP 协议要点**: 块大小 512B（标准兼容）；文件大小恰好为 512 整数倍时必须额外发送空 DATA 包（0 字节数据）表示传输结束；每个客户端应在独立 tokio::spawn 中处理，共享 Arc<UdpSocket>；UDP 低端口 (<1024) 在 Linux 需要 `setcap cap_net_bind_service=+ep`。
+- **全局审计 (2026-07-01)**: 修复 15 项问题 — Tauri sync Err 不 reject、TFTP 重写（Arc+独立任务+空 DATA+错误恢复）、CSV 导入事务、前端 stale closure/ref 修复、Modal backdrop、批量操作并发保护等。详见 `memory/session-2026-07-01-round2.md` 和 `memory/tftp-known-issues.md`。
 - **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
 
 ## Windows 交叉编译注意事项
