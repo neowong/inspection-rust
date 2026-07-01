@@ -33,6 +33,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AI巡检助手 ${{ github.ref_name }}"
@@ -62,6 +63,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target
         with:
           tagName: ${{ github.ref_name }}-macos
           releaseName: "AI巡检助手 ${{ github.ref_name }} (macOS)"
@@ -95,6 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target
         with:
           tagName: ${{ github.ref_name }}-linux
           releaseName: "AI巡检助手 ${{ github.ref_name }} (Linux)"
