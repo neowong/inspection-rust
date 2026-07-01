@@ -632,6 +632,12 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
     Err(format!("重启失败: {}", err))
 }
 
+#[cfg(not(target_os = "linux"))]
+async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
+    let addr = format!("0.0.0.0:{}", port);
+    UdpSocket::bind(&addr).await.map_err(|e| format!("端口 {} 绑定失败: {}", port, e))
+}
+
 #[tauri::command]
 pub async fn start_tftp_server(
     app: tauri::AppHandle,
