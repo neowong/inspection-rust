@@ -52,6 +52,7 @@ export default function Modal({
     <div
       className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50"
       style={{ animation: "fadeInOnly 0.15s ease-out" }}
+      onClick={onClose}
     >
       <div
         className="relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col animate-in"

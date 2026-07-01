@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -61,17 +61,17 @@ export default function DashboardPage() {
   const location = useLocation();
   const [stats, setStats] = useState<Stats | null>(null);
 
-  const loadStats = () => invoke<Stats>("get_stats").then(setStats).catch(console.error);
-  useEffect(() => { loadStats(); }, [location.key]);
+  const loadStats = useCallback(() => invoke<Stats>("get_stats").then(setStats).catch(console.error), []);
+  useEffect(() => { loadStats(); }, [loadStats, location.key]);
   // 每 30s 自动刷新
   useEffect(() => {
     const t = setInterval(loadStats, 30000);
     return () => clearInterval(t);
-  }, []);
+  }, [loadStats]);
   useEffect(() => {
     window.addEventListener("focus", loadStats);
     return () => window.removeEventListener("focus", loadStats);
-  }, []);
+  }, [loadStats]);
 
   const v = (key: keyof Stats) => stats ? String(stats[key] ?? 0) : "...";
 

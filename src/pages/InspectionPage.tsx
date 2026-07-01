@@ -92,7 +92,12 @@ export default function InspectionPage() {
         setActionLoading(null);
         loadBatches();
       })
-      .catch((e) => { setActionLoading(null); console.error(typeof e === "string" ? e : JSON.stringify(e)); });
+      .catch((e) => {
+        setActionLoading(null);
+        const msg = typeof e === "string" ? e : JSON.stringify(e);
+        console.error(`批次操作失败 (${action}):`, msg);
+        alert(`操作失败: ${msg}`);
+      });
   };
 
   const handleRestartAndRun = (batchId: number) => {

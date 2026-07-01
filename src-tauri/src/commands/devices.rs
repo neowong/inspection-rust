@@ -591,7 +591,7 @@ pub async fn check_device_status(
         })?;
     let result = inner?;
     // 如果设备在线，清除旧静态信息后重新检测（解决凭据/连接信息变更后旧数据过期的问题）
-    if result.get("status").and_then(|v| v.as_str()) == Some("online") {
+    if result.get("new_status").and_then(|v| v.as_str()) == Some("online") {
         let _ = db.lock().execute(
             "UPDATE devices SET sysname=NULL, model=NULL, serial_number=NULL, manufacturing_date=NULL, \
              cpu_cores=NULL, memory_gb=NULL, kernel_version=NULL, db_version=NULL, instance_name=NULL \
@@ -2039,17 +2039,18 @@ fn detect_delim_and_parse(line: &str) -> (char, Vec<String>) {
 
 /// 中文列名 → 英文列名映射
 fn normalize_column_name(name: &str) -> &str {
+    // 先精确匹配（中文别名），再 lowercase 匹配（英文大小写不敏感）
     match name {
-        "名称" => "name", "IP地址" | "IP" | "ip" | "ip地址" => "ip",
+        "名称" => "name", "IP地址" | "ip地址" => "ip",
         "类型" | "设备类型" => "type", "厂商" | "品牌" => "vendor",
         "SSH用户名" | "用户名" | "ssh用户" => "ssh_username",
         "SSH密码" | "密码" | "ssh密码" => "ssh_password",
         "SSH端口" | "端口" => "ssh_port",
         "模板" | "巡检模板" | "关联模板" => "template",
         "型号" => "model", "主机名" => "sysname",
-        "序列号" | "SN" => "serial_number",
-        "CPU" | "CPU核心" | "cpu" => "cpu_cores",
-        "内存" | "内存GB" | "memory" => "memory_gb",
+        "序列号" => "serial_number",
+        "CPU" | "CPU核心" => "cpu_cores",
+        "内存" | "内存GB" => "memory_gb",
         "部署方式" | "部署" => "deployment",
         "容器名" | "实例名" => "instance_name",
         "数据库用户" | "DB用户" | "db用户" => "db_username",
@@ -2059,24 +2060,24 @@ fn normalize_column_name(name: &str) -> &str {
         "数据库版本" | "DB版本" | "db版本" => "db_version",
         "出厂日期" => "manufacturing_date",
         _ => match name.to_lowercase().as_str() {
-            "name" | "名称" => "name", "ip" | "ip地址" | "ip address" => "ip",
-            "type" | "类型" | "device_type" => "type", "vendor" | "厂商" => "vendor",
-            "ssh_username" | "ssh用户名" | "username" => "ssh_username",
-            "ssh_password" | "ssh密码" | "password" => "ssh_password",
-            "ssh_port" | "ssh端口" | "port" => "ssh_port",
-            "template" | "模板" => "template", "model" | "型号" => "model",
-            "sysname" | "主机名" | "hostname" => "sysname",
-            "serial_number" | "sn" | "序列号" => "serial_number",
-            "cpu_cores" | "cpu" | "cpu核心" => "cpu_cores",
-            "memory_gb" | "memory" | "内存" => "memory_gb",
-            "deployment" | "部署方式" | "部署" => "deployment",
-            "instance_name" | "容器名" | "实例名" => "instance_name",
-            "db_username" | "db用户" | "数据库用户" => "db_username",
-            "db_port" | "db端口" | "数据库端口" => "db_port",
-            "db_password" | "db密码" | "数据库密码" => "db_password",
-            "kernel_version" | "内核版本" | "内核" => "kernel_version",
-            "db_version" | "db版本" | "数据库版本" => "db_version",
-            "manufacturing_date" | "出厂日期" => "manufacturing_date",
+            "name" => "name", "ip" | "ip address" => "ip",
+            "type" | "device_type" => "type", "vendor" => "vendor",
+            "ssh_username" | "username" => "ssh_username",
+            "ssh_password" | "password" => "ssh_password",
+            "ssh_port" | "port" => "ssh_port",
+            "template" => "template", "model" => "model",
+            "sysname" | "hostname" => "sysname",
+            "serial_number" | "sn" => "serial_number",
+            "cpu_cores" | "cpu" => "cpu_cores",
+            "memory_gb" | "memory" => "memory_gb",
+            "deployment" => "deployment",
+            "instance_name" => "instance_name",
+            "db_username" => "db_username",
+            "db_port" => "db_port",
+            "db_password" => "db_password",
+            "kernel_version" => "kernel_version",
+            "db_version" => "db_version",
+            "manufacturing_date" => "manufacturing_date",
             _ => name,
         },
     }
@@ -2091,7 +2092,7 @@ pub async fn import_devices_csv(
     csv_text: String,
     state: State<'_, AppState>,
 ) -> Result<ImportDevicesResult, String> {
-    let conn = state.db.lock();
+    let mut conn = state.db.lock();
 
     let lines: Vec<&str> = csv_text.lines().collect();
     if lines.is_empty() {
@@ -2185,6 +2186,9 @@ pub async fn import_devices_csv(
         }
     };
 
+    // 使用事务包裹所有插入，确保原子性（崩溃不回滚到半完成状态）
+    let tx = conn.transaction().map_err(|e| format!("开启事务失败: {}", e))?;
+
     for (line_idx, line) in data_lines.iter().enumerate() {
         let file_line = line_idx + data_start + 1; // 1-based 行号
         let fields = parse_line(line);
@@ -2249,10 +2253,10 @@ pub async fn import_devices_csv(
         let manufacturing_date = get(&col_map, &fields, "manufacturing_date").unwrap_or_default();
 
         let template_id: Option<i64> = get(&col_map, &fields, "template").and_then(|tpl_name| {
-            conn.query_row("SELECT id FROM inspection_templates WHERE name = ?1", rusqlite::params![tpl_name], |row| row.get(0)).ok()
+            tx.query_row("SELECT id FROM inspection_templates WHERE name = ?1", rusqlite::params![tpl_name], |row| row.get(0)).ok()
         });
 
-        if let Err(e) = check_unique_inline(&conn, &name, &ip, device_type, &vendor) {
+        if let Err(e) = check_unique_inline(&tx, &name, &ip, device_type, &vendor) {
             result.skipped += 1;
             result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: e });
             continue;
@@ -2285,7 +2289,7 @@ pub async fn import_devices_csv(
         let db_version_opt = if db_version.is_empty() { None } else { Some(db_version) };
         let mfg_date_opt = if manufacturing_date.is_empty() { None } else { Some(manufacturing_date) };
 
-        if let Err(e) = conn.execute(
+        if let Err(e) = tx.execute(
             "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, sysname, serial_number, cpu_cores, memory_gb, deployment, instance_name, db_username, db_port, db_password_encrypted, kernel_version, db_version, manufacturing_date) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             rusqlite::params![
@@ -2300,6 +2304,9 @@ pub async fn import_devices_csv(
             result.success += 1;
         }
     }
+
+    // 提交事务（全部成功或全部回滚）
+    tx.commit().map_err(|e| format!("事务提交失败: {}", e))?;
 
     Ok(result)
 }

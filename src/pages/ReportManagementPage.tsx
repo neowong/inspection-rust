@@ -159,16 +159,21 @@ export default function ReportManagementPage() {
   const handleBatchAiJudge = async () => {
     if (!selectedBatch) return;
     const batchId = selectedBatch.id;
-    const records = selectedBatch.records || []; // 提前捕获，避免切批次后变成别的任务的
+    const records = selectedBatch.records || [];
+    const startId = selectedIdRef.current; // 记录开始时的批次 ID
     setBatchGenerating("ai");
     const sp = (v: Record<number, "ai" | "manual">) => { processingBatchesRef.current = v; setProcessingBatches(v); };
     sp({...processingBatchesRef.current, [batchId]: "ai"});
     try {
       await invoke("analyze_batch", { batchId, force: hasAnalyzedRecords });
       await refreshAfterMutation(expandedRecordId ?? undefined);
+      if (selectedIdRef.current !== startId) return; // 用户已切换批次，放弃输出
       await generateAllReports(batchId, records);
       flashBatchDone("ai", batchId);
-    } catch (e) { console.error(String(e)); }
+    } catch (e) {
+      console.error("AI评判失败:", String(e));
+      alert(`AI评判失败: ${String(e)}`);
+    }
     finally { setBatchGenerating(""); const n = {...processingBatchesRef.current}; delete n[batchId]; sp(n); }
   };
 
@@ -177,13 +182,18 @@ export default function ReportManagementPage() {
     if (!selectedBatch) return;
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || [];
+    const startId = selectedIdRef.current;
     setBatchGenerating("manual");
     const sp = (v: Record<number, "ai" | "manual">) => { processingBatchesRef.current = v; setProcessingBatches(v); };
     sp({...processingBatchesRef.current, [batchId]: "manual"});
     try {
+      if (selectedIdRef.current !== startId) return;
       await generateAllReports(batchId, records);
       flashBatchDone("manual", batchId);
-    } catch (e) { console.error(String(e)); }
+    } catch (e) {
+      console.error("人工评判失败:", String(e));
+      alert(`人工评判失败: ${String(e)}`);
+    }
     finally { setBatchGenerating(""); const n = {...processingBatchesRef.current}; delete n[batchId]; sp(n); }
   };
 

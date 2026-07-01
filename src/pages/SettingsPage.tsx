@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiModelConfig } from "../types";
 import { useShakeValidation } from "../hooks/useShakeValidation";
@@ -112,13 +112,15 @@ export default function SettingsPage() {
     invoke<void>("deactivate_ai_config", { configId: id }).then(loadConfigs).catch(console.error);
   };
 
+  const testIdRef = useRef(0); // 防止并发测试互相干扰
   const handleTest = (id: number) => {
+    const thisTest = ++testIdRef.current;
     setTesting(id);
     setTestResult(null);
     invoke<string>("test_ai_config", { configId: id })
-      .then((msg) => setTestResult({ id, ok: true, msg }))
-      .catch((e) => setTestResult({ id, ok: false, msg: typeof e === "string" ? e : e?.message || "测试失败" }))
-      .finally(() => setTesting(null));
+      .then((msg) => { if (thisTest === testIdRef.current) setTestResult({ id, ok: true, msg }); })
+      .catch((e) => { if (thisTest === testIdRef.current) setTestResult({ id, ok: false, msg: typeof e === "string" ? e : e?.message || "测试失败" }); })
+      .finally(() => { if (thisTest === testIdRef.current) setTesting(null); });
   };
 
   return (

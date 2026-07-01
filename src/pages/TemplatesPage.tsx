@@ -134,6 +134,8 @@ export default function TemplatesPage() {
       .sort();
     if (customVendors.length > 0) {
       setAllVendors([...customVendors, ...(VENDORS as unknown as string[])]);
+    } else {
+      setAllVendors([...VENDORS] as string[]); // 无自定义厂商时恢复默认
     }
   }, [commands]);
 

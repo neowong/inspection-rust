@@ -115,6 +115,7 @@ export interface InspectionRecord {
   summary_judgment: string | null;
   report_path: string | null;
   error_message: string | null;
+  static_info: string | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;

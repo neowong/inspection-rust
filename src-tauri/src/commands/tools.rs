@@ -593,6 +593,7 @@ fn run_traceroute_stream(
 }
 
 // ============================================================
+// ============================================================
 // TFTP Server
 // ============================================================
 
@@ -612,7 +613,6 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
         Err(e) => return Err(format!("端口 {} 绑定失败: {}", port, e)),
     }
 
-    // Linux 低端口 (<1024): pkexec setcap + exec 重启应用
     let exe = std::env::current_exe().map_err(|e| format!("无法获取程序路径: {}", e))?;
     let binary = exe.to_string_lossy().to_string();
 
@@ -625,7 +625,6 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
         return Err("授权取消或失败".into());
     }
 
-    // exec 替换当前进程以加载新的 cap
     use std::os::unix::process::CommandExt;
     let args: Vec<String> = std::env::args().collect();
     let err = std::process::Command::new(&binary).args(&args[1..]).exec();
@@ -666,44 +665,41 @@ pub async fn start_tftp_server(
         "type": "info"
     }));
 
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 516];
-        let block_size: usize = 512;
+    let socket = Arc::new(socket);
+    let app_clone = app.clone();
 
-        /// 发送 TFTP 错误包
-        async fn send_error(socket: &UdpSocket, dst: std::net::SocketAddr, code: u16, msg: &str) {
-            let mut err_pkt = vec![0u8; 5 + msg.len() + 1];
-            err_pkt[0] = 0; err_pkt[1] = 5; // ERROR opcode
-            err_pkt[2] = (code >> 8) as u8; err_pkt[3] = code as u8;
-            err_pkt[4..4 + msg.len()].copy_from_slice(msg.as_bytes());
-            let _ = socket.send_to(&err_pkt, dst).await;
-        }
+    let shared_socket = socket.clone();
+    tokio::spawn(async move {
+        let mut recv_buf = vec![0u8; 516];
+        let block_size: usize = 512;
 
         loop {
             if !TFTP_RUNNING.load(Ordering::SeqCst) {
-                let _ = app.emit("tftp-log", serde_json::json!({ "msg": "TFTP 服务已停止", "type": "info" }));
+                let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": "TFTP 服务已停止", "type": "info" }));
                 break;
             }
 
+            let socket_iter = shared_socket.clone();
             let (n, src) = match tokio::time::timeout(
-                std::time::Duration::from_secs(30), socket.recv_from(&mut buf)
+                std::time::Duration::from_secs(30), socket_iter.recv_from(&mut recv_buf)
             ).await {
                 Ok(Ok(v)) => v,
                 _ => continue,
             };
 
-            let opcode = u16::from_be_bytes([buf[0], buf[1]]);
+            let opcode = u16::from_be_bytes([recv_buf[0], recv_buf[1]]);
 
             match opcode {
-                1 => { // RRQ - 读请求：内联处理完整传输，不依赖 HashMap
-                    let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
-                    let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+                1 => { // RRQ - 读请求
+                    let task_socket = socket_iter.clone();
+                    let end = recv_buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
+                    let req_name = String::from_utf8_lossy(&recv_buf[2..2 + end]);
                     let safe_name = std::path::Path::new(req_name.as_ref())
                         .file_name().map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| req_name.to_string());
                     let full_path = base_dir.join(&safe_name);
 
-                    let _ = app.emit("tftp-log", serde_json::json!({
+                    let _ = app_clone.emit("tftp-log", serde_json::json!({
                         "msg": format!("{} → RRQ 请求下载: {}", src.ip(), safe_name),
                         "type": "info"
                     }));
@@ -711,148 +707,194 @@ pub async fn start_tftp_server(
                     let data = match fs::read(&full_path).await {
                         Ok(d) => d,
                         Err(_) => {
-                            let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("{} → 文件未找到: {}", src.ip(), safe_name), "type": "error" }));
-                            send_error(&socket, src, 1, "File not found").await;
+                            let _ = app_clone.emit("tftp-log", serde_json::json!({
+                                "msg": format!("{} → 文件未找到: {}", src.ip(), safe_name),
+                                "type": "error"
+                            }));
+                            // 发送 ERROR 包
+                            let mut err_pkt = vec![0u8; 5 + 14];
+                            err_pkt[0] = 0; err_pkt[1] = 5;
+                            err_pkt[2] = 0; err_pkt[3] = 1;
+                            err_pkt[4..18].copy_from_slice(b"File not found\0");
+                            let _ = socket_iter.send_to(&err_pkt[..18], src).await;
                             continue;
                         }
                     };
 
                     let file_size = data.len() as u64;
-                    let mut block_num: u16 = 1;
-                    let mut offset: usize = 0;
-                    let max_retries = 10;
+                    let task_socket = task_socket.clone();
+                    let app_inner = app_clone.clone();
+                    let src_clone = src;
 
-                    // 内联循环：逐块发送，等待 ACK
-                    'transfer: loop {
-                        if !TFTP_RUNNING.load(Ordering::SeqCst) { break; }
+                    // 每个客户端独立任务，独立缓冲区
+                    tokio::spawn(async move {
+                        let mut send_buf = vec![0u8; 516];
+                        let mut block_num: u16 = 1;
+                        let mut offset: usize = 0;
+                        let max_retries = 10;
+                        let mut consecutive_timeouts = 0;
 
-                        let chunk_end = std::cmp::min(offset + block_size, data.len());
-                        let chunk = &data[offset..chunk_end];
-                        let is_last = chunk_end >= data.len();
+                        'transfer: loop {
+                            if !TFTP_RUNNING.load(Ordering::SeqCst) { break; }
 
-                        // 发送 DATA 包
-                        let mut pkt = vec![0u8; 4 + chunk.len()];
-                        pkt[0] = 0; pkt[1] = 3;
-                        pkt[2] = (block_num >> 8) as u8;
-                        pkt[3] = block_num as u8;
-                        pkt[4..].copy_from_slice(chunk);
-                        let _ = socket.send_to(&pkt, src).await;
-                        let _ = app.emit("tftp-progress", serde_json::json!({
-                            "ip": src.ip().to_string(), "bytes": chunk_end as u64, "total": file_size, "done": false
-                        }));
+                            let chunk_end = std::cmp::min(offset + block_size, data.len());
+                            let chunk = &data[offset..chunk_end];
+                            let is_last_data = chunk_end >= data.len();
 
-                        // 等待 ACK（重试最多 10 次）
-                        let mut retries = 0;
-                        loop {
-                            if !TFTP_RUNNING.load(Ordering::SeqCst) { break 'transfer; }
-                            let result = tokio::time::timeout(
-                                std::time::Duration::from_secs(5), socket.recv_from(&mut buf)
-                            ).await;
-                            let (n2, src2) = match result {
-                                Ok(Ok(v)) => v,
-                                _ => { retries += 1; if retries >= max_retries { break 'transfer; } continue; }
-                            };
-                            if src2 != src { continue; }
-                            if n2 < 4 { continue; }
-                            let op = u16::from_be_bytes([buf[0], buf[1]]);
-                            if op != 4 { continue; }
-                            let ack = u16::from_be_bytes([buf[2], buf[3]]);
-                            if ack == block_num {
-                                // 正确 ACK
-                                if is_last { break 'transfer; } // 最后一块已确认，传输完成
-                                offset = chunk_end;
-                                block_num = block_num.wrapping_add(1);
-                                break; // 发送下一块
+                            // 发送 DATA 包
+                            let mut pkt = vec![0u8; 4 + chunk.len()];
+                            pkt[0] = 0; pkt[1] = 3;
+                            pkt[2] = (block_num >> 8) as u8;
+                            pkt[3] = block_num as u8;
+                            pkt[4..].copy_from_slice(chunk);
+                            let _ = task_socket.send_to(&pkt, src_clone).await;
+                            let _ = app_inner.emit("tftp-progress", serde_json::json!({
+                                "ip": src_clone.ip().to_string(),
+                                "bytes": chunk_end as u64,
+                                "total": file_size,
+                                "done": false
+                            }));
+
+                            // 等待 ACK
+                            let mut retries = 0;
+                            loop {
+                                if !TFTP_RUNNING.load(Ordering::SeqCst) { break 'transfer; }
+                                let result = tokio::time::timeout(
+                                    std::time::Duration::from_secs(5),
+                                    task_socket.recv_from(&mut send_buf)
+                                ).await;
+                                let (n2, src2) = match result {
+                                    Ok(Ok(v)) => v,
+                                    _ => {
+                                        retries += 1;
+                                        consecutive_timeouts += 1;
+                                        if retries >= max_retries || consecutive_timeouts >= 30 {
+                                            break 'transfer;
+                                        }
+                                        // 重发当前块
+                                        let _ = task_socket.send_to(&pkt, src_clone).await;
+                                        continue;
+                                    }
+                                };
+                                if src2 != src_clone { continue; }
+                                if n2 < 4 { continue; }
+                                let op = u16::from_be_bytes([send_buf[0], send_buf[1]]);
+                                if op != 4 { continue; }
+                                let ack = u16::from_be_bytes([send_buf[2], send_buf[3]]);
+                                if ack == block_num {
+                                    consecutive_timeouts = 0;
+                                    if is_last_data {
+                                        // TFTP 协议: 如果最后一块恰好是 512 字节，需要额外发送一个空 DATA
+                                        if chunk.len() == block_size {
+                                            let empty_pkt = [0u8, 3, (block_num.wrapping_add(1) >> 8) as u8, block_num.wrapping_add(1) as u8];
+                                            let _ = task_socket.send_to(&empty_pkt, src_clone).await;
+                                        }
+                                        break 'transfer;
+                                    }
+                                    offset = chunk_end;
+                                    block_num = block_num.wrapping_add(1);
+                                    break;
+                                }
+                                // 错误 block number，重发
+                                let _ = task_socket.send_to(&pkt, src_clone).await;
+                                retries += 1;
+                                if retries >= max_retries { break 'transfer; }
                             }
-                            // 错误 block number，重发当前块
-                            let _ = socket.send_to(&pkt, src).await;
-                            retries += 1;
-                            if retries >= max_retries { break 'transfer; }
                         }
-                    }
 
-                    let _ = app.emit("tftp-log", serde_json::json!({
-                        "msg": format!("{} → 下载完成 ✓ {} ({:.1} MB)", src.ip(), safe_name, file_size as f64 / 1048576.0),
-                        "type": "success"
-                    }));
-                    let _ = app.emit("tftp-progress", serde_json::json!({
-                        "ip": src.ip().to_string(), "bytes": file_size, "total": file_size, "done": true
-                    }));
+                        let _ = app_inner.emit("tftp-log", serde_json::json!({
+                            "msg": format!("{} → 下载完成 ✓ {} ({:.1} MB)", src_clone.ip(), safe_name, file_size as f64 / 1048576.0),
+                            "type": "success"
+                        }));
+                        let _ = app_inner.emit("tftp-progress", serde_json::json!({
+                            "ip": src_clone.ip().to_string(), "bytes": file_size, "total": file_size, "done": true
+                        }));
+                    });
                 }
-                2 => { // WRQ - 写请求（设备上传文件）
-                    let end = buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
-                    let req_name = String::from_utf8_lossy(&buf[2..2 + end]);
+                2 => { // WRQ - 写请求
+                    let end = recv_buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
+                    let req_name = String::from_utf8_lossy(&recv_buf[2..2 + end]);
                     let safe_name = std::path::Path::new(req_name.as_ref())
                         .file_name().map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| req_name.to_string());
 
-                    let _ = app.emit("tftp-log", serde_json::json!({
+                    let _ = app_clone.emit("tftp-log", serde_json::json!({
                         "msg": format!("{} → WRQ 上传请求: {}", src.ip(), req_name),
                         "type": "info"
                     }));
 
                     let save_path = base_dir.join(&*safe_name);
-
-                    let save_path_clone = save_path.clone();
-                    let app_clone = app.clone();
+                    // socket already Arc from outer scope
+                    let app_inner = app_clone.clone();
                     let src_clone = src;
 
                     // 发送 ACK 0 表示准备好接收
-                    let ack = [0u8, 4, 0, 0];
-                    let _ = socket.send_to(&ack, src).await;
+                    let ack0 = [0u8, 4, 0, 0];
+                    let _ = socket_iter.send_to(&ack0, src_clone).await;
 
-                    // 接收文件
                     tokio::spawn(async move {
-                        let recv_socket = match UdpSocket::bind("0.0.0.0:0").await {
-                            Ok(s) => s,
-                            Err(e) => {
-                                let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": format!("创建接收socket失败: {}", e), "type": "error" }));
-                                return;
-                            }
-                        };
-                        let _ = recv_socket.connect(src_clone).await;
-
+                        let mut recv_buf = vec![0u8; 516];
                         let mut file_buf: Vec<u8> = Vec::new();
-                        let mut rcv_buf = vec![0u8; 516];
                         let mut expected_block = 1u16;
+                        let mut last_ack_sent = [0u8, 4, 0, 0];
 
                         loop {
-                            match tokio::time::timeout(
+                            if !TFTP_RUNNING.load(Ordering::SeqCst) { break; }
+                            let result = tokio::time::timeout(
                                 std::time::Duration::from_secs(5),
-                                recv_socket.recv(&mut rcv_buf)
-                            ).await {
-                                Ok(Ok(n)) => {
-                                    if n < 4 { break; }
-                                    let recv_block = u16::from_be_bytes([rcv_buf[2], rcv_buf[3]]);
-                                    if recv_block == expected_block {
-                                        file_buf.extend_from_slice(&rcv_buf[4..n]);
-                                        expected_block = expected_block.wrapping_add(1);
-                                        // ACK
-                                        let ack = [0u8, 4, rcv_buf[2], rcv_buf[3]];
-                                        let _ = recv_socket.send(&ack).await;
-                                        let _ = app_clone.emit("tftp-progress", serde_json::json!({
-                                            "ip": src_clone.ip().to_string(),
-                                            "bytes": file_buf.len() as u64,
-                                            "total": 0,
-                                            "done": false
-                                        }));
-                                        // 最后一个数据包 < 512 表示传输结束
-                                        if n < 516 {
-                                            break;
+                                socket_iter.recv_from(&mut recv_buf)
+                            ).await;
+                            let (n, src2) = match result {
+                                Ok(Ok(v)) if v.1 == src_clone => v,
+                                _ => break, // 超时或非该客户端，结束
+                            };
+                            if n < 4 { break; }
+                            let op = u16::from_be_bytes([recv_buf[0], recv_buf[1]]);
+                            if op != 3 { break; } // 不是 DATA
+                            let recv_block = u16::from_be_bytes([recv_buf[2], recv_buf[3]]);
+                            if recv_block != expected_block { continue; }
+
+                            file_buf.extend_from_slice(&recv_buf[4..n]);
+                            let is_last = n < 516; // 数据 < 512 表示最后一块
+
+                            // ACK 当前块
+                            let ack = [0u8, 4, recv_buf[2], recv_buf[3]];
+                            let _ = socket_iter.send_to(&ack, src_clone).await;
+                            last_ack_sent = ack;
+
+                            let _ = app_inner.emit("tftp-progress", serde_json::json!({
+                                "ip": src_clone.ip().to_string(),
+                                "bytes": file_buf.len() as u64,
+                                "total": 0,
+                                "done": false
+                            }));
+
+                            if is_last {
+                                // 如果最后一块恰好是 512 字节，需要再发一个 ACK（客户端会发空 DATA）
+                                if n == 516 {
+                                    // 等待可能的空 DATA
+                                    if let Ok(Ok((n2, _))) = tokio::time::timeout(
+                                        std::time::Duration::from_secs(2),
+                                        socket_iter.recv_from(&mut recv_buf)
+                                    ).await {
+                                        if n2 == 4 {
+                                            // 空 DATA，再发一个 ACK
+                                            let _ = socket_iter.send_to(&last_ack_sent, src_clone).await;
                                         }
                                     }
                                 }
-                                _ => break,
+                                break;
                             }
+                            expected_block = expected_block.wrapping_add(1);
                         }
 
                         match fs::write(&save_path, &file_buf).await {
                             Ok(_) => {
-                                let _ = app_clone.emit("tftp-log", serde_json::json!({
-                                    "msg": format!("{} → 上传完成 ✓ 保存至: {} ({} B)", src_clone.ip(), save_path_clone.display(), file_buf.len()),
+                                let _ = app_inner.emit("tftp-log", serde_json::json!({
+                                    "msg": format!("{} → 上传完成 ✓ 保存至: {} ({} B)", src_clone.ip(), save_path.display(), file_buf.len()),
                                     "type": "success"
                                 }));
-                                let _ = app_clone.emit("tftp-progress", serde_json::json!({
+                                let _ = app_inner.emit("tftp-progress", serde_json::json!({
                                     "ip": src_clone.ip().to_string(),
                                     "bytes": file_buf.len() as u64,
                                     "total": file_buf.len() as u64,
@@ -860,7 +902,10 @@ pub async fn start_tftp_server(
                                 }));
                             }
                             Err(e) => {
-                                let _ = app_clone.emit("tftp-log", serde_json::json!({ "msg": format!("保存文件失败: {}", e), "type": "error" }));
+                                let _ = app_inner.emit("tftp-log", serde_json::json!({
+                                    "msg": format!("保存文件失败: {}", e),
+                                    "type": "error"
+                                }));
                             }
                         }
                     });
@@ -881,7 +926,6 @@ pub fn stop_tftp_server() -> Result<(), String> {
     Ok(())
 }
 
-// ============================================================
 // Syslog 接收器
 // ============================================================
 

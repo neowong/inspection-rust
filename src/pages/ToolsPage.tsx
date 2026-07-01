@@ -1268,9 +1268,9 @@ function TftpServer() {
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<{ msg: string; type: string }[]>([]);
   const [progress, setProgress] = useState<{ ip: string; bytes: number; total: number; done: boolean } | null>(null);
-  const [prevBytes, setPrevBytes] = useState(0);
-  const [prevTime, setPrevTime] = useState(0);
   const [speed, setSpeed] = useState("");
+  const prevBytesRef = useRef(0);
+  const prevTimeRef = useRef(0);
 
   useEffect(() => {
     const unlistens: (() => void)[] = [];
@@ -1279,30 +1279,30 @@ function TftpServer() {
     }).then(f => unlistens.push(f));
     listen<{ ip: string; bytes: number; total: number; done: boolean }>("tftp-progress", (e) => {
       const now = Date.now();
-      setProgress(p => {
-        if (p && p.bytes > 0 && e.payload.bytes > p.bytes) {
-          const dt = (now - prevTime) / 1000;
-          if (dt > 0.2) {
-            const ds = e.payload.bytes - prevBytes;
-            const spd = ds / dt;
-            setSpeed(spd >= 1048576 ? `${(spd/1048576).toFixed(1)} MB/s`
-              : spd >= 1024 ? `${(spd/1024).toFixed(0)} KB/s`
-              : `${spd.toFixed(0)} B/s`);
-            setPrevBytes(e.payload.bytes);
-            setPrevTime(now);
-          }
+      const prevT = prevTimeRef.current;
+      const prevB = prevBytesRef.current;
+      if (prevT > 0 && prevB > 0 && e.payload.bytes > prevB) {
+        const dt = (now - prevT) / 1000;
+        if (dt > 0.2) {
+          const ds = e.payload.bytes - prevB;
+          const spd = ds / dt;
+          setSpeed(spd >= 1048576 ? `${(spd/1048576).toFixed(1)} MB/s`
+            : spd >= 1024 ? `${(spd/1024).toFixed(0)} KB/s`
+            : `${spd.toFixed(0)} B/s`);
+          prevBytesRef.current = e.payload.bytes;
+          prevTimeRef.current = now;
         }
-        return e.payload;
-      });
+      }
+      setProgress(e.payload);
     }).then(f => unlistens.push(f));
     return () => unlistens.forEach(f => f());
-  }, [prevBytes, prevTime]);
+  }, []);
 
   const start = async () => {
     if (!filePath.trim()) { alert("请选择 TFTP 根目录"); return; }
     try {
       await invoke("start_tftp_server", { filePath: filePath.trim(), port: parseInt(port) || 69 });
-      setRunning(true); setProgress(null); setSpeed(""); setPrevBytes(0); setPrevTime(Date.now());
+      setRunning(true); setProgress(null); setSpeed(""); prevBytesRef.current = 0; prevTimeRef.current = Date.now();
     } catch (e: any) { alert(typeof e === "string" ? e : e?.message || "启动失败"); }
   };
   const stop = async () => {
@@ -1384,12 +1384,12 @@ function SyslogReceiver() {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const unlistenRef = { current: undefined as (() => void) | undefined };
     listen<{ time: string; ip: string; msg: string }>("syslog-msg", (e) => {
       setMessages(prev => [...prev.slice(-499), e.payload]);
       setCount(c => c + 1);
-    }).then(f => { unlisten = f; });
-    return () => unlisten?.();
+    }).then(f => { unlistenRef.current = f; });
+    return () => unlistenRef.current?.();
   }, []);
 
   const start = async () => {
