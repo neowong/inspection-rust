@@ -275,9 +275,11 @@ export default function TemplatesPage() {
       .finally(() => setSaving(false));
   };
   const handleDeleteTemplate = (id: number) => {
+    console.log("[handleDeleteTemplate] called, id=", id);
     try {
       invoke<{ ok: boolean; error?: string }>("delete_template", { templateId: id })
         .then((res) => {
+          console.log("[handleDeleteTemplate] resolved:", JSON.stringify(res));
           if (res.ok) {
             setConfirmDeleteTemplate(null);
             loadTemplates();
@@ -285,9 +287,12 @@ export default function TemplatesPage() {
             alert(res.error || "删除失败");
           }
         })
-        .catch((e) => { console.error("delete_template:", e); alert("删除失败: " + String(e)); });
+        .catch((e) => {
+          console.error("[handleDeleteTemplate] rejected:", e);
+          alert("删除失败: " + (typeof e === "string" ? e : JSON.stringify(e)));
+        });
     } catch (e) {
-      console.error("delete_template throw:", e);
+      console.error("[handleDeleteTemplate] throw:", e);
       alert("调用失败: " + String(e));
     }
   };

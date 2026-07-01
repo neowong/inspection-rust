@@ -191,7 +191,7 @@ pub struct DeleteTemplateResult {
 
 /// 删除巡检模板（检查设备引用）
 #[tauri::command]
-pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<DeleteTemplateResult, String> {
+pub async fn delete_template(template_id: i64, state: State<'_, AppState>) -> Result<DeleteTemplateResult, String> {
     let conn = state.db.lock();
 
     let devices = get_referencing_devices(&conn, template_id);
