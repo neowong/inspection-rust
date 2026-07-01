@@ -662,8 +662,8 @@ pub async fn start_tftp_server(
     }));
 
     tokio::spawn(async move {
-        let mut buf = vec![0u8; 4100]; // 4096 字节数据块 + 4 字节头
-        let block_size: usize = 4096;
+        let mut buf = vec![0u8; 516];
+        let block_size: usize = 512;
         // 跟踪每个客户端的传输状态: (file_name, file_data_arc, bytes_sent)
         let mut clients: HashMap<String, (String, Arc<Vec<u8>>, u64)> = HashMap::new();
 
