@@ -603,6 +603,35 @@ use tokio::fs;
 
 static TFTP_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Linux 下绑定低端口 (<1024) 需要授权，尝试用 pkexec setcap
+async fn bind_privileged_port(port: u16, service_name: &str) -> Result<UdpSocket, String> {
+    let addr = format!("0.0.0.0:{}", port);
+    match UdpSocket::bind(&addr).await {
+        Ok(s) => Ok(s),
+        Err(e) if port < 1024 && cfg!(target_os = "linux") => {
+            if let Ok(exe) = std::env::current_exe() {
+                let binary = exe.to_string_lossy();
+                let status = std::process::Command::new("pkexec")
+                    .args(["setcap", "cap_net_bind_service=+ep", &binary])
+                    .status();
+                match status {
+                    Ok(s) if s.success() => {
+                        return Err(format!("授权成功！请重新点击启动 {}（下次无需再次授权）", service_name));
+                    }
+                    _ => {
+                        return Err(format!(
+                            "端口 {} 需要 root 权限。请手动执行:\n  sudo setcap cap_net_bind_service=+ep '{}'\n然后重启应用",
+                            port, binary
+                        ));
+                    }
+                }
+            }
+            Err(format!("端口 {} 绑定失败: {}", port, e))
+        }
+        Err(e) => Err(format!("端口 {} 绑定失败: {}", port, e)),
+    }
+}
+
 #[tauri::command]
 pub async fn start_tftp_server(
     app: tauri::AppHandle,
@@ -614,28 +643,24 @@ pub async fn start_tftp_server(
     }
 
     let port = port.unwrap_or(69);
-    let bind_addr = format!("0.0.0.0:{}", port);
     let base_dir = std::path::PathBuf::from(&file_path);
     if !base_dir.is_dir() {
+        TFTP_RUNNING.store(false, Ordering::SeqCst);
         return Err("选择的路径不是有效目录".into());
     }
-    tracing::info!("[tftp] 启动服务, 目录: {}, 端口: {}", file_path, port);
 
+    let socket = bind_privileged_port(port, "TFTP").await.map_err(|e| {
+        TFTP_RUNNING.store(false, Ordering::SeqCst);
+        e
+    })?;
+
+    tracing::info!("[tftp] 启动服务, 目录: {}, 端口: {}", file_path, port);
     let _ = app.emit("tftp-log", serde_json::json!({
-        "msg": format!("TFTP 服务已启动，根目录: {}", file_path),
+        "msg": format!("TFTP 服务已启动，根目录: {}，端口: {}", file_path, port),
         "type": "info"
     }));
 
     tokio::spawn(async move {
-        let socket = match UdpSocket::bind(&bind_addr).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = app.emit("tftp-log", serde_json::json!({ "msg": format!("绑定端口失败: {}", e), "type": "error" }));
-                TFTP_RUNNING.store(false, Ordering::SeqCst);
-                return;
-            }
-        };
-
         let mut buf = vec![0u8; 516];
         let block_size: u16 = 512;
         // 跟踪每个客户端的传输状态: (file_name, file_data, current_block)
@@ -869,24 +894,19 @@ pub async fn start_syslog_server(
     }
 
     let port = port.unwrap_or(514);
-    let bind_addr = format!("0.0.0.0:{}", port);
-    tracing::info!("[syslog] 启动监听, 端口: {}", port);
 
+    let socket = bind_privileged_port(port, "Syslog").await.map_err(|e| {
+        SYSLOG_RUNNING.store(false, Ordering::SeqCst);
+        e
+    })?;
+
+    tracing::info!("[syslog] 启动监听, 端口: {}", port);
     let _ = app.emit("syslog-log", serde_json::json!({
         "msg": format!("Syslog 服务已启动，监听端口 {}", port),
         "type": "info"
     }));
 
     tokio::spawn(async move {
-        let socket = match UdpSocket::bind(&bind_addr).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = app.emit("syslog-log", serde_json::json!({ "msg": format!("绑定失败: {}", e), "type": "error" }));
-                SYSLOG_RUNNING.store(false, Ordering::SeqCst);
-                return;
-            }
-        };
-
         let mut buf = vec![0u8; 4096];
         loop {
             if !SYSLOG_RUNNING.load(Ordering::SeqCst) {
