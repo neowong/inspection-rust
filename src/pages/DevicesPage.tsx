@@ -550,6 +550,10 @@ export default function DevicesPage() {
 
       <Toolbar>
         <Button onClick={openAdd} size="sm">添加设备</Button>
+        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="批量录入设备">
+          <Upload className="h-3.5 w-3.5 mr-1" />
+          批量录入
+        </Button>
         <Select
           size="sm"
           className="w-28"
@@ -590,10 +594,6 @@ export default function DevicesPage() {
         <Button size="sm" variant="secondary" onClick={handleExport} title="导出设备文本">
           <Download className="h-3.5 w-3.5 mr-1" />
           {selectedIds.size > 0 ? `导出 (${selectedIds.size})` : "导出"}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="批量录入设备">
-          <Upload className="h-3.5 w-3.5 mr-1" />
-          批量录入
         </Button>
         <Button size="sm" variant="secondary" loading={checkingAll} onClick={handleCheckAll}>
           {checkingAll ? "检测中..." : "检测全部"}
