@@ -709,7 +709,7 @@ pub async fn start_tftp_server(
 
                     match fs::read(&full_path).await {
                         Ok(data) => {
-                            let file_size = data.len() as u64;
+                            let _file_size = data.len() as u64;
                             let block_num = 1u16;
                             let file_size = data.len();
                             let chunk_end = std::cmp::min(block_size as usize, file_size);
