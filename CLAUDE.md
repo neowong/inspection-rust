@@ -130,6 +130,8 @@ ai-inspection/
 - **报告回显剥离**: `strip_command_echo` 支持四种形态：裸命令、带提示符前缀、容器多行回显（`docker exec ...`）、包安装带环境变量前缀（`MYSQL_PWD='xxx' mysql ...`）。进度显示通过 `sanitize_cmd_for_display` 脱敏 `-e KEY=VALUE` 和 `MYSQL_PWD='xxx'` 模式。
 - **报告输出 key 映射**: `execute_device_ssh` 返回的 `command_outputs` key 通过 `wrapped_to_orig` 映射回原始命令，使 `cmd_descs` 能正确匹配命令描述。报告巡检项显示描述而非包装后的命令。
 - **设备导入导出**: CSV 格式，Tauri dialog plugin 弹出保存框。导出 17 列（密码不导出），导入支持带/不带表头两种格式，自动检测。必填项 name/ip/type/vendor，type 支持中英文。冲突检测：同名跳过、同类型同 IP 跳过。模板按名称自动匹配。`import_devices_csv`（Rust）包含完整字段解析、唯一性检查、密码加密。前端三页签（网络设备/服务器/数据库）提供不同示例。
+- **模板删除引用检查**: 前端调用 `check_template_devices` 预查引用，模态内展示引用设备列表，有引用时隐藏删除按钮。后端 `delete_template` 和 `batch_delete_templates` 使用 `async` + `Result<Struct, String>` 模式。
+- **Tauri v2 关键坑**: sync 命令返回 `Result::Err(String)` 时，JS invoke promise 既不 resolve 也不 reject，永远 pending。必须使用 `async fn` + 返回 `Ok({ok: false, error: "..."})` 结构体，前端检查 `res.ok` 判断。
 - **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
 
 ## Windows 交叉编译注意事项
