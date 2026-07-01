@@ -278,7 +278,12 @@ export default function TemplatesPage() {
     try {
       invoke("delete_template", { templateId: id })
         .then(() => { setConfirmDeleteTemplate(null); loadTemplates(); })
-        .catch((e) => { console.error("delete_template error:", e); alert(typeof e === "string" ? e : "删除失败"); });
+        .catch((e) => {
+          const detail = JSON.stringify(e, null, 2);
+          console.error("delete_template rejected:", detail);
+          const msg = typeof e === "string" ? e : (e && typeof e === "object" && "message" in e ? String((e as {message: unknown}).message) : String(e || "删除失败"));
+          alert(msg);
+        });
     } catch (e) {
       console.error("delete_template throw:", e);
       alert("调用失败: " + String(e));

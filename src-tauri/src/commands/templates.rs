@@ -187,11 +187,13 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
 
     let devices = get_referencing_devices(&conn, template_id);
     if !devices.is_empty() {
-        return Err(format!(
+        let msg = format!(
             "该模板被 {} 台设备引用，无法删除：{}",
             devices.len(),
             devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
-        ));
+        );
+        tracing::warn!("[delete_template] template_id={} blocked: {}", template_id, msg);
+        return Err(msg);
     }
 
     let affected = conn
@@ -199,12 +201,19 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
             "DELETE FROM inspection_templates WHERE id = ?1",
             rusqlite::params![template_id],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let msg = format!("删除模板失败: {}", e);
+            tracing::error!("[delete_template] template_id={} error: {}", template_id, msg);
+            msg
+        })?;
 
     if affected == 0 {
-        return Err(format!("巡检模板 ID {} 不存在", template_id));
+        let msg = format!("巡检模板 ID {} 不存在", template_id);
+        tracing::warn!("[delete_template] {}", msg);
+        return Err(msg);
     }
 
+    tracing::info!("[delete_template] template_id={} 删除成功", template_id);
     Ok(())
 }
 
