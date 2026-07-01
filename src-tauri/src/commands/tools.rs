@@ -836,7 +836,7 @@ pub async fn start_tftp_server(
                         let mut recv_buf = vec![0u8; 516];
                         let mut file_buf: Vec<u8> = Vec::new();
                         let mut expected_block = 1u16;
-                        let mut last_ack = [0u8, 4, 0, 0];
+                        let mut last_ack: [u8; 4];
 
                         loop {
                             if !TFTP_RUNNING.load(Ordering::SeqCst) { break; }
