@@ -2010,10 +2010,27 @@ fn parse_whitespace_line(line: &str) -> Vec<String> {
 }
 
 /// 自动检测分隔符：逗号优先，其次 Tab，最后空白
+/// 统计某个分隔符在引号外的出现次数
+fn count_delim_outside_quotes(line: &str, delim: char) -> usize {
+    let mut count = 0;
+    let mut in_quotes = false;
+    for ch in line.chars() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            c if !in_quotes && c == delim => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
+
 fn detect_delim_and_parse(line: &str) -> (char, Vec<String>) {
-    if line.contains(',') {
+    // 统计引号外的分隔符数量，避免误判引号内的逗号
+    let commas = count_delim_outside_quotes(line, ',');
+    let tabs = count_delim_outside_quotes(line, '\t');
+    if commas > 0 && commas >= tabs {
         (',', parse_delimited_line(line, ','))
-    } else if line.contains('\t') {
+    } else if tabs > 0 {
         ('\t', parse_delimited_line(line, '\t'))
     } else {
         (' ', parse_whitespace_line(line))
