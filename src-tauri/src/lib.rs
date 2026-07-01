@@ -532,6 +532,8 @@ pub fn run() {
             commands::devices::update_device,
             commands::devices::delete_device,
             commands::devices::batch_delete_devices,
+            commands::devices::export_devices_csv,
+            commands::devices::import_devices_csv,
             commands::devices::check_device_status,
             commands::devices::check_all_devices_status,
             commands::devices::detect_device_model_by_id,

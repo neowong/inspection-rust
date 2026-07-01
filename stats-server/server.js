@@ -41,6 +41,69 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(BASE_PATH, express.static('public'));
 
+// IP 归属地查询模块（ESM，动态导入）
+let ipSearcher = null;
+async function initIpRegion() {
+  try {
+    const { newWithFileOnly, IPv4 } = await import('ip2region.js');
+    const xdbPath = './ip2region_v4.xdb';
+    const fs = require('fs');
+    if (fs.existsSync(xdbPath)) {
+      ipSearcher = newWithFileOnly(IPv4, xdbPath);
+      console.log('IP 归属地数据库加载成功');
+    } else {
+      console.warn('ip2region_v4.xdb 不存在，归属地解析将不可用');
+    }
+  } catch (err) {
+    console.warn('IP 归属地模块加载失败:', err.message);
+  }
+}
+
+// 格式化 ip2region 返回的原始字符串（"中国|0|浙江省|杭州市|电信" → "中国 浙江省杭州市 电信"）
+function formatRegion(raw, ip) {
+  if (!raw) return '';
+  // 私有地址
+  if (ip) {
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      const first = parseInt(parts[0], 10);
+      const second = parseInt(parts[1], 10);
+      if (first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168) || first === 127) {
+        return '局域网';
+      }
+    }
+  }
+  const fields = raw.split('|').filter(f => f !== '0' && f !== '');
+  if (fields.length === 0) return '';
+  // 去掉重复的"中国"（比如 "中国|0|中国|杭州市|电信" 这种情况）
+  const unique = [];
+  for (const f of fields) {
+    if (unique.length === 0 || f !== unique[unique.length - 1]) {
+      unique.push(f);
+    }
+  }
+  return unique.join(' ');
+}
+
+// 查找 IP 归属地
+async function lookupIpRegion(ip) {
+  if (!ipSearcher || !ip) return '';
+  try {
+    const raw = await ipSearcher.search(ip);
+    return formatRegion(raw, ip);
+  } catch (err) {
+    return '';
+  }
+}
+
+// 提取客户端真实 IP
+function extractClientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.headers['x-real-ip']
+    || req.socket.remoteAddress
+    || '';
+}
+
 // 数据库初始化
 const db = new sqlite3.Database('./data/stats.db', (err) => {
   if (err) {
@@ -75,6 +138,9 @@ db.serialize(() => {
     )
   `);
 
+  // 兼容旧表：添加 ip_region 列
+  db.run(`ALTER TABLE track_records ADD COLUMN ip_region TEXT`, () => {});
+
   // 创建索引
   db.run(`CREATE INDEX IF NOT EXISTS idx_track_device_id ON track_records(device_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_track_timestamp ON track_records(timestamp)`);
@@ -93,6 +159,8 @@ db.serialize(() => {
       os TEXT,
       os_version TEXT,
       ip TEXT,
+      status TEXT DEFAULT 'pending',
+      note TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -101,6 +169,9 @@ db.serialize(() => {
   // 兼容旧表：添加 os/os_version 列
   db.run(`ALTER TABLE feedbacks ADD COLUMN os TEXT`, () => {});
   db.run(`ALTER TABLE feedbacks ADD COLUMN os_version TEXT`, () => {});
+  // 兼容旧表：添加 status/note 列
+  db.run(`ALTER TABLE feedbacks ADD COLUMN status TEXT DEFAULT 'pending'`, () => {});
+  db.run(`ALTER TABLE feedbacks ADD COLUMN note TEXT`, () => {});
 
   // 创建管理员账户（必须通过环境变量设置密码）
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -182,7 +253,7 @@ app.post(`${BASE_PATH}/api/login`, (req, res) => {
 });
 
 // 统计上报接口（客户端调用，限流 + 输入校验）
-app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), (req, res) => {
+app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), async (req, res) => {
   const { device_id, version, os, timestamp } = req.body;
 
   if (!device_id || !version || !os || !timestamp) {
@@ -195,15 +266,15 @@ app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), (req, res) => 
   }
 
   // 提取客户端真实 IP（nginx 反向代理后）
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-    || req.headers['x-real-ip']
-    || req.socket.remoteAddress
-    || '';
+  const ip = extractClientIp(req);
+
+  // 查询 IP 归属地
+  const region = await lookupIpRegion(ip);
 
   db.run(
-    `INSERT INTO track_records (device_id, version, os, ip, timestamp) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO track_records (device_id, version, os, ip, ip_region, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
     [String(device_id).slice(0, 128), String(version).slice(0, 32), String(os).slice(0, 32),
-     String(ip).slice(0, 45), String(timestamp).slice(0, 64)],
+     String(ip).slice(0, 45), String(region).slice(0, 128), String(timestamp).slice(0, 64)],
     (err) => {
       if (err) {
         console.error('记录统计失败:', err);
@@ -295,7 +366,7 @@ app.get(`${BASE_PATH}/api/stats/daily`, authenticateToken, (req, res) => {
 app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 500);
   db.all(
-    `SELECT device_id, version, os, ip, timestamp
+    `SELECT device_id, version, os, ip, ip_region, timestamp
      FROM track_records
      ORDER BY timestamp DESC
      LIMIT ?`,
@@ -308,7 +379,7 @@ app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
 });
 
 // 提交反馈（无需认证，限流 + 输入校验）
-app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, res) => {
+app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), async (req, res) => {
   const { device_id, feedback_type, title, content, contact, version, os, os_version } = req.body;
 
   if (!feedback_type || !title || !content) {
@@ -324,12 +395,17 @@ app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, re
     return res.status(400).json({ error: '输入内容过长' });
   }
 
+  // 提取服务端 IP 并查询归属地
+  const ip = extractClientIp(req);
+  const region = await lookupIpRegion(ip);
+
   db.run(
-    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version, os, os_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO feedbacks (device_id, feedback_type, title, content, contact, version, os, os_version, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [String(device_id || '').slice(0, 128), feedback_type,
      String(title).slice(0, 200), String(content).slice(0, 5000),
      contact ? String(contact).slice(0, 200) : null, String(version || '').slice(0, 32),
-     String(os || '').slice(0, 32), String(os_version || '').slice(0, 64)],
+     String(os || '').slice(0, 32), String(os_version || '').slice(0, 64),
+     ip ? ip + (region ? ' (' + region + ')' : '') : null],
     (err) => {
       if (err) {
         console.error('记录反馈失败:', err);
@@ -344,7 +420,7 @@ app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), (req, re
 app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   db.all(
-    `SELECT id, device_id, feedback_type, title, content, contact, version, os, os_version, created_at
+    `SELECT id, device_id, feedback_type, title, content, contact, version, os, os_version, ip, status, note, created_at
      FROM feedbacks
      ORDER BY created_at DESC
      LIMIT ?`,
@@ -356,6 +432,58 @@ app.get(`${BASE_PATH}/api/feedbacks`, authenticateToken, (req, res) => {
       res.json(rows || []);
     }
   );
+});
+
+// 删除反馈（需认证）
+app.delete(`${BASE_PATH}/api/feedbacks/:id`, authenticateToken, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id || id < 1) {
+    return res.status(400).json({ error: '无效的反馈 ID' });
+  }
+  db.run(`DELETE FROM feedbacks WHERE id = ?`, [id], function(err) {
+    if (err) {
+      return res.status(500).json({ error: '删除失败' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: '反馈不存在' });
+    }
+    res.json({ success: true });
+  });
+});
+
+// 更新反馈状态/备注（需认证）
+app.patch(`${BASE_PATH}/api/feedbacks/:id`, authenticateToken, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id || id < 1) {
+    return res.status(400).json({ error: '无效的反馈 ID' });
+  }
+  const { status, note } = req.body;
+  const validStatuses = ['pending', 'in_progress', 'fixed', 'wontfix'];
+  if (status && !validStatuses.includes(status)) {
+    return res.status(400).json({ error: '无效的状态值' });
+  }
+  if (note && String(note).length > 1000) {
+    return res.status(400).json({ error: '备注内容过长（最多1000字）' });
+  }
+
+  const updates = [];
+  const params = [];
+  if (status) { updates.push('status = ?'); params.push(status); }
+  if (note !== undefined) { updates.push('note = ?'); params.push(note); }
+  if (updates.length === 0) {
+    return res.status(400).json({ error: '没有需要更新的字段' });
+  }
+  params.push(id);
+
+  db.run(`UPDATE feedbacks SET ${updates.join(', ')} WHERE id = ?`, params, function(err) {
+    if (err) {
+      return res.status(500).json({ error: '更新失败' });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: '反馈不存在' });
+    }
+    res.json({ success: true });
+  });
 });
 
 // 健康检查（无需认证，供 docker healthcheck 用）
@@ -373,8 +501,10 @@ process.on('SIGTERM', () => { db.close(); process.exit(0); });
 process.on('SIGINT', () => { db.close(); process.exit(0); });
 
 // 启动服务器
-app.listen(PORT, () => {
-  console.log(`统计服务器运行在 http://localhost:${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}${BASE_PATH}/`);
-  console.log(`管理员账户: root (密码见 ADMIN_PASSWORD 环境变量)`);
+initIpRegion().then(() => {
+  app.listen(PORT, () => {
+    console.log(`统计服务器运行在 http://localhost:${PORT}`);
+    console.log(`Dashboard: http://localhost:${PORT}${BASE_PATH}/`);
+    console.log(`管理员账户: root (密码见 ADMIN_PASSWORD 环境变量)`);
+  });
 });

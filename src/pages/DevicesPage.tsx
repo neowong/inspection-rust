@@ -13,7 +13,7 @@ import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
 import AuthBadge from "../components/AuthBadge";
-import { Radio, Pencil, Copy, Trash2 } from "lucide-react";
+import { Radio, Pencil, Copy, Trash2, Download, Upload } from "lucide-react";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
 const SERVER_VENDORS = ["Linux", "Ubuntu", "CentOS", "Rocky", "Debian", "其它"];
@@ -72,6 +72,13 @@ export default function DevicesPage() {
   const [checkingIds, setCheckingIds] = useState<Set<number>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
   const { shakeFields, triggerShake } = useShakeValidation();
+  /** 导入状态 */
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTab, setImportTab] = useState<"network" | "server" | "database">("network");
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ total: number; success: number; skipped: number } | null>(null);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const isValidIp = (ip: string) => {
     const p = ip.trim();
@@ -322,6 +329,82 @@ export default function DevicesPage() {
       .catch(console.error);
   };
 
+  /** 设备类型 → 中文标签映射 */
+  const typeLabelMap: Record<string, string> = {
+    switch: "交换机", router: "路由器", firewall: "防火墙",
+    loadbalancer: "负载均衡", server: "服务器", database: "数据库", other: "其它",
+  };
+  /** 导出设备：生成 CSV → 弹出保存对话框 → 写入文件 */
+  const handleExport = async () => {
+    const sourceDevices: Device[] = selectedIds.size > 0
+      ? filteredDevices.filter(d => selectedIds.has(d.id))
+      : filteredDevices;
+    if (sourceDevices.length === 0) {
+      showStatusHint("没有可导出的设备（列表为空）", "warn");
+      return;
+    }
+
+    /** CSV 转义：含逗号/引号/换行的值用双引号包裹 */
+    const esc = (v: string) => {
+      if (v.includes(",") || v.includes("\"") || v.includes("\n")) {
+        return `"${v.replace(/"/g, "\"\"")}"`;
+      }
+      return v;
+    };
+
+    const headerRow = "name,ip,type,vendor,ssh_username,ssh_port,model,sysname,serial_number,cpu_cores,memory_gb,kernel_version,db_version,deployment,instance_name,db_username,db_port,template";
+    const lines = sourceDevices.map(d => {
+      const tplName = templates.find(t => t.id === d.template_id)?.name ?? "";
+      const typeLabel = typeLabelMap[d.device_type] || d.device_type;
+      return [
+        esc(d.name), esc(d.ip), esc(typeLabel), esc(d.vendor),
+        esc(d.ssh_username ?? ""), String(d.ssh_port),
+        esc(d.model ?? ""), esc(d.sysname ?? ""), esc(d.serial_number ?? ""),
+        d.cpu_cores != null ? String(d.cpu_cores) : "", d.memory_gb != null ? String(d.memory_gb) : "",
+        esc(d.kernel_version ?? ""), esc(d.db_version ?? ""),
+        esc(d.deployment ?? ""), esc(d.instance_name ?? ""),
+        esc(d.db_username ?? ""), d.db_port != null ? String(d.db_port) : "",
+        esc(tplName),
+      ].join(",");
+    });
+    const csvText = [headerRow, ...lines].join("\n");
+
+    try {
+      await invoke("export_devices_csv", { csvText });
+      showStatusHint(`已导出 ${sourceDevices.length} 条设备到 CSV`, "success");
+    } catch (e) {
+      showStatusHint(`导出失败: ${typeof e === "string" ? e : "未知错误"}`, "error");
+    }
+  };
+
+  /** 导入设备：调用后端解析 CSV 并插入 */
+  const handleImport = async () => {
+    const text = importText.trim();
+    if (!text) { showStatusHint("请先粘贴 CSV 内容", "warn"); return; }
+
+    setImporting(true);
+    setImportResult(null);
+    setImportErrors([]);
+
+    try {
+      const result = await invoke<{ total: number; success: number; skipped: number; errors: { line: number; row_name: string; error: string }[] }>("import_devices_csv", { csvText: text });
+      setImportResult({ total: result.total, success: result.success, skipped: result.skipped });
+      if (result.errors.length > 0) {
+        setImportErrors(result.errors.map(e => `第 ${e.line} 行「${e.row_name}」: ${e.error}`));
+      }
+      if (result.success > 0) {
+        showStatusHint(`导入完成: 成功 ${result.success} 条，跳过 ${result.skipped} 条`, result.errors.length > 0 ? "warn" : "success");
+        loadDevices();
+      } else {
+        showStatusHint("导入失败，请查看错误详情", "error");
+      }
+    } catch (e) {
+      showStatusHint(`导入失败: ${typeof e === "string" ? e : "未知错误"}`, "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleCheckDevice = (d: Device) => {
     if (checkingIds.has(d.id)) return; // 防重复点击
     setCheckingIds((prev) => new Set(prev).add(d.id));
@@ -504,6 +587,14 @@ export default function DevicesPage() {
           <option value="unknown">未知</option>
         </Select>
         <SearchInput value={searchText} onChange={setSearchText} placeholder="搜索设备名称/IP..." />
+        <Button size="sm" variant="secondary" onClick={handleExport} title="导出设备文本">
+          <Download className="h-3.5 w-3.5 mr-1" />
+          {selectedIds.size > 0 ? `导出 (${selectedIds.size})` : "导出"}
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="导入设备">
+          <Upload className="h-3.5 w-3.5 mr-1" />
+          导入
+        </Button>
         <Button size="sm" variant="secondary" loading={checkingAll} onClick={handleCheckAll}>
           {checkingAll ? "检测中..." : "检测全部"}
         </Button>
@@ -517,7 +608,22 @@ export default function DevicesPage() {
       <DataTable<Device>
         columns={[
           {
-            key: "checkbox", header: "", width: "36px", noTruncate: true, render: (r) => (
+            key: "checkbox", header: (
+              <input
+                type="checkbox"
+                checked={filteredDevices.length > 0 && selectedIds.size === filteredDevices.length}
+                ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredDevices.length; }}
+                onChange={() => {
+                  if (selectedIds.size === filteredDevices.length) {
+                    setSelectedIds(new Set());
+                  } else {
+                    setSelectedIds(new Set(filteredDevices.map(d => d.id)));
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="accent-[hsl(var(--accent))]"
+              />
+            ), width: "36px", noTruncate: true, render: (r) => (
               <input
                 type="checkbox"
                 checked={selectedIds.has(r.id)}
@@ -798,6 +904,87 @@ export default function DevicesPage() {
         }
       >
         <p>确定要删除此设备吗？此操作不可恢复。</p>
+      </Modal>
+
+      {/* ── 导入 Modal ── */}
+      <Modal
+        open={importOpen}
+        title="导入设备"
+        width="max-w-2xl"
+        onClose={() => setImportOpen(false)}
+        footer={
+          <div className="flex gap-2 items-center">
+            {importResult && (
+              <span className="text-xs text-[hsl(var(--text-secondary))] mr-auto">
+                共 {importResult.total} 行，成功 {importResult.success} 条，跳过 {importResult.skipped} 条
+              </span>
+            )}
+            <Button variant="secondary" onClick={() => setImportOpen(false)}>关闭</Button>
+            <Button onClick={handleImport} loading={importing} disabled={!importText.trim()}>
+              {importing ? "导入中..." : "开始导入"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          {/* 类型页签 */}
+          <div className="flex gap-1 border-b border-[hsl(var(--border))] pb-1">
+            {([
+              { key: "network" as const, label: "网络设备", desc: "交换机/路由器/防火墙/负载均衡" },
+              { key: "server" as const, label: "服务器", desc: "Linux 服务器" },
+              { key: "database" as const, label: "数据库", desc: "MySQL/PostgreSQL/Oracle 等" },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => { setImportTab(tab.key); setImportResult(null); setImportErrors([]); }}
+                className={`px-3 py-1.5 text-xs rounded-t transition-colors ${
+                  importTab === tab.key
+                    ? "bg-[hsl(var(--accent)_/_0.1)] text-[hsl(var(--accent))] border-b-2 border-[hsl(var(--accent))] font-medium"
+                    : "text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]"
+                }`}
+              >
+                {tab.label}
+                <span className="ml-1 opacity-60">({tab.desc})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 示例提示 */}
+          <div className="p-2 bg-[hsl(var(--bg-hover))] rounded text-xs text-[hsl(var(--text-secondary))] leading-relaxed font-mono whitespace-pre">
+            {importTab === "network" &&
+`# 必填：name / ip / type / vendor / ssh_username / template
+# ssh_password 可选（导入时不填则在编辑页面补填）
+name,ip,type,vendor,ssh_username,ssh_password,template
+核心交换机-01,10.0.1.1,交换机,H3C,admin,pass123,H3C基础巡检`}
+            {importTab === "server" &&
+`# 必填：name / ip / type / vendor / ssh_username / template
+# ssh_password 可选
+name,ip,type,vendor,ssh_username,ssh_password,template
+Web服务器,10.0.2.10,服务器,Linux,root,root123,Linux通用`}
+            {importTab === "database" &&
+`# 必填：name / ip / type / vendor / ssh_username / template
+# 可选：ssh_password / deployment / instance_name / db_username / db_port 等
+name,ip,type,vendor,ssh_username,ssh_password,template
+MySQL主库,10.0.3.1,数据库,MySQL,root,dbpass456,MySQL巡检`}
+          </div>
+
+          {/* 文本框 */}
+          <textarea
+            value={importText}
+            onChange={(e) => { setImportText(e.target.value); setImportResult(null); setImportErrors([]); }}
+            placeholder={`在此粘贴 CSV 内容...\n\n参考上方示例格式`}
+            className="w-full h-40 px-3 py-2 text-xs font-mono border border-[hsl(var(--border))] rounded resize-y focus:outline-none focus:border-[hsl(var(--accent))] bg-[hsl(var(--bg-primary))] text-[hsl(var(--text-primary))]"
+            spellCheck={false}
+          />
+
+          {/* 错误详情 */}
+          {importErrors.length > 0 && (
+            <div className="max-h-28 overflow-y-auto p-2 bg-[hsl(var(--danger)_/_0.08)] border border-[hsl(var(--danger)_/_0.2)] rounded text-xs text-[hsl(var(--danger))]">
+              <p className="font-medium mb-1">错误详情：</p>
+              {importErrors.map((err, i) => <p key={i}>{err}</p>)}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

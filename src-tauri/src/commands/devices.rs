@@ -1,4 +1,5 @@
 use rusqlite::types::ToSql;
+use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
@@ -1899,4 +1900,280 @@ fn extract_dmidecode_memory(output: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+// ============================================================
+// 导出 CSV
+// ============================================================
+
+/// 导出设备 CSV：弹出保存对话框，将 CSV 文本写入用户选择的路径
+#[tauri::command]
+pub async fn export_devices_csv(
+    app: tauri::AppHandle,
+    csv_text: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    app.dialog()
+        .file()
+        .add_filter("CSV 文件", &["csv"])
+        .set_file_name("devices.csv")
+        .save_file(move |file_path| {
+            if let Some(save_path) = file_path {
+                if let Some(dest) = save_path.as_path().map(|p| p.to_path_buf()) {
+                    if let Err(e) = std::fs::write(&dest, &csv_text) {
+                        eprintln!("导出 CSV 失败: {}", e);
+                    }
+                }
+            }
+        });
+    Ok(())
+}
+
+// ============================================================
+// 导入 CSV
+// ============================================================
+
+#[derive(Debug, Serialize)]
+pub struct ImportDeviceError {
+    pub line: usize,
+    pub row_name: String,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportDevicesResult {
+    pub total: usize,
+    pub success: usize,
+    pub skipped: usize,
+    pub errors: Vec<ImportDeviceError>,
+}
+
+/// 简单的 CSV 行解析（支持双引号包裹的值和 "" 转义）
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes => {
+                if chars.peek() == Some(&'"') {
+                    current.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            }
+            '"' => in_quotes = true,
+            ',' if !in_quotes => {
+                fields.push(current.trim().to_string());
+                current = String::new();
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current.trim().to_string());
+    fields
+}
+
+/// 导入设备 CSV：粘贴 CSV 文本 → 解析 → 逐条插入
+///
+/// 自动检测首行是否为表头（含已知列名）。无表头时使用默认列顺序：
+/// name, ip, type, vendor, ssh_username, ssh_password, template
+#[tauri::command]
+pub async fn import_devices_csv(
+    csv_text: String,
+    state: State<'_, AppState>,
+) -> Result<ImportDevicesResult, String> {
+    let conn = state.db.lock();
+
+    let lines: Vec<&str> = csv_text.lines().collect();
+    if lines.is_empty() {
+        return Err("CSV 内容为空".to_string());
+    }
+
+    // 已知列名集合（小写）
+    const KNOWN_COLUMNS: &[&str] = &[
+        "name", "ip", "type", "vendor", "ssh_username", "ssh_password", "ssh_port",
+        "template", "model", "sysname", "serial_number", "cpu_cores", "memory_gb",
+        "deployment", "instance_name", "db_username", "db_port", "db_password",
+        "kernel_version", "db_version", "manufacturing_date",
+    ];
+
+    // 判断第一行是否为表头：至少一个字段匹配已知列名
+    let first_fields = parse_csv_line(lines[0]);
+    let has_header = first_fields.iter().any(|f| KNOWN_COLUMNS.contains(&f.as_str()));
+
+    let (col_map, data_start): (std::collections::HashMap<&str, usize>, usize) = if has_header {
+        let map: std::collections::HashMap<&str, usize> = first_fields
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.as_str(), i))
+            .collect();
+        (map, 1)
+    } else {
+        // 默认列顺序：name, ip, type, vendor, ssh_username, ssh_password, template
+        let default_order = ["name", "ip", "type", "vendor", "ssh_username", "ssh_password", "template"];
+        let map: std::collections::HashMap<&str, usize> = default_order
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (*name, i))
+            .collect();
+        (map, 0)
+    };
+
+    for required in &["name", "ip", "type", "vendor"] {
+        if !col_map.contains_key(required) {
+            return Err(format!("CSV 缺少必要列: {}", required));
+        }
+    }
+
+    let get = |col_map: &std::collections::HashMap<&str, usize>, fields: &[String], key: &str| -> Option<String> {
+        col_map.get(key).and_then(|&i| {
+            let v = fields.get(i)?.trim().to_string();
+            if v.is_empty() { None } else { Some(v) }
+        })
+    };
+
+    let data_lines: Vec<&str> = lines[data_start..].iter()
+        .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+        .copied().collect();
+    let total = data_lines.len();
+
+    let mut result = ImportDevicesResult {
+        total, success: 0, skipped: 0, errors: Vec::new(),
+    };
+
+    for (line_idx, line) in data_lines.iter().enumerate() {
+        let file_line = line_idx + data_start + 1; // 1-based 行号
+        let fields = parse_csv_line(line);
+        let name = match get(&col_map, &fields, "name") {
+            Some(n) => n,
+            None => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: String::new(), error: "设备名为空".to_string() });
+                continue;
+            }
+        };
+        let ip = match get(&col_map, &fields, "ip") {
+            Some(v) => v,
+            None => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: name.clone(), error: "IP 地址为空".to_string() });
+                continue;
+            }
+        };
+        let type_raw = get(&col_map, &fields, "type").unwrap_or_default();
+        let device_type = match type_raw.as_str() {
+            "交换机" => "switch", "路由器" => "router", "防火墙" => "firewall",
+            "负载均衡" => "loadbalancer", "服务器" => "server", "数据库" => "database",
+            "其它" => "other",
+            v if !v.is_empty() => v,
+            _ => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: name.clone(), error: "设备类型为空".to_string() });
+                continue;
+            }
+        };
+        if !["switch","router","firewall","loadbalancer","server","database","other"].contains(&device_type) {
+            result.errors.push(ImportDeviceError { line: file_line, row_name: name.clone(), error: format!("无效的设备类型: {}", device_type) });
+            continue;
+        }
+        let vendor = match get(&col_map, &fields, "vendor") {
+            Some(v) => v,
+            None => {
+                result.errors.push(ImportDeviceError { line: file_line, row_name: name.clone(), error: "厂商为空".to_string() });
+                continue;
+            }
+        };
+
+        let ssh_username = get(&col_map, &fields, "ssh_username").unwrap_or_default();
+        let ssh_port: i64 = get(&col_map, &fields, "ssh_port").and_then(|v| v.parse().ok()).unwrap_or(22);
+        let ssh_password = get(&col_map, &fields, "ssh_password").unwrap_or_default();
+        let model = get(&col_map, &fields, "model").unwrap_or_default();
+        let sysname = get(&col_map, &fields, "sysname").unwrap_or_default();
+        let serial_number = get(&col_map, &fields, "serial_number").unwrap_or_default();
+        let cpu_cores = get(&col_map, &fields, "cpu_cores").and_then(|v| v.parse::<i64>().ok());
+        let memory_gb = get(&col_map, &fields, "memory_gb").and_then(|v| v.parse::<f64>().ok());
+        let deployment = get(&col_map, &fields, "deployment").unwrap_or_default();
+        let instance_name = get(&col_map, &fields, "instance_name").unwrap_or_default();
+        let db_username = get(&col_map, &fields, "db_username").unwrap_or_default();
+        let db_port: i64 = get(&col_map, &fields, "db_port").and_then(|v| v.parse().ok()).unwrap_or(3306);
+        let kernel_version = get(&col_map, &fields, "kernel_version").unwrap_or_default();
+        let db_version = get(&col_map, &fields, "db_version").unwrap_or_default();
+        let db_password = get(&col_map, &fields, "db_password").unwrap_or_default();
+
+        let template_id: Option<i64> = get(&col_map, &fields, "template").and_then(|tpl_name| {
+            conn.query_row("SELECT id FROM inspection_templates WHERE name = ?1", rusqlite::params![tpl_name], |row| row.get(0)).ok()
+        });
+
+        if let Err(e) = check_unique_inline(&conn, &name, &ip, device_type, &vendor) {
+            result.skipped += 1;
+            result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: e });
+            continue;
+        }
+
+        let ssh_username_opt = if ssh_username.is_empty() { None } else { Some(ssh_username) };
+        let ssh_password_opt = if ssh_password.is_empty() { None } else {
+            match crate::services::crypto::CryptoService::encrypt(&ssh_password) {
+                Ok(enc) => Some(enc),
+                Err(e) => {
+                    result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: format!("密码加密失败: {}", e) });
+                    continue;
+                }
+            }
+        };
+        let db_password_opt = if db_password.is_empty() { None } else {
+            match crate::services::crypto::CryptoService::encrypt(&db_password) {
+                Ok(enc) => Some(enc),
+                Err(e) => {
+                    result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: format!("DB密码加密失败: {}", e) });
+                    continue;
+                }
+            }
+        };
+        let model_opt = if model.is_empty() { None } else { Some(model) };
+        let sysname_opt = if sysname.is_empty() { None } else { Some(sysname) };
+        let serial_number_opt = if serial_number.is_empty() { None } else { Some(serial_number) };
+        let deployment_opt = if deployment.is_empty() { None } else { Some(deployment) };
+        let instance_name_opt = if instance_name.is_empty() { None } else { Some(instance_name) };
+        let db_username_opt = if db_username.is_empty() { None } else { Some(db_username) };
+        let kernel_opt = if kernel_version.is_empty() { None } else { Some(kernel_version) };
+        let db_version_opt = if db_version.is_empty() { None } else { Some(db_version) };
+
+        if let Err(e) = conn.execute(
+            "INSERT INTO devices (name, ip, device_type, vendor, model, ssh_username, ssh_password_encrypted, ssh_port, template_id, sysname, serial_number, cpu_cores, memory_gb, deployment, instance_name, db_username, db_port, db_password_encrypted, kernel_version, db_version) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+            rusqlite::params![
+                name, ip, device_type, vendor, model_opt, ssh_username_opt, ssh_password_opt,
+                ssh_port, template_id, sysname_opt, serial_number_opt, cpu_cores, memory_gb,
+                deployment_opt, instance_name_opt, db_username_opt, db_port, db_password_opt,
+                kernel_opt, db_version_opt,
+            ],
+        ) {
+            result.errors.push(ImportDeviceError { line: file_line, row_name: name, error: e.to_string() });
+        } else {
+            result.success += 1;
+        }
+    }
+
+    Ok(result)
+}
+
+/// 导入专用的唯一性检查
+fn check_unique_inline(
+    conn: &rusqlite::Connection,
+    name: &str,
+    ip: &str,
+    device_type: &str,
+    vendor: &str,
+) -> Result<(), String> {
+    let name_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE name = ?1", rusqlite::params![name], |row| row.get(0)).map_err(|e| e.to_string())?;
+    if name_count > 0 { return Err(format!("设备名称 '{}' 已存在", name)); }
+    if device_type == "database" {
+        let ip_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2 AND vendor = ?3", rusqlite::params![ip, device_type, vendor], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if ip_count > 0 { return Err(format!("数据库 {} 在 IP '{}' 上已存在", vendor, ip)); }
+    } else {
+        let ip_count: i64 = conn.query_row("SELECT COUNT(*) FROM devices WHERE ip = ?1 AND device_type = ?2", rusqlite::params![ip, device_type], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if ip_count > 0 { return Err(format!("同类型设备中 IP '{}' 已存在", ip)); }
+    }
+    Ok(())
 }

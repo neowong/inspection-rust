@@ -3,7 +3,7 @@ import type { ReactNode, MouseEvent } from "react";
 
 interface Column<T> {
   key: string;
-  header: string;
+  header: string | ReactNode;
   width?: string;
   /** 默认所有单元格强制单行（whitespace-nowrap）。设为 true 则允许折行（用于备注/输出等长文本列）。 */
   wrap?: boolean;

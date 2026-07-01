@@ -129,6 +129,7 @@ ai-inspection/
 - **Shell 转义上下文规则**: `shell_escape_dq`（`\`→`\\`）仅用于 `sh -c "..."` 双引号上下文；`sh -c '...'` 单引号上下文中反斜杠是字面值，只用 `shell_quote_single`（`'`→`'\''`）。混用会导致密码泄露到 shell。
 - **报告回显剥离**: `strip_command_echo` 支持四种形态：裸命令、带提示符前缀、容器多行回显（`docker exec ...`）、包安装带环境变量前缀（`MYSQL_PWD='xxx' mysql ...`）。进度显示通过 `sanitize_cmd_for_display` 脱敏 `-e KEY=VALUE` 和 `MYSQL_PWD='xxx'` 模式。
 - **报告输出 key 映射**: `execute_device_ssh` 返回的 `command_outputs` key 通过 `wrapped_to_orig` 映射回原始命令，使 `cmd_descs` 能正确匹配命令描述。报告巡检项显示描述而非包装后的命令。
+- **设备导入导出**: CSV 格式，Tauri dialog plugin 弹出保存框。导出 17 列（密码不导出），导入支持带/不带表头两种格式，自动检测。必填项 name/ip/type/vendor，type 支持中英文。冲突检测：同名跳过、同类型同 IP 跳过。模板按名称自动匹配。`import_devices_csv`（Rust）包含完整字段解析、唯一性检查、密码加密。前端三页签（网络设备/服务器/数据库）提供不同示例。
 - **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
 
 ## Windows 交叉编译注意事项
