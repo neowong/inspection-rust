@@ -1268,6 +1268,9 @@ function TftpServer() {
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<{ msg: string; type: string }[]>([]);
   const [progress, setProgress] = useState<{ ip: string; bytes: number; total: number; done: boolean } | null>(null);
+  const [prevBytes, setPrevBytes] = useState(0);
+  const [prevTime, setPrevTime] = useState(0);
+  const [speed, setSpeed] = useState("");
 
   useEffect(() => {
     const unlistens: (() => void)[] = [];
@@ -1275,22 +1278,39 @@ function TftpServer() {
       setLogs(prev => [...prev.slice(-199), e.payload]);
     }).then(f => unlistens.push(f));
     listen<{ ip: string; bytes: number; total: number; done: boolean }>("tftp-progress", (e) => {
-      setProgress(e.payload);
+      const now = Date.now();
+      setProgress(p => {
+        if (p && p.bytes > 0 && e.payload.bytes > p.bytes) {
+          const dt = (now - prevTime) / 1000;
+          if (dt > 0.2) {
+            const ds = e.payload.bytes - prevBytes;
+            const spd = ds / dt;
+            setSpeed(spd >= 1048576 ? `${(spd/1048576).toFixed(1)} MB/s`
+              : spd >= 1024 ? `${(spd/1024).toFixed(0)} KB/s`
+              : `${spd.toFixed(0)} B/s`);
+            setPrevBytes(e.payload.bytes);
+            setPrevTime(now);
+          }
+        }
+        return e.payload;
+      });
     }).then(f => unlistens.push(f));
     return () => unlistens.forEach(f => f());
-  }, []);
+  }, [prevBytes, prevTime]);
 
   const start = async () => {
-    if (!filePath.trim()) { alert("请选择要传输的文件"); return; }
+    if (!filePath.trim()) { alert("请选择 TFTP 根目录"); return; }
     try {
       await invoke("start_tftp_server", { filePath: filePath.trim(), port: parseInt(port) || 69 });
-      setRunning(true);
+      setRunning(true); setProgress(null); setSpeed(""); setPrevBytes(0); setPrevTime(Date.now());
     } catch (e: any) { alert(typeof e === "string" ? e : e?.message || "启动失败"); }
   };
   const stop = async () => {
     try { await invoke("stop_tftp_server"); } catch {}
     setRunning(false); setProgress(null);
   };
+
+  const fmtSize = (b: number) => b >= 1048576 ? `${(b/1048576).toFixed(1)} MB` : b >= 1024 ? `${(b/1024).toFixed(0)} KB` : `${b} B`;
 
   return (
     <div className="space-y-4">
@@ -1309,7 +1329,7 @@ function TftpServer() {
             </button>
           </div>
         </div>
-        <div className="w-24">
+        <div className="w-20">
           <label className={labelClass}>端口</label>
           <input value={port} onChange={e => setPort(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--bg-primary))] text-sm" />
@@ -1322,15 +1342,24 @@ function TftpServer() {
         {running && <span className="text-xs text-green-500">● 运行中</span>}
       </div>
       {progress && !progress.done && (
-        <div className="p-3 border border-[hsl(var(--border))] rounded-lg">
-          <p className="text-xs text-[hsl(var(--text-secondary))] mb-1">{progress.ip} 传输中...</p>
-          <div className="w-full bg-[hsl(var(--border))] rounded-full h-3">
-            <div className="bg-[hsl(var(--accent))] h-3 rounded-full transition-all" style={{
-              width: progress.total > 0 ? `${(progress.bytes / progress.total) * 100}%` : "50%"
-            }} />
+        <div className="p-4 border-2 border-[hsl(var(--accent)_/_0.3)] rounded-xl bg-[hsl(var(--accent)_/_0.04)]">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-[hsl(var(--text-primary))]">
+              {progress.total > 0 ? '↓' : '↑'} 传输中 — {progress.ip}
+            </p>
+            <p className="text-xs text-[hsl(var(--text-secondary))]">
+              {progress.total > 0 ? `${Math.round((progress.bytes / progress.total) * 100)}%` : ''} {speed}
+            </p>
           </div>
-          <p className="text-xs text-[hsl(var(--text-tertiary))] mt-1">
-            {progress.total > 0 ? `${(progress.bytes / 1024).toFixed(0)} / ${(progress.total / 1024).toFixed(0)} KB` : `${(progress.bytes / 1024).toFixed(0)} KB`}
+          <div className="w-full bg-[hsl(var(--border))] rounded-full h-4 overflow-hidden">
+            <div className="bg-[hsl(var(--accent))] h-4 rounded-full transition-all duration-300 flex items-center justify-end pr-2"
+              style={{ width: progress.total > 0 ? `${Math.max((progress.bytes / progress.total) * 100, 2)}%` : '100%', animation: progress.total === 0 ? 'pulse 2s infinite' : undefined }}>
+              {progress.total > 0 && progress.bytes / progress.total > 0.15 &&
+                <span className="text-[10px] text-white font-medium">{Math.round((progress.bytes / progress.total) * 100)}%</span>}
+            </div>
+          </div>
+          <p className="text-xs text-[hsl(var(--text-tertiary))] mt-1.5">
+            {fmtSize(progress.bytes)}{progress.total > 0 ? ` / ${fmtSize(progress.total)}` : ' 已接收'}
           </p>
         </div>
       )}
