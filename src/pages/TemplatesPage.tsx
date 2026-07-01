@@ -476,7 +476,13 @@ export default function TemplatesPage() {
               )},
               { key: "name", header: "名称", width: "200px", maxWidth: "300px", render: (r) => r.name },
               { key: "vendor", header: "厂商", width: "80px", noTruncate: true, render: (r) => r.vendor },
-              { key: "command_count", header: "命令数", width: "80px", render: (r) => String((r.config?.commands || []).length) },
+              { key: "command_count", header: "命令数", width: "70px", render: (r) => String((r.config?.commands || []).length) },
+              { key: "device_count", header: "引用", width: "60px", noTruncate: true, render: (r) => {
+                const n = r.device_count ?? 0;
+                return n > 0
+                  ? <span className="text-[hsl(var(--warning))] font-medium" title={`${n} 台设备引用`}>{n}</span>
+                  : <span className="text-[hsl(var(--text-tertiary))]">0</span>;
+              }},
               { key: "report_template", header: "报告模板", width: "160px", maxWidth: "240px", render: (r) => {
                 const rt = reportTemplates.find(t => t.id === r.report_template_id);
                 return rt ? rt.name : <span className="text-[hsl(var(--text-tertiary))]">跟随默认</span>;
