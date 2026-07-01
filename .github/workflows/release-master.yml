@@ -33,13 +33,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target # 覆盖 target-internal
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AI巡检助手 ${{ github.ref_name }}"
           releaseBody: "详见 [更新日志](./CHANGELOG.md)"
           releaseDraft: false
           prerelease: false
-          # 不指定 target，使用 .cargo/config.toml 的 target-dir
 
   build-macos:
     runs-on: macos-latest
@@ -50,25 +50,29 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - name: Install Rust stable
+      - name: Install Rust stable (aarch64)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
       - name: Install dependencies
         run: npm ci
-      - name: Build Tauri (macOS)
+      - name: Build Tauri (macOS aarch64)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target # 覆盖 .cargo/config.toml 的 target-internal
         with:
           tagName: ${{ github.ref_name }}-macos
           releaseName: "AI巡检助手 ${{ github.ref_name }} (macOS)"
-          releaseBody: "macOS 版本"
+          releaseBody: "macOS 版本 (aarch64)"
           releaseDraft: false
           prerelease: false
+          args: --target aarch64-apple-darwin
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -96,6 +100,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_TARGET_DIR: target # 覆盖 target-internal
         with:
           tagName: ${{ github.ref_name }}-linux
           releaseName: "AI巡检助手 ${{ github.ref_name }} (Linux)"
