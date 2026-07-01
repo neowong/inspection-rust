@@ -52,3 +52,8 @@ release/
 src-tauri/resources/ai-inspection
 src-tauri/resources/ip2region.xdb
 src-tauri/resources/ip2region_v4.xdb
+
+# stats-server build artifacts
+stats-server/ip2region_v4.xdb
+stats-server/package-lock.json
+stats-server/node_modules/

@@ -377,7 +377,7 @@ export default function DevicesPage() {
     }
   };
 
-  /** 导入设备：调用后端解析 CSV 并插入 */
+  /** 批量录入设备：调用后端解析 CSV 并插入 */
   const handleImport = async () => {
     const text = importText.trim();
     if (!text) { showStatusHint("请先粘贴 CSV 内容", "warn"); return; }
@@ -393,13 +393,13 @@ export default function DevicesPage() {
         setImportErrors(result.errors.map(e => `第 ${e.line} 行「${e.row_name}」: ${e.error}`));
       }
       if (result.success > 0) {
-        showStatusHint(`导入完成: 成功 ${result.success} 条，跳过 ${result.skipped} 条`, result.errors.length > 0 ? "warn" : "success");
+        showStatusHint(`录入完成: 成功 ${result.success} 条，跳过 ${result.skipped} 条`, result.errors.length > 0 ? "warn" : "success");
         loadDevices();
       } else {
-        showStatusHint("导入失败，请查看错误详情", "error");
+        showStatusHint("录入失败，请查看错误详情", "error");
       }
     } catch (e) {
-      showStatusHint(`导入失败: ${typeof e === "string" ? e : "未知错误"}`, "error");
+      showStatusHint(`录入失败: ${typeof e === "string" ? e : "未知错误"}`, "error");
     } finally {
       setImporting(false);
     }
@@ -591,9 +591,9 @@ export default function DevicesPage() {
           <Download className="h-3.5 w-3.5 mr-1" />
           {selectedIds.size > 0 ? `导出 (${selectedIds.size})` : "导出"}
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="导入设备">
+        <Button size="sm" variant="secondary" onClick={() => { setImportOpen(true); setImportResult(null); setImportErrors([]); setImportText(""); }} title="批量录入设备">
           <Upload className="h-3.5 w-3.5 mr-1" />
-          导入
+          批量录入
         </Button>
         <Button size="sm" variant="secondary" loading={checkingAll} onClick={handleCheckAll}>
           {checkingAll ? "检测中..." : "检测全部"}
@@ -909,7 +909,7 @@ export default function DevicesPage() {
       {/* ── 导入 Modal ── */}
       <Modal
         open={importOpen}
-        title="导入设备"
+        title="批量录入设备"
         width="max-w-2xl"
         onClose={() => setImportOpen(false)}
         footer={
@@ -921,7 +921,7 @@ export default function DevicesPage() {
             )}
             <Button variant="secondary" onClick={() => setImportOpen(false)}>关闭</Button>
             <Button onClick={handleImport} loading={importing} disabled={!importText.trim()}>
-              {importing ? "导入中..." : "开始导入"}
+              {importing ? "录入中..." : "开始录入"}
             </Button>
           </div>
         }
