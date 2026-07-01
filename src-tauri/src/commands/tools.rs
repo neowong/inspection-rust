@@ -616,7 +616,6 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
     use std::os::unix::io::{FromRawFd, AsRawFd};
     use std::os::unix::net::UnixStream;
     let (parent, child) = UnixStream::pair().map_err(|e| format!("创建 socket pair 失败: {}", e))?;
-    parent.set_nonblocking(false).ok();
 
     let exe = std::env::current_exe().map_err(|e| format!("无法获取程序路径: {}", e))?;
     let child_fd = child.as_raw_fd();
@@ -642,39 +641,34 @@ async fn bind_privileged_port(port: u16) -> Result<UdpSocket, String> {
 
     let mut child_proc = cmd.spawn().map_err(|e| format!("启动授权进程失败: {}", e))?;
 
-    // 关闭子进程端的 fd（父进程只读）
+    // 关闭子进程端的 fd
     drop(child);
+    let parent_fd = parent.as_raw_fd();
 
-    // 通过 Unix socket 接收 fd（SCM_RIGHTS）
-    let mut buf = [0u8; 1];
-    let mut cmsg_buf = [0u8; 32]; // SCM_RIGHTS 需要的控制消息缓冲区
-    let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: 1 };
-    let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
-    hdr.msg_iov = &mut iov;
-    hdr.msg_iovlen = 1;
-    hdr.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
-    hdr.msg_controllen = cmsg_buf.len();
+    // spawn_blocking: recvmsg 是阻塞调用，不能阻塞 tokio 事件循环
+    let sock_fd = tokio::task::spawn_blocking(move || -> Result<i32, String> {
+        let mut buf = [0u8; 1];
+        let mut cmsg_buf = [0u8; 32];
+        let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut _, iov_len: 1 };
+        let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
+        hdr.msg_iov = &mut iov;
+        hdr.msg_iovlen = 1;
+        hdr.msg_control = cmsg_buf.as_mut_ptr() as *mut _;
+        hdr.msg_controllen = cmsg_buf.len();
 
-    let n = unsafe { libc::recvmsg(parent.as_raw_fd(), &mut hdr, 0) };
-    if n < 0 {
-        child_proc.kill().ok();
-        return Err("接收授权端口失败".into());
-    }
-
-    let sock_fd = unsafe {
-        let cmsg = libc::CMSG_FIRSTHDR(&hdr);
-        if cmsg.is_null() || (*cmsg).cmsg_type != libc::SCM_RIGHTS {
-            child_proc.kill().ok();
+        let n = unsafe { libc::recvmsg(parent_fd, &mut hdr, 0) };
+        if n < 0 {
+            return Err("接收授权端口失败".into());
+        }
+        let cmsg = unsafe { libc::CMSG_FIRSTHDR(&hdr) };
+        if cmsg.is_null() || unsafe { (*cmsg).cmsg_type != libc::SCM_RIGHTS } {
             return Err("未收到端口文件描述符".into());
         }
-        let fd_ptr = libc::CMSG_DATA(cmsg) as *const libc::c_int;
-        *fd_ptr
-    };
+        Ok(unsafe { *(libc::CMSG_DATA(cmsg) as *const libc::c_int) })
+    }).await.map_err(|e| format!("内部错误: {}", e))??;
 
-    // 等待子进程退出
     let _ = child_proc.wait();
 
-    // 从 fd 创建 std::net::UdpSocket，再转为 tokio 异步
     let std_sock = unsafe { std::net::UdpSocket::from_raw_fd(sock_fd) };
     std_sock.set_nonblocking(true).ok();
     let socket = UdpSocket::from_std(std_sock).map_err(|e| format!("转换 socket 失败: {}", e))?;
