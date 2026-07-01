@@ -169,10 +169,30 @@ pub fn update_template(
     .ok_or_else(|| format!("更新后查询巡检模板 ID {} 失败", template_id))
 }
 
-/// 删除巡检模板
+/// 查询引用此模板的设备名称列表
+fn get_referencing_devices(conn: &rusqlite::Connection, template_id: i64) -> Vec<String> {
+    let mut stmt = conn.prepare("SELECT name FROM devices WHERE template_id = ?1").ok();
+    stmt.as_mut()
+        .and_then(|s| {
+            s.query_map(rusqlite::params![template_id], |row| row.get::<_, String>(0)).ok()
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+}
+
+/// 删除巡检模板（检查设备引用）
 #[tauri::command]
 pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), String> {
     let conn = state.db.lock();
+
+    let devices = get_referencing_devices(&conn, template_id);
+    if !devices.is_empty() {
+        return Err(format!(
+            "该模板被 {} 台设备引用，无法删除：{}",
+            devices.len(),
+            devices.iter().take(5).map(|s| s.as_str()).collect::<Vec<_>>().join("、"),
+        ));
+    }
 
     let affected = conn
         .execute(
@@ -188,13 +208,27 @@ pub fn delete_template(template_id: i64, state: State<AppState>) -> Result<(), S
     Ok(())
 }
 
-/// 批量删除巡检模板
+/// 批量删除巡检模板（检查设备引用）
 #[tauri::command]
 pub fn batch_delete_templates(ids: Vec<i64>, state: State<AppState>) -> Result<(), String> {
     if ids.is_empty() {
         return Ok(());
     }
     let conn = state.db.lock();
+    let mut blocked: Vec<String> = Vec::new();
+    for id in &ids {
+        let devices = get_referencing_devices(&conn, *id);
+        if !devices.is_empty() {
+            // 获取模板名称
+            let tpl_name: String = conn
+                .query_row("SELECT name FROM inspection_templates WHERE id = ?1", rusqlite::params![id], |row| row.get(0))
+                .unwrap_or_else(|_| format!("ID {}", id));
+            blocked.push(format!("「{}」被 {} 台设备引用", tpl_name, devices.len()));
+        }
+    }
+    if !blocked.is_empty() {
+        return Err(format!("{} 个模板无法删除：\n{}", blocked.len(), blocked.join("\n")));
+    }
     for id in &ids {
         conn.execute("DELETE FROM inspection_templates WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;

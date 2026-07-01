@@ -277,7 +277,7 @@ export default function TemplatesPage() {
   const handleDeleteTemplate = (id: number) => {
     invoke<void>("delete_template", { templateId: id })
       .then(() => { setConfirmDeleteTemplate(null); loadTemplates(); })
-      .catch(console.error);
+      .catch((e) => alert(typeof e === "string" ? e : "删除失败"));
   };
 
   const handleBatchDeleteTemplates = () => {
@@ -286,7 +286,7 @@ export default function TemplatesPage() {
     const ids = Array.from(selectedTemplateIds);
     invoke<void>("batch_delete_templates", { ids })
       .then(() => { setSelectedTemplateIds(new Set()); loadTemplates(); })
-      .catch(console.error);
+      .catch((e) => alert(typeof e === "string" ? e : "批量删除失败"));
   };
 
   const toggleTemplateSelect = (id: number) => {
