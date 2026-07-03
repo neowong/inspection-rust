@@ -37,7 +37,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          CARGO_TARGET_DIR: target
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AI巡检助手 ${{ github.ref_name }}"
