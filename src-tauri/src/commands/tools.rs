@@ -526,7 +526,7 @@ fn run_traceroute_stream(
     let ms_re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*(?:ms|毫秒)").unwrap();
 
     // 逐行读 stdout，实时解析
-    let stdout = child.stdout.take().expect("stdout was piped");
+    let mut stdout = child.stdout.take().expect("stdout was piped");
     let mut last_hop: u32 = 0;
 
     // Windows 使用 GBK 解码，Linux/macOS 使用 UTF-8
