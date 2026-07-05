@@ -4,6 +4,12 @@ export default {
   darkMode: "class",
   theme: {
     extend: {
+      borderRadius: {
+        sm: "var(--radius-sm)",
+        DEFAULT: "var(--radius)",
+        lg: "var(--radius-lg)",
+        xl: "calc(var(--radius-lg) + 4px)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

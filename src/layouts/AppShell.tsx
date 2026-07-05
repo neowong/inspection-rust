@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info,
-  Bot, Plus, MessageCircle, Trash2, RotateCw,
+  Bot, Plus, MessageCircle, Trash2, RotateCw, Sun, Moon, Monitor,
 } from "lucide-react";
 import { loadSessions, deleteSession } from "../pages/ChatPage";
 import type { ChatSession } from "../pages/ChatPage";
+import { useTheme } from "../hooks/useTheme";
 
 type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings" | "about" | "chat";
 
@@ -72,6 +73,7 @@ function groupByDate(sessions: ChatSession[]): { label: string; items: ChatSessi
 export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [navMode, setNavMode] = useState(() => {
     // 默认传统模式，仅当用户之前明确选择过 AI 模式时恢复
@@ -152,65 +154,19 @@ export default function AppShell() {
             {!collapsed && <span className="text-base font-bold text-white truncate">AI巡检助手</span>}
           </div>
 
-          {collapsed ? (
-            /* ────── 收起模式：根据模式显示图标 ────── */
-            navMode ? (
-              <nav className="flex flex-col items-center py-3 gap-2 flex-1">
-                {FLAT_ITEMS.map(item => {
-                  const active = activeKey === item.key;
-                  const Icon = item.icon;
-                  return (
-                    <button key={item.key} onClick={() => navigate(item.path)}
-                      className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                      style={{ color: active ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }}
-                      title={item.label}>
-                      <Icon size={20} />
-                    </button>
-                  );
-                })}
-                <div className="flex-1" />
-                <button onClick={() => { setNavMode(false); navigate("/chat"); }}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="AI模式">
-                  <Bot size={18} />
-                </button>
-              </nav>
-            ) : (
-              <div className="flex flex-col items-center py-3 gap-1.5 flex-1">
-                <button onClick={newChat} className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="新对话">
-                  <Plus size={20} />
-                </button>
-                <div className="w-6 border-t my-1" style={{ borderColor: "hsl(var(--sidebar-hover))" }} />
-                {groupedSessions.flatMap(g => g.items).slice(0, 10).map(s => (
-                  <button key={s.id} onClick={() => navigate(`/chat?id=${s.id}`)}
-                    className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                    style={{ color: s.id === currentChatId ? "hsl(var(--accent))" : "hsl(var(--sidebar-text-muted))" }}
-                    title={s.title}>
-                    <MessageCircle size={18} />
-                  </button>
-                ))}
-                <div className="flex-1" />
-                <button onClick={() => { setNavMode(true); navigate("/dashboard"); }}
-                  className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }} title="传统模式">
-                  <RotateCw size={16} />
-                </button>
-              </div>
-            )
-          ) : navMode ? (
+          {navMode ? (
             /* ────── Nav 模式：传统导航 ────── */
             <>
               <nav className="flex-1 py-3 overflow-y-auto sidebar-scroll">
                 {NAV_GROUPS.map((group, gi) => (
                   <div key={gi} className={gi > 0 ? "mt-3" : ""}>
-                    {group.label && (
-                      <div className="px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest"
+                    {group.label && !collapsed && (
+                      <div className="px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest transition-opacity duration-150"
                         style={{ color: "hsl(var(--sidebar-text-muted))" }}>
                         {group.label}
                       </div>
                     )}
-                    <div className="px-2 space-y-0.5">
+                    <div className={collapsed ? "px-1.5 space-y-1" : "px-2 space-y-0.5"}>
                       {group.items.map(item => {
                         const active = activeKey === item.key;
                         const Icon = item.icon;
@@ -218,15 +174,20 @@ export default function AppShell() {
                           <button
                             key={item.key}
                             onClick={() => navigate(item.path)}
-                            className={`flex items-center gap-3 w-full select-none transition-all duration-150 rounded-lg
-                              px-3 h-9 ${active ? "font-medium" : "hover:bg-[hsl(var(--sidebar-hover))]"}`}
+                            className={`flex items-center w-full select-none transition-all duration-150 rounded-lg
+                              ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-3 px-3 h-9"}
+                              ${active ? "font-medium" : "hover:bg-[hsl(var(--sidebar-hover))]"}`}
                             style={active
                               ? { backgroundColor: sidebarActive, color: "hsl(var(--accent-foreground))" }
                               : { color: "hsl(var(--sidebar-text-muted))" }
                             }
+                            title={collapsed ? item.label : undefined}
                           >
-                            <Icon size={18} className="shrink-0" />
-                            <span className="text-[13px] truncate">{item.label}</span>
+                            <Icon size={collapsed ? 20 : 18} className="shrink-0" />
+                            <span className={`text-[13px] truncate transition-all duration-150 overflow-hidden whitespace-nowrap
+                              ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}>
+                              {item.label}
+                            </span>
                           </button>
                         );
                       })}
@@ -237,10 +198,16 @@ export default function AppShell() {
               {/* 底部：切换到 AI模式 */}
               <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
                 <button onClick={() => { setNavMode(false); navigate("/chat"); }}
-                  className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }}>
+                  className={`flex items-center w-full rounded-lg text-[13px] transition-all duration-150 hover:bg-[hsl(var(--sidebar-hover))]
+                    ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-3 px-3 h-9 mt-2"}`}
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }}
+                  title={collapsed ? "AI模式" : undefined}
+                >
                   <Bot size={18} />
-                  <span className="truncate">AI模式</span>
+                  <span className={`truncate transition-all duration-150 overflow-hidden whitespace-nowrap
+                    ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}>
+                    AI模式
+                  </span>
                 </button>
               </div>
             </>
@@ -248,53 +215,69 @@ export default function AppShell() {
             /* ────── Chat 模式：聊天历史 ────── */
             <>
               {/* 新对话按钮 */}
-              <div className="px-2 pt-3 pb-2">
+              <div className={collapsed ? "px-1.5 pt-3" : "px-2 pt-3 pb-2"}>
                 <button onClick={newChat}
-                  className="flex items-center gap-3 w-full px-3 h-9 rounded-lg text-[13px] transition-colors
-                    hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))", border: "1px solid hsl(var(--sidebar-hover))" }}>
+                  className={`flex items-center rounded-lg text-[13px] transition-all duration-150
+                    hover:bg-[hsl(var(--sidebar-hover))]
+                    ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-3 w-full px-3 h-9"}`}
+                  style={{ color: "hsl(var(--sidebar-text-muted))", border: collapsed ? "none" : "1px solid hsl(var(--sidebar-hover))" }}
+                  title={collapsed ? "新对话" : undefined}
+                >
                   <Plus size={16} />
-                  <span>新对话</span>
+                  <span className={`truncate transition-all duration-150 overflow-hidden whitespace-nowrap
+                    ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}>
+                    新对话
+                  </span>
                 </button>
               </div>
 
               {/* 聊天历史 */}
-              <nav className="flex-1 overflow-y-auto sidebar-scroll px-2 pb-2 space-y-1">
-                {groupedSessions.length === 0 && (
+              <nav className={`flex-1 overflow-y-auto sidebar-scroll pb-2 space-y-1 ${collapsed ? "px-1.5" : "px-2"}`}>
+                {groupedSessions.length === 0 && !collapsed && (
                   <p className="text-[12px] px-3 pt-4 text-center" style={{ color: "hsl(var(--sidebar-text-muted))" }}>
                     暂无对话历史
                   </p>
                 )}
                 {groupedSessions.map((group, gi) => (
                   <div key={gi}>
-                    <div className="px-3 pt-2 pb-1 text-[11px] font-semibold" style={{ color: "hsl(var(--sidebar-text-muted))" }}>
-                      {group.label}
-                    </div>
+                    {!collapsed && (
+                      <div className="px-3 pt-2 pb-1 text-[11px] font-semibold transition-opacity duration-150"
+                        style={{ color: "hsl(var(--sidebar-text-muted))" }}>
+                        {group.label}
+                      </div>
+                    )}
                     {group.items.map(s => {
                       const isActive = s.id === currentChatId;
                       return (
                         <div key={s.id} className="group relative">
                           <button
                             onClick={() => navigate(`/chat?id=${s.id}`)}
-                            className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-left text-[13px] transition-colors
+                            className={`flex items-center w-full rounded-lg text-left text-[13px] transition-all duration-150
+                              ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-2 px-3 py-2"}
                               ${isActive ? "font-medium" : "hover:bg-[hsl(var(--sidebar-hover))]"}`}
                             style={isActive
                               ? { backgroundColor: sidebarActive, color: "hsl(var(--sidebar-text))" }
                               : { color: "hsl(var(--sidebar-text-muted))" }
                             }
+                            title={collapsed ? s.title : undefined}
                           >
-                            <MessageCircle size={14} className="shrink-0" />
-                            <span className="truncate">{s.title}</span>
+                            <MessageCircle size={collapsed ? 18 : 14} className="shrink-0" />
+                            <span className={`truncate transition-all duration-150 overflow-hidden whitespace-nowrap
+                              ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}>
+                              {s.title}
+                            </span>
                           </button>
-                          <button
-                            onClick={() => { deleteSession(s.id); refreshSessions(); if (isActive) navigate("/chat"); }}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center
-                              opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[hsl(var(--sidebar-hover) / 0.8)]"
-                            style={{ color: "hsl(var(--danger))" }}
-                            title="删除对话"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {!collapsed && (
+                            <button
+                              onClick={() => { deleteSession(s.id); refreshSessions(); if (isActive) navigate("/chat"); }}
+                              className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center
+                                opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[hsl(var(--sidebar-hover) / 0.8)]"
+                              style={{ color: "hsl(var(--danger))" }}
+                              title="删除对话"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -305,10 +288,16 @@ export default function AppShell() {
               {/* 底部：切换到传统模式 */}
               <div className="px-2 pb-2" style={{ borderColor: "hsl(var(--sidebar-hover))", borderTopWidth: 1 }}>
                 <button onClick={() => { setNavMode(true); navigate("/dashboard"); }}
-                  className="flex items-center gap-3 w-full px-3 h-9 mt-2 rounded-lg text-[13px] transition-colors hover:bg-[hsl(var(--sidebar-hover))]"
-                  style={{ color: "hsl(var(--sidebar-text-muted))" }}>
+                  className={`flex items-center w-full rounded-lg text-[13px] transition-all duration-150 hover:bg-[hsl(var(--sidebar-hover))]
+                    ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-3 px-3 h-9 mt-2"}`}
+                  style={{ color: "hsl(var(--sidebar-text-muted))" }}
+                  title={collapsed ? "传统模式" : undefined}
+                >
                   <RotateCw size={16} />
-                  <span className="truncate">传统模式</span>
+                  <span className={`truncate transition-all duration-150 overflow-hidden whitespace-nowrap
+                    ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}>
+                    传统模式
+                  </span>
                 </button>
               </div>
             </>
@@ -343,6 +332,17 @@ export default function AppShell() {
           </span>
         )}
         <span className="flex-1" />
+        {/* Theme toggle */}
+        <button
+          onClick={() => setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light")}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[hsl(var(--sidebar-hover))] transition-colors"
+          title={theme === "light" ? "切换到暗色" : theme === "dark" ? "跟随系统" : "切换到亮色"}
+        >
+          {theme === "light" && <Sun size={13} />}
+          {theme === "dark" && <Moon size={13} />}
+          {theme === "system" && <Monitor size={13} />}
+          <span className="text-[10px]">{theme === "light" ? "亮色" : theme === "dark" ? "暗色" : "系统"}</span>
+        </button>
         {updateVersion && (
           <button onClick={() => navigate("/about")}
             className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium animate-in cursor-pointer hover:opacity-80 transition-opacity"

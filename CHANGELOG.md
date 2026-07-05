@@ -1,5 +1,27 @@
 # 更新日志
 
+## v3.59.0 (2026-07-05)
+
+### ✨ 新功能
+
+- **暗色/亮色主题切换**：支持三种模式（亮色/暗色/跟随系统），状态栏一键切换，偏好自动持久化到 localStorage
+- **防闪烁机制**：页面加载前通过内联脚本立即应用主题，避免亮暗闪烁（FOUC）
+
+### 🔧 优化
+
+- **UI 体系统一**：Radius Token 通过 Tailwind 映射生效，全局圆角一处定义
+- **文本对比度提升**：`--text-tertiary` 亮色 48%/暗色 52%，`--sidebar-text-muted` 62%，符合 WCAG AA 标准
+- **暗色模式边框提亮**：`--border` 从 20% → 25%，增强卡片层级区分
+- **z-index 层级体系**：新增 `--z-dropdown`/`--z-modal-backdrop`/`--z-modal`/`--z-toast` 变量
+- **Modal 关闭动画**：fadeOut + scaleOut 150ms 平滑退出，替代直接消失
+- **按钮 active 状态**：primary/danger/secondary/ghost 添加按下反馈
+- **ContextMenu z-index**：改用 CSS 变量，与 Modal 层级协调
+- **侧边栏折叠过渡**：文字 150ms 淡入淡出 + 宽度过渡，收起时图标居中
+- **路由跟踪跳数连续性**：超时跳（`*`）不再被省略，自动填充缺失跳数
+- **Windows GBK 编码**：tracert 输出支持中文系统（"毫秒"、"请求超时"）
+
+---
+
 ## v3.58.0 (2026-07-03)
 
 ### ✨ 新功能

@@ -8,10 +8,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-[hsl(var(--accent))] text-white hover:bg-[hsl(var(--accent)/0.9)] shadow-sm shadow-[hsl(var(--accent)/0.25)]",
-        secondary: "bg-transparent text-[hsl(var(--text-primary))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-hover))]",
-        ghost: "bg-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))]",
-        danger: "bg-[hsl(var(--danger))] text-white hover:bg-[hsl(var(--danger)/0.9)] shadow-sm shadow-[hsl(var(--danger)/0.25)]",
+        primary: "bg-[hsl(var(--accent))] text-white hover:bg-[hsl(var(--accent)/0.9)] active:bg-[hsl(var(--accent)/0.8)] shadow-sm shadow-[hsl(var(--accent)/0.25)]",
+        secondary: "bg-transparent text-[hsl(var(--text-primary))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-hover))] active:bg-[hsl(var(--bg-active))]",
+        ghost: "bg-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-hover))] active:bg-[hsl(var(--bg-active))]",
+        danger: "bg-[hsl(var(--danger))] text-white hover:bg-[hsl(var(--danger)/0.9)] active:bg-[hsl(var(--danger)/0.8)] shadow-sm shadow-[hsl(var(--danger)/0.25)]",
       },
       size: {
         sm: "h-7 px-2.5 text-xs rounded",

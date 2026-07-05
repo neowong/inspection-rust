@@ -31,7 +31,7 @@
     --sidebar-hover: 217 33% 17%;
     --sidebar-active: 207 100% 24%;
     --sidebar-text: 210 40% 80%;
-    --sidebar-text-muted: 215 25% 55%;
+    --sidebar-text-muted: 215 25% 62%;
 
     /* Content area (light slate) */
     --bg-app: 210 40% 96%;
@@ -45,7 +45,7 @@
     /* Text */
     --text-primary: 222 47% 11%;
     --text-secondary: 215 19% 35%;
-    --text-tertiary: 215 14% 55%;
+    --text-tertiary: 215 14% 48%;
 
     /* Brand accent (sky blue) */
     --accent: 207 100% 32%;
@@ -70,6 +70,59 @@
     /* Shadows */
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
     --shadow-md: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+
+    /* Alias for compatibility */
+    --bg-primary: 0 0% 100%;
+
+    /* Z-index layers */
+    --z-dropdown: 50;
+    --z-modal-backdrop: 900;
+    --z-modal: 950;
+    --z-toast: 1000;
+  }
+
+  /* Dark theme */
+  .dark {
+    /* Sidebar - keep dark navy (already dark) */
+    --sidebar-bg: 222 47% 11%;
+    --sidebar-hover: 217 33% 17%;
+    --sidebar-active: 207 100% 30%;
+    --sidebar-text: 210 40% 80%;
+    --sidebar-text-muted: 215 25% 62%;
+
+    /* Content area - dark slate */
+    --bg-app: 222 47% 7%;
+    --bg-content: 222 47% 9%;
+    --bg-card: 222 47% 12%;
+    --bg-hover: 217 33% 17%;
+    --bg-active: 207 100% 15%;
+    --bg-input: 222 47% 12%;
+    --muted: 222 47% 15%;
+    --bg-primary: 222 47% 12%;
+
+    /* Text - inverted */
+    --text-primary: 210 40% 95%;
+    --text-secondary: 215 19% 65%;
+    --text-tertiary: 215 14% 52%;
+
+    /* Accent - brighter for dark bg */
+    --accent: 207 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --accent-subtle: 207 100% 15%;
+
+    /* Semantic - brighter for contrast */
+    --success: 160 84% 45%;
+    --warning: 36 100% 55%;
+    --danger: 0 72% 60%;
+    --info: 200 98% 55%;
+
+    /* Borders - subtle dark borders */
+    --border: 222 30% 25%;
+    --border-light: 222 30% 18%;
+
+    /* Shadows - less visible on dark */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.15);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.25), 0 2px 4px rgba(0,0,0,0.2);
   }
 
   * { border-color: hsl(var(--border)); }
@@ -106,6 +159,14 @@
 @keyframes fadeInOnly {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes scaleOut {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.97) translateY(4px); }
 }
 .animate-in { animation: fadeIn .25s ease-out; }
 

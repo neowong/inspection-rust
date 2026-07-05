@@ -522,49 +522,115 @@ fn run_traceroute_stream(
     // 正则预编译
     let hop_re = regex::Regex::new(r"^\s*(\d+)\s").unwrap();
     let ip_re = regex::Regex::new(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})").unwrap();
-    let ms_re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*ms").unwrap();
+    // 匹配 "ms" 或 "毫秒"（Windows 中文系统输出 "毫秒"）
+    let ms_re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*(?:ms|毫秒)").unwrap();
 
     // 逐行读 stdout，实时解析
     let stdout = child.stdout.take().expect("stdout was piped");
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-        tracing::trace!("[trace_route] {}", line);
+    let mut last_hop: u32 = 0;
 
-        // 尝试解析跳数
-        let Some(hop_cap) = hop_re.captures(&line) else { continue };
-        let hop: u32 = match hop_cap[1].parse() { Ok(n) => n, Err(_) => continue };
-
-        let ip = ip_re.captures(&line).map(|c| c[1].to_string());
-        let rtt = ms_re.captures(&line).and_then(|c| c[1].parse::<f64>().ok());
-
-        // 查归属地
-        let region = match (ip_db, &ip) {
-            (Some(db), Some(addr)) => {
-                crate::services::ip_location::lookup(db, addr)
-                    .map(|raw| crate::services::ip_location::format_region(&raw, Some(addr.as_str())))
-                    .unwrap_or_default()
-            }
-            _ => {
-                ip.as_ref()
-                    .filter(|addr| crate::services::ip_location::is_private_ip(addr))
-                    .map(|_| "局域网".to_string())
-                    .unwrap_or_default()
-            }
-        };
-
-        // 立即 emit 给前端
-        let _ = app.emit("trace-hop", serde_json::json!({
-            "hop": hop,
-            "ip": ip,
-            "region": region,
-            "rtt_ms": rtt,
-        }));
+    // Windows 使用 GBK 解码，Linux/macOS 使用 UTF-8
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf).map_err(|e| format!("读取输出失败: {}", e))?;
+        // 尝试 GBK 解码，失败则用 UTF-8
+        let (decoded, _, _) = encoding_rs::GBK.decode(&buf);
+        for line in decoded.lines() {
+            let line = line.to_string();
+            process_trace_line(&app, ip_db, &line, &hop_re, &ip_re, &ms_re, &mut last_hop);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            process_trace_line(app, ip_db, &line, &hop_re, &ip_re, &ms_re, &mut last_hop);
+        }
     }
 
+    // 等待进程结束并发送完成事件
+    run_traceroute_stream_wait(app, &mut child)
+}
+
+/// 处理单行 traceroute 输出
+fn process_trace_line(
+    app: &tauri::AppHandle,
+    ip_db: &Option<Arc<Vec<u8>>>,
+    line: &str,
+    hop_re: &regex::Regex,
+    ip_re: &regex::Regex,
+    ms_re: &regex::Regex,
+    last_hop: &mut u32,
+) {
+    tracing::trace!("[trace_route] {}", line);
+
+    // 跳过 header 行（英文和中文）
+    if line.contains("traceroute to") || line.contains("Tracing route to") ||
+       line.contains("over a maximum") || line.contains("with") ||
+       line.contains("跟踪到") || line.contains("路由") || line.contains("最多") {
+        return;
+    }
+
+    // 尝试解析跳数
+    let hop = if let Some(hop_cap) = hop_re.captures(line) {
+        hop_cap[1].parse::<u32>().unwrap_or(0)
+    } else if !line.trim().is_empty() && *last_hop > 0 {
+        // 没有跳数但包含内容的行（如 Windows tracert 超时续行），使用 last_hop + 1
+        *last_hop + 1
+    } else {
+        return;
+    };
+
+    // 如果跳数不连续，填充中间缺失的跳（都标记为超时）
+    while *last_hop < hop - 1 {
+        *last_hop += 1;
+        let _ = app.emit("trace-hop", serde_json::json!({
+            "hop": *last_hop,
+            "ip": null,
+            "region": "",
+            "rtt_ms": null,
+        }));
+    }
+    *last_hop = hop;
+
+    let ip = ip_re.captures(line).map(|c| c[1].to_string());
+    let rtt = ms_re.captures(line).and_then(|c| c[1].parse::<f64>().ok());
+
+    // 查归属地
+    let region = match (ip_db, &ip) {
+        (Some(db), Some(addr)) => {
+            crate::services::ip_location::lookup(db, addr)
+                .map(|raw| crate::services::ip_location::format_region(&raw, Some(addr.as_str())))
+                .unwrap_or_default()
+        }
+        _ => {
+            ip.as_ref()
+                .filter(|addr| crate::services::ip_location::is_private_ip(addr))
+                .map(|_| "局域网".to_string())
+                .unwrap_or_default()
+        }
+    };
+
+    // 立即 emit 给前端
+    let _ = app.emit("trace-hop", serde_json::json!({
+        "hop": hop,
+        "ip": ip,
+        "region": region,
+        "rtt_ms": rtt,
+    }));
+}
+
+fn run_traceroute_stream_wait(
+    app: &tauri::AppHandle,
+    child: &mut std::process::Child,
+) -> Result<(), String> {
+    use std::io::BufRead;
     // 等待进程结束
     let status = child.wait().map_err(|e| format!("等待进程结束失败: {}", e))?;
     if !status.success() {

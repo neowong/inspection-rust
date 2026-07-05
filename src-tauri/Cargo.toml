@@ -1,6 +1,6 @@
 [package]
 name = "inspection-rust"
-version = "3.58.0"
+version = "3.59.0"
 edition = "2021"
 description = "AI巡检助手"
 
@@ -49,6 +49,7 @@ rand = "0.8"
 xdb-parse = "0.2"
 hostname = "0.4"
 os_info = "3"
+encoding_rs = "0.8"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

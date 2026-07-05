@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>运维巡检系统</title>
+    <script>
+      // Apply theme before paint to prevent flash of wrong theme
+      (function() {
+        var t = localStorage.getItem("theme") || "system";
+        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body style="background-color: hsl(210 40% 98%)">
     <div id="root"></div>

@@ -60,8 +60,8 @@ export default function ContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[160px] bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-xl py-1 animate-in"
-      style={{ left: x, top: y }}
+      className="fixed min-w-[160px] bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-lg shadow-xl py-1 animate-in"
+      style={{ left: x, top: y, zIndex: "var(--z-dropdown)" }}
     >
       {items.map((item, i) => {
         if (item.separator) {

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
 
 interface Props {
@@ -37,25 +37,49 @@ export default function Modal({
   footer,
   onClose,
 }: Props) {
+  const [rendered, setRendered] = useState(open);
+  const [closing, setClosing] = useState(false);
+
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setRendered(true);
+      setClosing(false);
+    } else if (rendered) {
+      setClosing(true);
+      const timer = setTimeout(() => {
+        setRendered(false);
+        setClosing(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [open, rendered]);
+
+  useEffect(() => {
+    if (!rendered || closing) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [rendered, closing, onClose]);
 
-  if (!open) return null;
+  const handleBackdropClick = useCallback(() => {
+    if (!closing) onClose();
+  }, [closing, onClose]);
+
+  if (!rendered) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50"
-      style={{ animation: "fadeInOnly 0.15s ease-out" }}
-      onClick={onClose}
+      className={`fixed inset-0 z-[999] flex items-center justify-center bg-black/50 ${
+        closing ? "animate-[fadeOut_0.15s_ease-in_forwards]" : "animate-[fadeInOnly_0.15s_ease-out]"
+      }`}
+      onClick={handleBackdropClick}
     >
       <div
-        className="relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col animate-in"
+        className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col ${
+          closing ? "animate-[scaleOut_0.15s_ease-in_forwards]" : "animate-in"
+        }`}
         style={{ animationDuration: "150ms", maxWidth: responsiveWidth(width) }}
         onClick={(e) => e.stopPropagation()}
       >

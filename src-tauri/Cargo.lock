@@ -1793,6 +1793,7 @@ dependencies = [
  "digest",
  "dirs",
  "docx-rs",
+ "encoding_rs",
  "fernet",
  "futures",
  "hmac",
