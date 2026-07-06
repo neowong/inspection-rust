@@ -1220,10 +1220,10 @@ fn detect_linux_info_sync(
         "uname -r".to_string(),
         "nproc".to_string(),
         "lscpu".to_string(),
-        "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
+        "dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
     let mut needs_root_map = HashMap::new();
-    needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
+    needs_root_map.insert("dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
 
     let source = SSHSessionSource {
         host: ip.to_string(),
@@ -1286,7 +1286,7 @@ fn detect_linux_info_sync(
         }
     }
 
-    if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
+    if let Some(output) = outputs.get("dmidecode -t memory 2>/dev/null | grep -i Size") {
         if let Some(mem) = extract_dmidecode_memory(output) {
             info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
         }
@@ -1344,34 +1344,23 @@ fn detect_db_info_sync(
     let is_container = deployment == "docker" || deployment == "podman";
     let runtime = if deployment == "podman" { "podman" } else { "docker" };
 
-    // ── MySQL / MariaDB 数据库命令 ──
-    // 全部存裸命令，由下方 wrap_cmd 统一包装（避免预包装+跳过的条件不一致 bug）
+    // ── MySQL / MariaDB 数据库命令（裸命令，不含密码环境变量）──
+    // 密码由下方 wrap_cmd 统一注入：包安装用 MYSQL_PWD='xxx' 前缀，
+    // 容器部署用 docker exec -e MYSQL_PWD='xxx' 传递（密码不在命令字符串中）
     let mut db_cmds: Vec<(String, String)> = Vec::new(); // (label, raw_cmd)
 
     if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
-        // 用 MYSQL_PWD 环境变量传密码，避免命令行参数暴露（ps 可见）
-        // db_username 已在入库时校验为安全字符集，单引号包裹防注入
         let mysql_auth = if !db_username.is_empty() { format!("-u'{}'", shell_quote_single(db_username)) } else { String::new() };
-        let mysql_pwd_prefix = if !db_password.is_empty() {
-            // wrap_cmd 使用 sh -c '...'（单引号），只做单引号转义即可
-            let escaped = shell_quote_single(db_password);
-            format!("MYSQL_PWD='{}' ", escaped)
-        } else { String::new() };
         db_cmds.push(("db_detail".to_string(), format!(
-            "{}mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", mysql_pwd_prefix, mysql_auth)));
+            "mysql {} -N -B -e \"SELECT VERSION(), @@hostname, @@port, @@datadir\"", mysql_auth)));
     } else if vendor_lower.contains("postgres") {
-        // 服务端版本：连库执行 SELECT version()（psql --version 只取客户端版本）
         if !db_username.is_empty() {
-            let pg_env = if !db_password.is_empty() {
-                let escaped = shell_quote_single(db_password);
-                format!("PGPASSWORD='{}' ", escaped)
-            } else { String::new() };
             db_cmds.push(("db_version".to_string(), format!(
-                "{}psql -U '{}' -h localhost -p {} -t -c 'SHOW server_version'",
-                pg_env, shell_quote_single(db_username), db_port)));
+                "psql -U '{}' -h localhost -p {} -t -c 'SHOW server_version'",
+                shell_quote_single(db_username), db_port)));
             db_cmds.push(("db_detail".to_string(), format!(
-                "{}psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"",
-                pg_env, shell_quote_single(db_username), db_port)));
+                "psql -U '{}' -h localhost -p {} -c \"SELECT version(), inet_server_addr(), inet_server_port(), current_database()\"",
+                shell_quote_single(db_username), db_port)));
         } else {
             db_cmds.push(("db_version".to_string(), "psql --version".to_string()));
         }
@@ -1392,16 +1381,32 @@ fn detect_db_info_sync(
     let wrap_cmd = |raw: &str| -> Result<String, String> {
         if is_container {
             let cname = if instance_name.is_empty() { device_name } else { instance_name };
-            // 防御性校验：容器名会拼入远端 shell，必须为安全字符集
-            // （设备名作为兜底也校验，拦截绕过入库校验的旧数据）
             validate_shell_identifier(cname, "容器/实例名")?;
-            // 用单引号包裹命令体（单引号内一切字面值，不展开 $ ` \），
-            // 内部单引号用 '\'' 转义（经典 shell 退出-转义-重入模式）
+            // 密码通过 docker exec -e 传递（不在 sh -c 命令体中，避免 ps 泄露和二次转义）
+            let mut env_flags = String::new();
+            if !db_password.is_empty() {
+                let pwd_escaped = db_password.replace('\'', "'\\''");
+                if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
+                    env_flags.push_str(&format!(" -e MYSQL_PWD='{}'", pwd_escaped));
+                } else if vendor_lower.contains("postgres") {
+                    env_flags.push_str(&format!(" -e PGPASSWORD='{}'", pwd_escaped));
+                }
+            }
             let sq = raw.replace('\'', "'\\''");
-            Ok(format!("{} exec {} sh -c '{}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
-                runtime, cname, sq))
+            Ok(format!("{} exec{env} {cn} sh -c '{cmd}' 2>&1; E=$?; [ $E -eq 127 ] && echo client_not_found || [ $E -ne 0 ] && echo container_not_found",
+                runtime, env=env_flags, cn=cname, cmd=sq))
         } else {
-            Ok(format!("{} 2>&1", raw))
+            // 包安装：直接在命令前注入密码环境变量
+            let mut env_prefix = String::new();
+            if !db_password.is_empty() {
+                let pwd_escaped = db_password.replace('\'', "'\\''");
+                if vendor_lower.contains("mysql") || vendor_lower.contains("mariadb") {
+                    env_prefix.push_str(&format!("MYSQL_PWD='{}' ", pwd_escaped));
+                } else if vendor_lower.contains("postgres") {
+                    env_prefix.push_str(&format!("PGPASSWORD='{}' ", pwd_escaped));
+                }
+            }
+            Ok(format!("{env}{raw} 2>&1", env=env_prefix, raw=raw))
         }
     };
 
@@ -1412,14 +1417,14 @@ fn detect_db_info_sync(
         "uname -r".to_string(),
         "nproc".to_string(),
         "lscpu".to_string(),
-        "sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
+        "dmidecode -t memory 2>/dev/null | grep -i Size".to_string(),
     ];
     for (_, raw_cmd) in &db_cmds {
         commands.push(wrap_cmd(raw_cmd)?);
     }
 
     let mut needs_root_map = HashMap::new();
-    needs_root_map.insert("sudo dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
+    needs_root_map.insert("dmidecode -t memory 2>/dev/null | grep -i Size".to_string(), true);
 
     let source = SSHSessionSource {
         host: ip.to_string(),
@@ -1479,7 +1484,7 @@ fn detect_db_info_sync(
             }
         }
     }
-    if let Some(output) = outputs.get("sudo dmidecode -t memory 2>/dev/null | grep -i Size") {
+    if let Some(output) = outputs.get("dmidecode -t memory 2>/dev/null | grep -i Size") {
         if let Some(mem) = extract_dmidecode_memory(output) {
             info.insert("memory_gb".to_string(), serde_json::Value::String(mem));
         }

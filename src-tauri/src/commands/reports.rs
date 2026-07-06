@@ -37,7 +37,8 @@ fn ensure_reports_dir() -> Result<std::path::PathBuf, String> {
 /// 返回规范化后的绝对路径，校验失败返回 Err。
 pub(crate) fn safe_report_path(path: &str) -> Result<std::path::PathBuf, String> {
     let reports_dir = ensure_reports_dir()?;
-    let canonical_reports = reports_dir.canonicalize().unwrap_or(reports_dir);
+    let canonical_reports = reports_dir.canonicalize()
+        .map_err(|e| format!("报告目录无法规范化: {}", e))?;
     let p = std::path::PathBuf::from(path);
     let canonical = p.canonicalize().map_err(|_| format!("报告文件不存在: {}", path))?;
     if !canonical.starts_with(&canonical_reports) {

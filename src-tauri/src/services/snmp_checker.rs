@@ -267,10 +267,11 @@ fn format_snmp_value(tag: u8, data: &[u8]) -> (String, String) {
         0x02 => {
             // 限制 INTEGER 最多 8 字节防止移位溢出
             let data = if data.len() > 8 { &data[..8] } else { data };
+            // 用 wrapping_shl 避免 debug 模式下负值移位 overflow panic
             let mut val: i64 = 0;
-            let negative = !data.is_empty() && (data[0] & 0x80) != 0;
-            for &b in data { val = (val << 8) | b as i64; }
+            for &b in data { val = val.wrapping_shl(8) | b as i64; }
             // 仅 <8 字节时需要补码修正；8 字节时 i64 已是正确补码
+            let negative = !data.is_empty() && (data[0] & 0x80) != 0;
             if negative && data.len() < 8 { val -= 1i64 << (data.len() * 8); }
             ("INTEGER".to_string(), val.to_string())
         }

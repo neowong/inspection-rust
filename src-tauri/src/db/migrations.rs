@@ -18,8 +18,10 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
     }
 
     if version < 2 {
-        conn.execute_batch(include_str!("../../sql/002_add_deepseek_provider.sql"))?;
-        conn.execute_batch("PRAGMA user_version = 2")?;
+        let tx = conn.transaction()?;
+        tx.execute_batch(include_str!("../../sql/002_add_deepseek_provider.sql"))?;
+        tx.execute_batch("PRAGMA user_version = 2")?;
+        tx.commit()?;
     }
 
     if version < 3 {
@@ -888,8 +890,15 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
 
     // ── v32: command_pool 增加 expectation 字段（AI 评判提示词）──
     if version < 32 {
-        conn.execute_batch("ALTER TABLE command_pool ADD COLUMN expectation TEXT;")
-            .map_err(|e| format!("migration 32: {}", e))?;
+        let has_expectation: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('command_pool') WHERE name = 'expectation'")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, i64>(0)))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_expectation {
+            conn.execute_batch("ALTER TABLE command_pool ADD COLUMN expectation TEXT;")
+                .map_err(|e| format!("migration 32: {}", e))?;
+        }
         conn.execute_batch("PRAGMA user_version = 32;")
             .map_err(|e| format!("migration 32: {}", e))?;
     }

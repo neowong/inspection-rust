@@ -182,7 +182,8 @@ pub fn seed_command_pool(conn: &mut Connection) -> Result<usize, String> {
         ("Linux", "lscpu | grep -i 'hypervisor\\|virtualization'", "CPU 虚拟化特性", "performance", 0),
         ("Linux", "cat /proc/cpuinfo | grep 'model name' | head -1", "CPU 型号（含超线程）", "performance", 0),
         ("Linux", "dmidecode -t memory 2>/dev/null | head -10", "内存硬件信息", "memory", 1),
-        ("Linux", "sudo dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
+        // needs_root=1 执行引擎自动加 sudo，命令文本不加 sudo 前缀避免 sudo sudo
+        ("Linux", "dmidecode -t memory 2>/dev/null | grep -i Size", "物理内存大小", "memory", 1),
         ("Linux", "cat /sys/devices/system/clocksource/clocksource0/current_clocksource", "时钟源", "system", 0),
         // 定时任务
         ("Linux", "crontab -l", "当前用户定时任务", "schedule", 0),

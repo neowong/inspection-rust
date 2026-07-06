@@ -359,7 +359,10 @@ fn execute_device_ssh(
 
     // 解密数据库密码（容器部署时注入认证信息）
     let db_password = match &device.db_password_encrypted {
-        Some(enc) if !enc.is_empty() => CryptoService::decrypt(enc).unwrap_or_default(),
+        Some(enc) if !enc.is_empty() => CryptoService::decrypt(enc).unwrap_or_else(|e| {
+            tracing::warn!("数据库密码解密失败: {}", e);
+            String::new()
+        }),
         _ => String::new(),
     };
     let db_username = device.db_username.clone().unwrap_or_default();
@@ -449,8 +452,11 @@ fn execute_device_ssh(
     // ── 数据库客户端预检 ──
     // 在包装命令前检测客户端是否安装，未安装则跳过该厂商所有命令，
     // 避免 N 条命令逐个失败产生大量噪声
+    // 注意：容器部署的 DB 客户端在容器内，宿主机上 which 找不到，跳过预检
+    let is_container = deployment == "docker" || deployment == "podman";
     let mut skipped_vendors: std::collections::HashSet<String> = std::collections::HashSet::new();
-    {
+    if !is_container {
+        // 容器部署跳过预检，直接使用容器内客户端
         let db_vendors: Vec<&str> = commands.iter()
             .filter(|c| !crate::services::vendor_profile::is_linux_vendor(&c.vendor))
             .map(|c| c.vendor.as_str())
@@ -514,7 +520,7 @@ fn execute_device_ssh(
                 }
             }
         }
-    }
+    } // if !is_container
 
     // 收集需要跳过的命令 + 活跃命令
     let mut skipped_commands: Vec<(String, String)> = Vec::new();

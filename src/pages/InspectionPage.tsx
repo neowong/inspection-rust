@@ -377,7 +377,7 @@ export default function InspectionPage() {
                     <summary className="cursor-pointer text-xs font-medium text-[hsl(var(--text-secondary))] mb-2">命令输出 ({parsedOutputs.length})</summary>
                     <div className="space-y-2 max-h-[400px] overflow-auto">
                       {parsedOutputs.map((o: any, i: number) => (
-                        <details key={i} className="text-xs">
+                        <details key={o.command || i} className="text-xs">
                           <summary className="cursor-pointer font-mono text-[hsl(var(--accent))] py-0.5">{o.command}</summary>
                           <pre className="mt-1 p-2 rounded bg-[hsl(var(--bg-hover))] text-[hsl(var(--text-secondary))] whitespace-pre-wrap max-h-[200px] overflow-auto">{o.content || "(空)"}</pre>
                         </details>

@@ -517,14 +517,20 @@ fn read_until_prompt(
                 // Handle enable/super user password prompts
                 // non-blocking 模式下 write_all 遇 WouldBlock 会直接失败，用重试循环兜底
                 if !password_sent && text.contains("assword:") && !password.is_empty() {
-                    let _ = write_all_nb(channel, password.as_bytes());
-                    let _ = write_all_nb(channel, b"\n");
+                    if let Err(e) = write_all_nb(channel, password.as_bytes()) {
+                        tracing::warn!("[SSH] 密码写入失败: {}", e);
+                    }
+                    if let Err(e) = write_all_nb(channel, b"\n") {
+                        tracing::warn!("[SSH] 密码换行写入失败: {}", e);
+                    }
                     password_sent = true;
                 }
 
                 // FortiGate 等设备即使已设置禁分页，也可能在长输出中出现 --More--，发送空格继续。
                 if contains_more_prompt(&text) {
-                    let _ = write_all_nb(channel, b" ");
+                    if let Err(e) = write_all_nb(channel, b" ") {
+                        tracing::warn!("[SSH] --More-- 空格发送失败: {}", e);
+                    }
                 }
 
                 if output_contains_prompt(&output, prompt, vendor) {
