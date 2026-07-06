@@ -5,7 +5,24 @@
 ### 🔧 优化
 
 - **检测更新渠道隔离**：master/internal 版本检测更新时按 tag 前缀过滤，不再互相干扰
-- **更新渠道自动识别**：新增 `get_update_channel` 命令，编译时通过环境变量自动确定渠道
+- **更新渠道自动识别**：编译时自动检测 Git 分支确定渠道，本地编译不再默认 master
+- **按钮圆角收小**：`rounded-md`（10px）→ `rounded-sm`（6px），更紧凑的外观
+
+### 🛠 修复
+
+- **双重 shell 转义**：`detect_db_info_sync` 中 DB 密码被两次转义导致命令损坏，修复为密码与命令分离注入
+- **容器 DB 设备跳过**：容器部署的数据库设备客户端预检查误判为未安装，跳过容器部署预检
+- **TFTP 短包崩溃**：RRQ 处理缺少长度检查导致 slice 越界 panic
+- **API Key 泄露日志**：AI 响应 JSON 解析失败时日志未脱敏可能暴露 API Key
+- **get_stats 同步命令**：Tauri v2 sync 命令 Err 不 reject，Dashboard 可能挂死
+- **safe_report_path 退化**：`canonicalize` 失败退化为未规范化路径，安全判断可能失效
+- **SNMP INTEGER 溢出**：debug 模式下 8 字节负整数移位 overflow panic
+- **dmidecode sudo 重复**：命令文本含 `sudo` 且标记 `needs_root`，执行引擎重复加 sudo
+- **TFTP 路径遍历**：未过滤 `.`/`..` 文件名，可写文件到父目录
+- **密码解密静默失败**：`unwrap_or_default()` 吞掉解密错误，加日志便于排查
+- **SSH 密码写入错误吞没**：密码/--More-- 写入错误被 `let _ =` 吞没
+- **useEffect 无卸载保护**：AppShell/AboutPage 异步操作后可能 setState 在已卸载组件
+- **迁移事务保护**：v2/v32 迁移缺少事务/列存在性检查，部分失败可致数据丢失
 
 ## v3.59.0 (2026-07-05)
 
