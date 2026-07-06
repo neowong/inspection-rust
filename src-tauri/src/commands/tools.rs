@@ -159,6 +159,15 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// 获取更新渠道：internal 或 master
+/// 编译时通过 INSPECTION_CHANNEL 环境变量确定，默认 master
+#[tauri::command]
+pub fn get_update_channel() -> String {
+    option_env!("INSPECTION_CHANNEL")
+        .unwrap_or("master")
+        .to_string()
+}
+
 /// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
 #[tauri::command]
 pub fn get_os_info() -> serde_json::Value {
@@ -177,11 +186,17 @@ pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
 
 /// 检查 GitHub Releases 是否有新版本
 /// 返回 (最新版本号, 下载地址, 发布说明)，无更新时返回 None
+/// channel: "master" 或 "internal"，决定只检查对应渠道的 release
 #[tauri::command]
 pub async fn check_update(
     current_version: String,
+    channel: Option<String>,
 ) -> Result<Option<serde_json::Value>, String> {
-    let url = "https://api.github.com/repos/neowong/inspection-rust/releases/latest";
+    let channel = channel.unwrap_or_else(|| "master".to_string());
+    let tag_prefix = if channel == "internal" { "internal-v" } else { "v" };
+
+    // 使用 /releases 列表而非 /releases/latest，以按渠道过滤
+    let url = "https://api.github.com/repos/neowong/inspection-rust/releases?per_page=10";
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .user_agent("ai-inspection-update-check")
@@ -195,8 +210,22 @@ pub async fn check_update(
         return Err(format!("检查更新失败，HTTP {}", resp.status()));
     }
 
-    let release: serde_json::Value = resp.json().await
+    let releases: Vec<serde_json::Value> = resp.json().await
         .map_err(|e| format!("解析更新信息失败: {}", e))?;
+
+    // 找到当前渠道的最新 release（跳过 draft/prerelease）
+    let release = releases.iter().find(|r| {
+        let is_draft = r.get("draft").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_prerelease = r.get("prerelease").and_then(|v| v.as_bool()).unwrap_or(false);
+        if is_draft || is_prerelease { return false; }
+        let tag = r.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+        tag.starts_with(tag_prefix)
+    });
+
+    let release = match release {
+        Some(r) => r,
+        None => return Ok(None),
+    };
 
     let latest_tag = release.get("tag_name")
         .and_then(|v| v.as_str())
