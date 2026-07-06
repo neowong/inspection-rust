@@ -94,16 +94,18 @@ export default function AppShell() {
 
   // 版本更新检查
   useEffect(() => {
+    let cancelled = false;
     const checkUpdate = async () => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         const currentVersion = await invoke<string>("get_app_version");
         const channel = await invoke<string>("get_update_channel");
         const result = await invoke<{ version: string; url: string } | null>("check_update", { currentVersion, channel });
-        if (result) setUpdateVersion(result.version);
+        if (!cancelled && result) setUpdateVersion(result.version);
       } catch { /* ignore */ }
     };
     checkUpdate();
+    return () => { cancelled = true; };
   }, []);
 
   // 状态栏提示

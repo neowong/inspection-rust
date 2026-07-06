@@ -219,10 +219,10 @@ pub async fn analyze_with_openai(
 
     let parsed: serde_json::Value = serde_json::from_str(&response_text)
         .map_err(|e| {
+            let preview = redact_secrets(&response_text).chars().take(300).collect::<String>();
             warn!(
                 "AI 响应 JSON 解析失败: model={}, latency={}ms, error={}, 前 300 字: {}",
-                model, latency, e,
-                response_text.chars().take(300).collect::<String>()
+                model, latency, e, preview
             );
             format!("解析 OpenAI 响应 JSON 失败: {}", e)
         })?;

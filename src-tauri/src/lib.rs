@@ -623,8 +623,9 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// Dashboard 统计（异步避免 Tauri v2 sync Err 不 reject 的 bug）
 #[tauri::command]
-fn get_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+async fn get_stats(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
     get_stats_inner(&state)
 }
 

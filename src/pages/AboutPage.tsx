@@ -32,16 +32,20 @@ export default function AboutPage() {
 
   // 启动时获取版本号并检查更新
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
       try {
         const ver = await invoke<string>("get_app_version");
+        if (cancelled) return;
         setCurrentVersion(ver);
         const info = await invoke<{os: string; os_version: string}>("get_os_info");
+        if (cancelled) return;
         setOsInfo(info);
         const channel = await invoke<string>("get_update_channel");
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
           currentVersion: ver, channel,
         });
+        if (cancelled) return;
         setUpdateInfo(result);
         setCheckDone(true);
       } catch {
@@ -49,6 +53,7 @@ export default function AboutPage() {
       }
     };
     init();
+    return () => { cancelled = true; };
   }, []);
 
   const checkUpdate = async () => {

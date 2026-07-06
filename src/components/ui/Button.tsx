@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils";
 import { Loader2 } from "lucide-react";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-all duration-150 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))] focus-visible:ring-offset-1 focus-visible:ring-offset-[hsl(var(--bg-content))] disabled:opacity-50 disabled:cursor-not-allowed select-none",
+  "inline-flex items-center justify-center gap-1.5 rounded-sm text-sm font-medium transition-all duration-150 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))] focus-visible:ring-offset-1 focus-visible:ring-offset-[hsl(var(--bg-content))] disabled:opacity-50 disabled:cursor-not-allowed select-none",
   {
     variants: {
       variant: {
@@ -14,8 +14,8 @@ const buttonVariants = cva(
         danger: "bg-[hsl(var(--danger))] text-white hover:bg-[hsl(var(--danger)/0.9)] active:bg-[hsl(var(--danger)/0.8)] shadow-sm shadow-[hsl(var(--danger)/0.25)]",
       },
       size: {
-        sm: "h-7 px-2.5 text-xs rounded",
-        md: "h-8 px-3.5 text-sm rounded-md",
+        sm: "h-7 px-2.5 text-xs rounded-sm",
+        md: "h-8 px-3.5 text-sm rounded-sm",
         icon: "h-8 w-8 p-0",
       },
     },

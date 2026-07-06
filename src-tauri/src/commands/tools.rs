@@ -555,7 +555,7 @@ fn run_traceroute_stream(
     let ms_re = regex::Regex::new(r"(\d+(?:\.\d+)?)\s*(?:ms|毫秒)").unwrap();
 
     // 逐行读 stdout，实时解析
-    let mut stdout = child.stdout.take().expect("stdout was piped");
+    let stdout = child.stdout.take().expect("stdout was piped");
     let mut last_hop: u32 = 0;
 
     // Windows 使用 GBK 解码，Linux/macOS 使用 UTF-8
@@ -563,7 +563,7 @@ fn run_traceroute_stream(
     {
         use std::io::Read;
         let mut buf = Vec::new();
-        stdout.read_to_end(&mut buf).map_err(|e| format!("读取输出失败: {}", e))?;
+        BufReader::new(stdout).read_to_end(&mut buf).map_err(|e| format!("读取输出失败: {}", e))?;
         // 尝试 GBK 解码，失败则用 UTF-8
         let (decoded, _, _) = encoding_rs::GBK.decode(&buf);
         for line in decoded.lines() {
@@ -786,12 +786,15 @@ pub async fn start_tftp_server(
 
             match opcode {
                 1 => { // RRQ - 读请求
+                    if n < 4 { continue; } // 短包保护：最少 2 字节 opcode + 文件名 + 0 终止
                     let task_socket = socket_iter.clone();
                     let end = recv_buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
                     let req_name = String::from_utf8_lossy(&recv_buf[2..2 + end]);
                     let safe_name = std::path::Path::new(req_name.as_ref())
                         .file_name().map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| req_name.to_string());
+                    // 过滤 . 和 .. 路径穿越
+                    if safe_name == "." || safe_name == ".." { continue; }
                     let full_path = base_dir.join(&safe_name);
 
                     let _ = app_clone.emit("tftp-log", serde_json::json!({
@@ -907,6 +910,7 @@ pub async fn start_tftp_server(
                     });
                 }
                 2 => { // WRQ - 写请求
+                    if n < 4 { continue; } // 短包保护
                     let end = recv_buf[2..n].iter().position(|&b| b == 0).unwrap_or(n - 2);
                     let req_name = String::from_utf8_lossy(&recv_buf[2..2 + end]);
                     let safe_name = std::path::Path::new(req_name.as_ref())

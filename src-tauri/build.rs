@@ -1,7 +1,32 @@
 use std::path::PathBuf;
 
+fn get_git_branch() -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !branch.is_empty() && branch != "HEAD" { Some(branch) } else { None }
+    } else {
+        None
+    }
+}
+
 fn main() {
     tauri_build::build();
+
+    // 自动检测更新渠道：CI 设置了 INSPECTION_CHANNEL 则尊重，
+    // 否则按 Git 分支决定（master/main → master，其他 → internal）
+    if std::env::var("INSPECTION_CHANNEL").is_err() {
+        if let Some(branch) = get_git_branch() {
+            let channel = if branch == "master" || branch == "main" { "master" } else { "internal" };
+            println!("cargo:rustc-env=INSPECTION_CHANNEL={}", channel);
+            println!("cargo:warning=INSPECTION_CHANNEL=auto-detected as '{channel}' from branch '{branch}'");
+        } else {
+            println!("cargo:rustc-env=INSPECTION_CHANNEL=master");
+        }
+    }
 
     // Copy WebView2Loader.dll next to the output binary on Windows.
     // Windows PE loader requires this DLL BEFORE main() runs, so it
