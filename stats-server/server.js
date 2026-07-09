@@ -138,8 +138,9 @@ db.serialize(() => {
     )
   `);
 
-  // 兼容旧表：添加 ip_region 列
+  // 兼容旧表：添加 ip_region / os_detail 列
   db.run(`ALTER TABLE track_records ADD COLUMN ip_region TEXT`, () => {});
+  db.run(`ALTER TABLE track_records ADD COLUMN os_detail TEXT`, () => {});
 
   // 创建索引
   db.run(`CREATE INDEX IF NOT EXISTS idx_track_device_id ON track_records(device_id)`);
@@ -254,14 +255,15 @@ app.post(`${BASE_PATH}/api/login`, (req, res) => {
 
 // 统计上报接口（客户端调用，限流 + 输入校验）
 app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), async (req, res) => {
-  const { device_id, version, os, timestamp } = req.body;
+  const { device_id, version, os, os_detail, timestamp } = req.body;
 
   if (!device_id || !version || !os || !timestamp) {
     return res.status(400).json({ error: '参数不完整' });
   }
   // 输入长度限制
-  if (String(device_id).length > 128 || String(version).length > 32 ||
-      String(os).length > 32 || String(timestamp).length > 64) {
+  if (String(device_id).length > 128 || String(version).length > 64 ||
+      String(os).length > 32 || String(os_detail || '').length > 128 ||
+      String(timestamp).length > 64) {
     return res.status(400).json({ error: '参数过长' });
   }
 
@@ -272,9 +274,10 @@ app.post(`${BASE_PATH}/api/track`, rateLimit('track', 60, 60000), async (req, re
   const region = await lookupIpRegion(ip);
 
   db.run(
-    `INSERT INTO track_records (device_id, version, os, ip, ip_region, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
-    [String(device_id).slice(0, 128), String(version).slice(0, 32), String(os).slice(0, 32),
-     String(ip).slice(0, 45), String(region).slice(0, 128), String(timestamp).slice(0, 64)],
+    `INSERT INTO track_records (device_id, version, os, os_detail, ip, ip_region, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [String(device_id).slice(0, 128), String(version).slice(0, 64), String(os).slice(0, 32),
+     String(os_detail || '').slice(0, 128), String(ip).slice(0, 45),
+     String(region).slice(0, 128), String(timestamp).slice(0, 64)],
     (err) => {
       if (err) {
         console.error('记录统计失败:', err);

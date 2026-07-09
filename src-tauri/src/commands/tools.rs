@@ -268,21 +268,35 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         format!("{:x}", hasher.finalize())
     };
 
-    let os = if cfg!(target_os = "windows") { "windows" }
-        else if cfg!(target_os = "linux") { "linux" }
-        else { "unknown" };
+    let os_info = os_info::get();
+    let os_family = os_info.os_type().to_string();
+    let os_version = os_info.version().to_string();
+
+    // 详细操作系统版本
+    let os_detail = if cfg!(target_os = "windows") {
+        format!("{} / {}", os_family, os_version)
+    } else if cfg!(target_os = "linux") {
+        // 获取内核版本
+        let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+        format!("{} {} / kernel {}", os_family, os_version, kernel)
+    } else {
+        format!("{} / {}", os_family, os_version)
+    };
 
     let payload = serde_json::json!({
         "device_id": &device_id,
         "version": &version,
-        "os": os,
+        "os": &os_family,
+        "os_detail": &os_detail,
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
     // 统计接口地址
     let api_url = "https://neowong.eu.org/stats/api/track";
 
-    tracing::debug!("[track] device_id={}, version={}, os={}", device_id, version, os);
+    tracing::debug!("[track] device_id={}, version={}, os_detail={}", device_id, version, os_detail);
 
     // 实际上报（静默，失败忽略）
     let client = reqwest::Client::builder()
