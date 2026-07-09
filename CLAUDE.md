@@ -122,7 +122,7 @@ ai-inspection/
 - **Batch creation non-blocking**: `create_batch`(auto_start) and `run_batch` spawn `tokio::spawn` background tasks and return immediately — frontend shows batch instantly, 3s polling updates progress. Helper `await_handles_and_finalize()` updates final status.
 - **Window initialization**: `visible: true` + `transparent: true` + `decorations: true` in `tauri.conf.json`. Never use `visible: false` + `window.show()` — Linux WebKitGTK 下标题栏装饰不会正确初始化，导致关闭按钮失效。body 内联 `background-color` 减少闪烁。
 - **Windows 日志 CRLF**: tracing_subscriber 默认写 `\n`，Windows 记事本需要 `\r\n`。`CrlfWriter<W>` + `CrlfMakeWriter<M>` 包装器在 `#[cfg(windows)]` 下自动转换。
-- **版本检测 internal- 前缀兼容**: `check_update` 的 GitHub API 可能返回 `internal-vx.y.z` tag。需先 `trim_start_matches("internal-")` 再 `trim_start_matches('v')`，避免解析错误导致误报更新。
+- **更新检测**: `check_update` 通过 GitHub Releases API 检查最新版本（`vx.y.z` tag），对比版本号判断更新。
 - **数据库巡检多厂商模板**: 数据库模板（`DB_VENDORS`）支持从多个厂商混合选择命令（如 Linux + MySQL），右侧可选命令面板显示厂商标签页。非数据库模板保持单一厂商过滤。`TemplateCommandSpec` 新增 `vendor` 字段用于执行时区分命令来源。
 - **命令与部署方式解耦**: 命令库只存裸命令（如 `mysql -e 'SHOW STATUS'`），不包含 `docker exec` / `podman exec` 前缀。执行引擎 `wrap_for_deployment` 按命令的 `vendor` 和设备的 `deployment` 自动包装：OS 厂商命令在宿主机执行，数据库命令按部署方式注入认证后执行。
 - **数据库认证注入**: 所有部署方式的数据库命令都自动注入 `db_username` / `db_password`。包安装：`MYSQL_PWD='xxx' mysql -u'root' ...`；容器：`docker exec -e 'MYSQL_PWD=xxx' mysql sh -c '...'`。密码用 `shell_quote_docker`（单引号包裹），绝不用 `shell_escape_dq`（双引号转义在单引号上下文中会损坏密码）。

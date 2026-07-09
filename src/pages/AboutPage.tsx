@@ -41,9 +41,8 @@ export default function AboutPage() {
         const info = await invoke<{os: string; os_version: string}>("get_os_info");
         if (cancelled) return;
         setOsInfo(info);
-        const channel = await invoke<string>("get_update_channel");
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
-          currentVersion: ver, channel,
+          currentVersion: ver,
         });
         if (cancelled) return;
         setUpdateInfo(result);
@@ -62,9 +61,8 @@ export default function AboutPage() {
     try {
       const ver = currentVersion || await invoke<string>("get_app_version");
       if (!currentVersion) setCurrentVersion(ver);
-      const channel = await invoke<string>("get_update_channel");
       const result = await invoke<{ version: string; url: string } | null>("check_update", {
-        currentVersion: ver, channel,
+        currentVersion: ver,
       });
       setUpdateInfo(result);
       setCheckDone(true);

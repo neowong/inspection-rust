@@ -1,5 +1,18 @@
 # 更新日志
 
+## v3.60.1 (2026-07-09)
+
+### ✨ 新功能
+
+- **匿名使用统计恢复**：重建 `track_usage` 函数，启动 2s 后自动上报匿名设备信息（device_id/版本/OS）到统计服务端
+
+### 🛠 修复
+
+- **internal 分支残留清理**：删除 internal 分支及所有 internal 渠道代码，统一 master 单分支发版
+- **统计服务端文档隐藏**：README.md/USER_MANUAL.md/CHANGELOG.md 删除统计服务端地址和 Dashboard 链接
+
+---
+
 ## v3.60.0 (2026-07-06)
 
 ### 🔧 优化
@@ -96,7 +109,6 @@
   - 短内容列 `noTruncate: true`（厂商、型号、IP 等完整显示）
   - 操作列固定宽度，不再被长文本挤到可视区外
 - **GUI 窗口尺寸**：默认宽度 1400→1500，最小宽度 1024→1200
-- **新增 `os_version_string()` 函数**：运行时精确获取 OS 版本字符串，用于匿名统计（`Windows 11 Pro` / `Ubuntu 26.04` 精度）
 
 ---
 
@@ -104,7 +116,7 @@
 
 ### ✨ 新功能
 
-- **运行时 OS 版本检测**：匿名统计和反馈上报的 OS 信息从 `windows`/`linux` 升级为 `Windows 11 Pro` / `Ubuntu 26.04` 精度
+- **运行时 OS 版本检测**：反馈上报的 OS 信息从 `windows`/`linux` 升级为 `Windows 11 Pro` / `Ubuntu 26.04` 精度
 - **数据库客户端预检**：巡检前 SSH exec 检测 `which psql/mysql` 等，未安装跳过并标注 `[跳过]`
 - **批量删除巡检任务**：巡检页勾选多个任务批量删除；有报告时可选"仅删任务"或"连报告一起删"
 - **报告页删除批次报告**：工具栏"删除报告"按钮，清除磁盘文件但保留巡检记录
@@ -138,9 +150,6 @@
 - `vendor_profile` 集中 `is_linux_vendor()` / `is_db_vendor()` 消除 4 处重复厂商列表
 - `json_util` 提取共享解析函数，`db_helpers` 新增 `boxed_params()` 消除样板
 - `port_scanner` 委托 callback 版本删除 ~70 行重复代码
-- 统计 Dashboard 响应式适配 + 刷新不闪登录框 + 30s 自动刷新
-
-> 💡 **如需完全离线使用**：可从 [GitHub Releases](https://github.com/neowong/inspection-rust/releases) 下载 **internal 版**（仅 Windows，不含统计上报，保留问题反馈）。
 
 ## v3.54.1 (2026-06-28)
 
@@ -274,7 +283,7 @@
 ### 🧹 死代码清理
 - 删除 `get_device`（未注册、前端无调用）
 - 删除 `generate_batch_docx_zip`（历史残留，已被 combined 替代）
-- `detect_device_model` / `track_usage` 去掉冗余 `#[tauri::command]`
+- `detect_device_model` 去掉冗余 `#[tauri::command]`
 
 ## v3.51.0 (2026-06-24)
 
@@ -300,9 +309,6 @@
 ### 🐛 Bug 修复
 - **版本号显示修复**：关于页面硬编码旧版本号 → 改为动态调用 `get_app_version()`，始终显示真实版本
 - **误报更新修复**：关于页面用旧版本号对比 GitHub Releases 导致误报 → 使用真实版本号对比
-- **统计服务端 IP 恢复**：上报记录 IP 列恢复，从 X-Forwarded-For 提取客户端真实 IP
-- **统计 Dashboard 反馈区恢复**：重新部署含反馈模块的最新版 Dashboard
-- **统计服务端 Docker 网络持久化**：容器重启后自动连接 nginx 网络，不再出现 502
 
 ## v3.50.0 (2026-06-23)
 
@@ -312,7 +318,6 @@
 - SSH 连接日志：增加 TCP/总耗时统计，便于排查
 - 数据库密码安全：MySQL 使用 MYSQL_PWD 环境变量、PostgreSQL 单引号转义
 - AI 调试日志：移除完整 prompt 输出（可能含设备配置敏感信息），仅记录长度
-- 统计服务端安全加固：JWT_SECRET/ADMIN_PASSWORD 强制要求、速率限制、输入校验
 
 ### 🐛 Bug 修复
 - `parking_lot::Mutex` 替换 `std::sync::Mutex` 避免中毒

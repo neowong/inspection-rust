@@ -159,15 +159,6 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// 获取更新渠道：internal 或 master
-/// 编译时通过 INSPECTION_CHANNEL 环境变量确定，默认 master
-#[tauri::command]
-pub fn get_update_channel() -> String {
-    option_env!("INSPECTION_CHANNEL")
-        .unwrap_or("master")
-        .to_string()
-}
-
 /// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
 #[tauri::command]
 pub fn get_os_info() -> serde_json::Value {
@@ -186,16 +177,14 @@ pub fn has_ip_db(state: tauri::State<'_, crate::AppState>) -> bool {
 
 /// 检查 GitHub Releases 是否有新版本
 /// 返回 (最新版本号, 下载地址, 发布说明)，无更新时返回 None
-/// channel: "master" 或 "internal"，决定只检查对应渠道的 release
+/// 统一检查 v* 版本（已移除 internal 渠道）
 #[tauri::command]
 pub async fn check_update(
     current_version: String,
-    channel: Option<String>,
 ) -> Result<Option<serde_json::Value>, String> {
-    let channel = channel.unwrap_or_else(|| "master".to_string());
-    let tag_prefix = if channel == "internal" { "internal-v" } else { "v" };
+    let tag_prefix = "v";
 
-    // 使用 /releases 列表而非 /releases/latest，以按渠道过滤
+    // 使用 /releases 列表查找最新的非 draft/prerelease 版本
     let url = "https://api.github.com/repos/neowong/inspection-rust/releases?per_page=10";
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -230,7 +219,6 @@ pub async fn check_update(
     let latest_tag = release.get("tag_name")
         .and_then(|v| v.as_str())
         .unwrap_or("")
-        .trim_start_matches("internal-")
         .trim_start_matches('v')
         .to_string();
 
@@ -259,6 +247,54 @@ pub async fn check_update(
     } else {
         Ok(None)
     }
+}
+
+/// 匿名使用统计上报（启动时后台调用，静默，失败忽略）
+/// 统计内容：匿名 device_id、版本号、OS、时间戳
+/// 不收集 IP、用户名、设备数据等敏感信息
+/// 日志仅 debug 级别（RUST_LOG=debug 时才显示）
+#[tauri::command]
+pub async fn track_usage(version: String) -> Result<(), String> {
+    // 生成匿名 device_id：机器名 + MAC 地址的 SHA-256 哈希，不可逆
+    let device_id = {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mac = get_mac_address().unwrap_or_default();
+        let raw = format!("{}:{}", hostname, mac);
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(raw.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let os = if cfg!(target_os = "windows") { "windows" }
+        else if cfg!(target_os = "linux") { "linux" }
+        else { "unknown" };
+
+    let payload = serde_json::json!({
+        "device_id": &device_id,
+        "version": &version,
+        "os": os,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    // 统计接口地址
+    let api_url = "https://neowong.eu.org/stats/api/track";
+
+    tracing::debug!("[track] device_id={}, version={}, os={}", device_id, version, os);
+
+    // 实际上报（静默，失败忽略）
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+    let _ = client.post(api_url)
+        .json(&payload)
+        .send()
+        .await;
+
+    Ok(())
 }
 
 /// 提交问题反馈到统计服务端（静默，失败忽略）
