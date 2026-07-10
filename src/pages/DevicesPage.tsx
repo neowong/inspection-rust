@@ -11,8 +11,6 @@ import Modal from "../components/Modal";
 import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu";
 import Button from "../components/ui/Button";
 import Input, { Select } from "../components/ui/Input";
-import StatusBadge from "../components/StatusBadge";
-import AuthBadge from "../components/AuthBadge";
 import { Radio, Pencil, Copy, Trash2, Download, Upload } from "lucide-react";
 
 const NETWORK_VENDORS = ["H3C", "华为", "思科", "锐捷", "飞塔", "其它"];
@@ -641,18 +639,45 @@ export default function DevicesPage() {
             width: "110px",
             noTruncate: true,
             render: (r) => {
-              // 离线时只显示离线徽章——账号无法验证不算"账号错误"，避免误导
-              // 在线时：账号正常/未验证 → 仅在线徽章；账号异常 → 仅异常徽章（隐藏"在线"以免误导）
-              const showAuth =
-                r.status === "online" &&
-                r.auth_status &&
-                r.auth_status !== "ok" &&
-                r.auth_status !== "unknown";
+              // 合并状态：离线→"离线"，在线+正常→"在线"，在线+异常→显示具体异常
+              const isOnline = r.status === "online";
+              const hasAuthIssue = r.auth_status && r.auth_status !== "ok" && r.auth_status !== "unknown";
+
+              // 决定显示状态
+              let displayStatus: string;
+              if (!isOnline) {
+                displayStatus = "offline";
+              } else if (hasAuthIssue) {
+                displayStatus = r.auth_status || "error"; // auth_failed/unreachable/timeout/dns_fail/no_credential/error
+              } else {
+                displayStatus = "online";
+              }
+
+              // 状态样式和标签映射
+              const STATUS_MAP: Record<string, { style: string; label: string }> = {
+                online:        { style: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))] border border-[hsl(var(--success)/0.25)]", label: "在线" },
+                offline:       { style: "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.25)]", label: "离线" },
+                auth_failed:   { style: "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.25)]", label: "账号错误" },
+                unreachable:   { style: "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.25)]", label: "无法连接" },
+                timeout:       { style: "bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning))] border border-[hsl(var(--warning)/0.25)]", label: "连接超时" },
+                dns_fail:      { style: "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.25)]", label: "解析失败" },
+                no_credential: { style: "bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning))] border border-[hsl(var(--warning)/0.25)]", label: "缺少凭据" },
+                error:         { style: "bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] border border-[hsl(var(--danger)/0.25)]", label: "检测失败" },
+              };
+
+              const config = STATUS_MAP[displayStatus] || STATUS_MAP.online;
+              const dotColor = displayStatus === "online" ? "bg-[hsl(var(--success))]"
+                : displayStatus === "timeout" || displayStatus === "no_credential" ? "bg-[hsl(var(--warning))]"
+                : "bg-[hsl(var(--danger))]";
+
               return (
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  {!showAuth && <StatusBadge status={r.status} />}
-                  {showAuth && <AuthBadge status={r.auth_status} message={r.auth_message} />}
-                </div>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${config?.style || STATUS_MAP.online?.style}`}
+                  title={r.auth_message || undefined}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                  {config?.label || STATUS_MAP.online?.label}
+                </span>
               );
             },
           },

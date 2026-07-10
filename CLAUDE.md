@@ -135,6 +135,8 @@ ai-inspection/
 - **TFTP 协议要点**: 块大小 512B（标准兼容）；文件大小恰好为 512 整数倍时必须额外发送空 DATA 包（0 字节数据）表示传输结束；每个客户端应在独立 tokio::spawn 中处理，共享 Arc<UdpSocket>；UDP 低端口 (<1024) 在 Linux 需要 `setcap cap_net_bind_service=+ep`。
 - **全局审计 (2026-07-01)**: 修复 15 项问题 — Tauri sync Err 不 reject、TFTP 重写（Arc+独立任务+空 DATA+错误恢复）、CSV 导入事务、前端 stale closure/ref 修复、Modal backdrop、批量操作并发保护等。详见 `memory/session-2026-07-01-round2.md` 和 `memory/tftp-known-issues.md`。
 - **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
+- **匿名使用统计**: 启动 2s 后自动上报 `device_id`（SHA-256）、版本号、OS 类型、OS 详情、时间戳。Linux 从 `/etc/os-release` 读取 `PRETTY_NAME` 获取完整版本（如 "Ubuntu 26.04 LTS"），其他平台用 `os_info` crate。服务端使用 ip2region 解析 IP 归属地。
+- **设备状态合并显示**: 设备列表状态列合并在线状态和 SSH 账号状态为统一显示：离线→"离线"，在线+正常→"在线"，在线+异常→显示具体异常（账号错误/连接超时/检测失败等）。不再使用独立的 AuthBadge 组件。
 
 ## Windows 交叉编译注意事项
 

@@ -628,7 +628,7 @@
         <tr>
           <td><code>${row.device_id.slice(0, 16)}...</code></td>
           <td>v${row.version}</td>
-          <td><span class="badge badge-${row.os}">${row.os}</span></td>
+          <td><span class="badge badge-${row.os}">${row.os_detail || row.os}</span></td>
           <td>${row.ip || '-'}</td>
           <td style="font-size:12px;color:#666;">${row.ip_region || '-'}</td>
           <td>${new Date(row.timestamp).toLocaleString('zh-CN')}</td>
@@ -648,9 +648,10 @@
       }
       tbody.innerHTML = data.map(row => {
         let osStr = '-';
-        if (row.os) {
+        if (row.os_version && row.os_version !== 'Unknown') {
+          osStr = row.os_version;
+        } else if (row.os) {
           osStr = row.os;
-          if (row.os_version && row.os_version !== 'Unknown') osStr += ' ' + row.os_version;
         }
         const STATUS_LABELS = { pending: '待处理', in_progress: '处理中', fixed: '已修复', wontfix: '不修复' };
         const status = row.status || 'pending';

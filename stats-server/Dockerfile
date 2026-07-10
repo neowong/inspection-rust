@@ -12,6 +12,7 @@ RUN npm install --production
 # 复制源代码
 COPY server.js .
 COPY public ./public
+COPY ip2region_v4.xdb .
 
 # 创建数据目录
 RUN mkdir -p /app/data

@@ -369,7 +369,7 @@ app.get(`${BASE_PATH}/api/stats/daily`, authenticateToken, (req, res) => {
 app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 500);
   db.all(
-    `SELECT device_id, version, os, ip, ip_region, timestamp
+    `SELECT device_id, version, os, os_detail, ip, ip_region, timestamp
      FROM track_records
      ORDER BY timestamp DESC
      LIMIT ?`,
@@ -383,7 +383,7 @@ app.get(`${BASE_PATH}/api/stats/recent`, authenticateToken, (req, res) => {
 
 // 提交反馈（无需认证，限流 + 输入校验）
 app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), async (req, res) => {
-  const { device_id, feedback_type, title, content, contact, version, os, os_version } = req.body;
+  const { device_id, feedback_type, title, content, contact, version, os, os_detail } = req.body;
 
   if (!feedback_type || !title || !content) {
     return res.status(400).json({ error: '反馈类型、标题和内容不能为空' });
@@ -407,7 +407,7 @@ app.post(`${BASE_PATH}/api/feedback`, rateLimit('feedback', 10, 60000), async (r
     [String(device_id || '').slice(0, 128), feedback_type,
      String(title).slice(0, 200), String(content).slice(0, 5000),
      contact ? String(contact).slice(0, 200) : null, String(version || '').slice(0, 32),
-     String(os || '').slice(0, 32), String(os_version || '').slice(0, 64),
+     String(os || '').slice(0, 32), String(os_detail || '').slice(0, 128),
      ip ? ip + (region ? ' (' + region + ')' : '') : null],
     (err) => {
       if (err) {

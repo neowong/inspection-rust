@@ -162,10 +162,10 @@ pub fn get_app_version() -> String {
 /// 获取操作系统信息（类型和版本），用于问题反馈等场景展示
 #[tauri::command]
 pub fn get_os_info() -> serde_json::Value {
-    let info = os_info::get();
+    let (os_family, os_detail) = get_detailed_os_info();
     serde_json::json!({
-        "os": info.os_type().to_string(),
-        "os_version": info.version().to_string(),
+        "os": os_family,
+        "os_detail": os_detail,
     })
 }
 
@@ -249,6 +249,51 @@ pub async fn check_update(
     }
 }
 
+/// 获取详细的 OS 版本信息（Linux 从 /etc/os-release 读取，其他平台用 os_info）
+fn get_detailed_os_info() -> (String, String) {
+    let os_info_data = os_info::get();
+    let os_family = os_info_data.os_type().to_string();
+
+    // Linux 发行版：从 /etc/os-release 读取 PRETTY_NAME（如 "Ubuntu 22.04.3 LTS"）
+    #[cfg(target_os = "linux")]
+    let os_detail = {
+        std::fs::read_to_string("/etc/os-release")
+            .ok()
+            .and_then(|content| {
+                content.lines().find_map(|line| {
+                    if line.starts_with("PRETTY_NAME=") {
+                        let value = line.trim_start_matches("PRETTY_NAME=");
+                        // 去掉首尾引号
+                        Some(value.trim_matches('"').to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap_or_else(|| {
+                // fallback: 发行版名 + 版本号
+                let ver = os_info_data.version().to_string();
+                if ver.is_empty() || ver == "unknown" {
+                    os_family.clone()
+                } else {
+                    format!("{} {}", os_family, ver)
+                }
+            })
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let os_detail = {
+        let ver = os_info_data.version().to_string();
+        if ver.is_empty() || ver == "unknown" {
+            os_family.clone()
+        } else {
+            format!("{} {}", os_family, ver)
+        }
+    };
+
+    (os_family, os_detail)
+}
+
 /// 匿名使用统计上报（启动时后台调用，静默，失败忽略）
 /// 统计内容：匿名 device_id、版本号、OS、时间戳
 /// 不收集 IP、用户名、设备数据等敏感信息
@@ -268,16 +313,7 @@ pub async fn track_usage(version: String) -> Result<(), String> {
         format!("{:x}", hasher.finalize())
     };
 
-    let os_info = os_info::get();
-    let os_family = os_info.os_type().to_string();
-    let os_version = os_info.version().to_string();
-
-    // 详细操作系统版本：发行版 + 版本号（无内核版本）
-    let os_detail = if os_version.is_empty() || os_version == "unknown" {
-        os_family.clone()
-    } else {
-        format!("{} {}", os_family, os_version)
-    };
+    let (os_family, os_detail) = get_detailed_os_info();
 
     let payload = serde_json::json!({
         "device_id": &device_id,
@@ -326,9 +362,7 @@ pub async fn submit_feedback(
         format!("{:x}", hasher.finalize())
     };
 
-    let os_info = os_info::get();
-    let os_type = os_info.os_type().to_string();
-    let os_version = os_info.version().to_string();
+    let (os_family, os_detail) = get_detailed_os_info();
 
     let payload = serde_json::json!({
         "device_id": &device_id,
@@ -337,8 +371,8 @@ pub async fn submit_feedback(
         "content": &content,
         "contact": contact.unwrap_or_default(),
         "version": &version,
-        "os": os_type,
-        "os_version": os_version,
+        "os": &os_family,
+        "os_detail": &os_detail,
     });
 
     let api_url = "https://neowong.eu.org/stats/api/feedback";

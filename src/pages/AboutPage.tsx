@@ -23,7 +23,7 @@ export default function AboutPage() {
 
   // 版本号（从后端获取，编译时嵌入）
   const [currentVersion, setCurrentVersion] = useState("");
-  const [osInfo, setOsInfo] = useState<{os: string; os_version: string}>({os: "", os_version: ""});
+  const [osInfo, setOsInfo] = useState<{os: string; os_detail: string}>({os: "", os_detail: ""});
 
   // 版本检查
   const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
@@ -38,7 +38,7 @@ export default function AboutPage() {
         const ver = await invoke<string>("get_app_version");
         if (cancelled) return;
         setCurrentVersion(ver);
-        const info = await invoke<{os: string; os_version: string}>("get_os_info");
+        const info = await invoke<{os: string; os_detail: string}>("get_os_info");
         if (cancelled) return;
         setOsInfo(info);
         const result = await invoke<{ version: string; url: string } | null>("check_update", {
@@ -292,7 +292,7 @@ export default function AboutPage() {
 
             {currentVersion && (
               <p className="text-[11px] text-[hsl(var(--text-tertiary))]">
-                提交时将附带：v{currentVersion} · {osInfo.os} {osInfo.os_version !== "Unknown" ? osInfo.os_version : ""}
+                提交时将附带：v{currentVersion} · {osInfo.os_detail || osInfo.os}
               </p>
             )}
             <button
