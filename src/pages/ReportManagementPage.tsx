@@ -43,9 +43,19 @@ export default function ReportManagementPage() {
   const [deleting, setDeleting] = useState<number | null>(null);
   const [deletingReports, setDeletingReports] = useState(false);
 
+  // AI 配置状态
+  const [hasActiveAiConfig, setHasActiveAiConfig] = useState<boolean>(true);
+
   useEffect(() => {
     loadBatches();
     invoke<Device[]>("list_devices", {}).then(setDevices).catch(console.error);
+    // 检查是否有激活的 AI 配置
+    invoke<any[]>("list_ai_configs")
+      .then((configs) => {
+        const hasActive = configs.some((c) => c.is_active);
+        setHasActiveAiConfig(hasActive);
+      })
+      .catch(console.error);
   }, []);
 
   const deviceMap = useMemo(() => {
@@ -101,6 +111,20 @@ export default function ReportManagementPage() {
     }, 3000);
     return () => clearInterval(timer);
   }, [selectedBatch?.id, selectedBatch?.status, loadBatches]);
+
+  // 页面获得焦点时刷新 AI 配置状态（用户可能在设置页面添加了配置）
+  useEffect(() => {
+    const handleFocus = () => {
+      invoke<any[]>("list_ai_configs")
+        .then((configs) => {
+          const hasActive = configs.some((c) => c.is_active);
+          setHasActiveAiConfig(hasActive);
+        })
+        .catch(console.error);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   // ----- Record detail -----
   // 序号守卫：快速切换记录时，仅最后一次请求的响应会更新 state，避免旧响应覆盖新数据
@@ -158,6 +182,11 @@ export default function ReportManagementPage() {
   // 批次：AI 评判 — 先分析再生成单个报告
   const handleBatchAiJudge = async () => {
     if (!selectedBatch) return;
+    // 检查是否有激活的 AI 配置
+    if (!hasActiveAiConfig) {
+      alert("请先在「系统设置」中添加并激活 AI 模型配置，再执行 AI 评判。");
+      return;
+    }
     const batchId = selectedBatch.id;
     const records = selectedBatch.records || [];
     const startId = selectedIdRef.current; // 记录开始时的批次 ID
@@ -336,12 +365,20 @@ export default function ReportManagementPage() {
               {/* Batch toolbar */}
               <div className="flex items-center gap-2 flex-wrap mb-3">
                 <h2 className="text-base font-semibold mr-2">{selectedBatch.name || `任务 #${selectedBatch.id}`}</h2>
-                <Button size="sm" variant="ghost"
-                  loading={processingBatches[selectedBatch?.id ?? -1] === "ai"}
-                  disabled={processingBatches[selectedBatch?.id ?? -1] !== undefined}
-                  onClick={handleBatchAiJudge}>
-                  {batchDone?.type === "ai" && batchDone?.batchId === selectedBatch?.id ? "✓ 已重新评判" : (hasAnalyzedRecords ? "重新AI评判" : "AI评判")}
-                </Button>
+                <div className="relative group">
+                  <Button size="sm" variant="ghost"
+                    loading={processingBatches[selectedBatch?.id ?? -1] === "ai"}
+                    disabled={processingBatches[selectedBatch?.id ?? -1] !== undefined || !hasActiveAiConfig}
+                    onClick={handleBatchAiJudge}>
+                    {batchDone?.type === "ai" && batchDone?.batchId === selectedBatch?.id ? "✓ 已重新评判" : (hasAnalyzedRecords ? "重新AI评判" : "AI评判")}
+                  </Button>
+                  {!hasActiveAiConfig && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-[hsl(var(--text-primary))] text-[hsl(var(--bg-card))] text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                      请先在「系统设置」中添加并激活 AI 模型配置
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-2 h-2 bg-[hsl(var(--text-primary))] rotate-45"></div>
+                    </div>
+                  )}
+                </div>
                 <Button size="sm" variant="ghost"
                   loading={processingBatches[selectedBatch?.id ?? -1] === "manual"}
                   disabled={processingBatches[selectedBatch?.id ?? -1] !== undefined}

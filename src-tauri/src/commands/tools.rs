@@ -582,7 +582,7 @@ fn run_traceroute_stream(
     max_hops: u32,
     timeout_ms: u64,
 ) -> Result<(), String> {
-    use std::io::{BufRead, BufReader};
+    use std::io::BufReader;
     use std::process::Command;
 
     let (program, args) = if cfg!(target_os = "windows") {
@@ -651,6 +651,7 @@ fn run_traceroute_stream(
     }
     #[cfg(not(target_os = "windows"))]
     {
+        use std::io::BufRead;
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             let line = match line {

@@ -1,6 +1,6 @@
 {
   "productName": "AI-Inspection",
-  "version": "3.60.4",
+  "version": "3.60.5",
   "identifier": "com.inspection.rust",
   "build": {
     "frontendDist": "../dist",
