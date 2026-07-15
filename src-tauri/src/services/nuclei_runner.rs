@@ -2,6 +2,22 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 
+/// Windows 下隐藏子进程控制台窗口
+#[cfg(windows)]
+fn hide_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+}
+#[cfg(not(windows))]
+fn hide_window(_cmd: &mut Command) {}
+
+/// 创建一个隐藏控制台的 nuclei 进程
+fn nuclei_cmd() -> Command {
+    let mut cmd = std::process::Command::new(nuclei_bin());
+    hide_window(&mut cmd);
+    cmd
+}
+
 const CVE_SERVER: &str = "http://192.168.9.72:18080";
 
 fn app_dir() -> PathBuf {
@@ -144,7 +160,7 @@ pub fn scan_target(target: &str, port: u16, service: &str) -> Result<Vec<serde_j
         let cmd_str = format!("{} -u {} -j -timeout 10 -t {}", nuclei_bin().display(), tgt, tmpl.display());
         tracing::info!("nuclei 命令: {}", cmd_str);
 
-        let output = Command::new(nuclei_bin())
+        let output = nuclei_cmd()
             .args(["-u", &tgt, "-j", "-timeout", "10", "-t", &tmpl.to_string_lossy()])
             .output()
             .map_err(|e| format!("nuclei 执行失败: {}", e))?;
@@ -165,7 +181,7 @@ pub fn scan_target(target: &str, port: u16, service: &str) -> Result<Vec<serde_j
     let cmd_str = format!("{} -u {} -j -timeout 10 -t {}", nuclei_bin().display(), tgt, tmpl_path.display());
     tracing::info!("nuclei 命令: {}", cmd_str);
 
-    let output = Command::new(nuclei_bin())
+    let output = nuclei_cmd()
         .args(["-u", &tgt, "-j", "-timeout", "10", "-t", &tmpl_path.to_string_lossy()])
         .output()
         .map_err(|e| format!("nuclei 执行失败: {}", e))?;
