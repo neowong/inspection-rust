@@ -170,6 +170,55 @@
 }
 .animate-in { animation: fadeIn .25s ease-out; }
 
+/* LED 脉冲 - 用于设备在线状态灯 */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* 扫描线动画 - 用于日志分析中 */
+@keyframes scan-line {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+.animate-scan {
+  animation: scan-line 1.8s ease-in-out infinite;
+}
+
+/* 打字机光标闪烁 */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+.animate-cursor {
+  animation: blink-cursor 1s step-end infinite;
+}
+
+/* 条形脉冲条 */
+@keyframes pulse-bar {
+  0% { transform: scaleX(0); opacity: 0; }
+  50% { opacity: 0.6; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+.animate-pulse-bar {
+  animation: pulse-bar 1.5s ease-in-out infinite;
+  transform-origin: left;
+}
+
+/* 蓝色辉光脉冲 - 用于活跃指示器 */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px hsl(var(--accent) / 0.4); }
+  50% { box-shadow: 0 0 8px hsl(var(--accent) / 0.7); }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   10%, 50%, 90% { transform: translateX(-4px); }

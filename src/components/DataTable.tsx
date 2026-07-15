@@ -120,10 +120,10 @@ export default function DataTable<T>({
                     onClick={() => onRowClick?.(row)}
                     onDoubleClick={() => onRowDoubleClick?.(row)}
                     onContextMenu={(e) => onContextMenu?.(e, row)}
-                    className={`${onRowClick ? "cursor-pointer" : ""} transition-colors ${
+                    className={`${onRowClick ? "cursor-pointer" : ""} transition-all duration-150 ${
                       selected
                         ? "bg-[hsl(var(--accent-subtle))]"
-                        : "hover:bg-[hsl(var(--bg-hover))]"
+                        : "hover:bg-[hsl(var(--bg-hover))] hover:shadow-[inset_3px_0_0_0_hsl(var(--accent))]"
                     }`}
                   >
                     {columns.map((col) => {

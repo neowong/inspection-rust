@@ -1,6 +1,6 @@
 [package]
 name = "inspection-rust"
-version = "3.60.5"
+version = "3.61.0"
 edition = "2021"
 description = "AI巡检助手"
 
@@ -35,7 +35,7 @@ parking_lot = "0.12"
 regex = "1"
 toml = "0.8"
 docx-rs = "0.4"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "2", default-features = false, features = ["deflate", "time"] }
 indexmap = { version = "2", features = ["serde"] }
 digest = "0.10"
 md-5 = "0.10"

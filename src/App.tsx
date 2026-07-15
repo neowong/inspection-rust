@@ -7,6 +7,7 @@ import InspectionPage from "./pages/InspectionPage";
 import ReportManagementPage from "./pages/ReportManagementPage";
 import SettingsPage from "./pages/SettingsPage";
 import LogAnalysisPage from "./pages/LogAnalysisPage";
+import VulnScanPage from "./pages/VulnScanPage";
 import ToolsPage from "./pages/ToolsPage";
 import AboutPage from "./pages/AboutPage";
 import ChatPage from "./pages/ChatPage";
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/reports" element={<ReportManagementPage />} />
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/logs" element={<LogAnalysisPage />} />
+        <Route path="/vulnscan" element={<VulnScanPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/chat" element={<ChatPage />} />

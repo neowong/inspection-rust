@@ -12,3 +12,7 @@ pub mod web_checker;
 pub mod vendor_profile;
 pub mod linux_runner;
 pub mod ip_location;
+pub mod cve_checker;
+pub mod banner_grabber;
+pub mod cve_db;
+pub mod nuclei_runner;

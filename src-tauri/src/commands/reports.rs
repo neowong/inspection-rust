@@ -1126,6 +1126,304 @@ pub fn parse_log_text(text: String, vendor: String) -> Result<serde_json::Value,
     }))
 }
 
+/// AI 日志分析 - 支持网络/安全/Linux 等多种日志类型
+#[tauri::command]
+pub async fn analyze_logs_ai(
+    _state: State<'_, AppState>,
+    text: String,
+    log_type: String,
+    vendor: String,
+    device_type: String,
+    ai_config_id: i64,
+) -> Result<serde_json::Value, String> {
+    // 1. 获取 AI 配置（同步块，释放锁）
+    let (api_key, base_url, model_id) = {
+        let conn = _state.db.lock();
+        let sql = "SELECT api_key_encrypted, base_url, model_id FROM ai_model_configs WHERE id = ?1";
+        let (encrypted_key, url, m_id): (String, Option<String>, String) = conn
+            .query_row(sql, [ai_config_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|_| "AI 配置不存在".to_string())?;
+        let key = CryptoService::decrypt(&encrypted_key)
+            .map_err(|e| format!("解密 API key 失败: {}", e))?;
+        (key, url.unwrap_or_default(), m_id)
+    };
+
+    // 2. 构建日志分析 prompt
+    let system_prompt = build_log_analysis_prompt(&log_type);
+
+    // 3. 智能预处理日志（去重 → 按优先级保留 → 截断防溢出）
+    let max_ai_chars = 6000;
+    let (log_content, total_lines, kept_lines, dropped_reason) = smart_truncate_log(&text, max_ai_chars);
+
+    let user_message = if vendor.is_empty() {
+        format!(
+            "请分析以下{}日志。厂商和设备类型未指定，请根据日志内容自动识别，并在结果中返回 identified_vendor 和 identified_device_type。\n\n--- 日志开始（共 {} 行，显示 {} 行{}）---\n{}\n--- 日志结束 ---",
+            log_type, total_lines, kept_lines, dropped_reason, log_content
+        )
+    } else {
+        format!(
+            "请分析以下{}日志：\n\n厂商/系统：{}\n设备类型：{}\n\n--- 日志开始（共 {} 行，显示 {} 行{}）---\n{}\n--- 日志结束 ---",
+            log_type, vendor, device_type, total_lines, kept_lines, dropped_reason, log_content
+        )
+    };
+
+    // 4. 调用 AI
+    let url = ai_inspection::build_chat_url(&base_url);
+    let client = ai_inspection::get_client();
+
+    let body = serde_json::json!({
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 8192
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("AI 请求失败: {}", e))?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取 AI 响应失败: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("AI API 错误 ({}): {}", status, response_text));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&response_text)
+        .map_err(|e| format!("解析 AI 响应 JSON 失败: {}", e))?;
+
+    let content = parsed["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("");
+
+    // 尝试解析 AI 返回的 JSON
+    let ai_result = content
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| content.trim().strip_prefix("```"))
+        .map(|s| s.strip_suffix("```").unwrap_or(s))
+        .unwrap_or(content.trim());
+
+    match serde_json::from_str::<serde_json::Value>(ai_result) {
+        Ok(json) => Ok(serde_json::json!({
+            "success": true,
+            "summary": json.get("summary").or_else(|| json.get("overall_summary")).and_then(|v| v.as_str()).unwrap_or("分析完成"),
+            "overall": json.get("overall").and_then(|v| v.as_str()).unwrap_or("info"),
+            "entries": json.get("entries").or_else(|| json.get("items")).cloned().unwrap_or(serde_json::Value::Array(vec![])),
+            "advice": json.get("advice").or_else(|| json.get("suggestions")).and_then(|v| v.as_str()).unwrap_or(""),
+            "identified_vendor": json.get("identified_vendor").and_then(|v| v.as_str()).unwrap_or(""),
+            "identified_device_type": json.get("identified_device_type").and_then(|v| v.as_str()).unwrap_or(""),
+            "raw": content,
+            "total_lines": total_lines,
+            "kept_lines": kept_lines,
+        })),
+        Err(_) => Ok(serde_json::json!({
+            "success": true,
+            "summary": "分析完成",
+            "overall": "info",
+            "entries": [],
+            "advice": "",
+            "raw": content,
+        })),
+    }
+}
+
+/// 智能日志截断：去重 + 按优先级保留关键行，防止 AI 上下文溢出。
+/// 返回 (处理后的文本, 总行数, 保留行数, 丢弃原因说明)。
+fn smart_truncate_log(raw: &str, max_chars: usize) -> (String, usize, usize, String) {
+    let lines: Vec<&str> = raw.lines().collect();
+    let total = lines.len();
+
+    if total == 0 {
+        return (String::new(), 0, 0, "".to_string());
+    }
+
+    // 1. 去重（连续相同行只保留第一条，但计数保留）
+    let mut deduped: Vec<&str> = Vec::new();
+    let mut skipped = 0usize;
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if deduped.last().map_or(false, |last| *last == trimmed) {
+            skipped += 1;
+            continue;
+        }
+        deduped.push(trimmed);
+    }
+
+    // 如果去重后直接能放下，完美
+    let candidate = deduped.join("\n");
+    if candidate.len() <= max_chars {
+        let reason = if skipped > 0 {
+            format!("，已合并 {} 行重复内容", skipped)
+        } else {
+            String::new()
+        };
+        return (candidate, total, deduped.len(), reason);
+    }
+
+    // 2. 按优先级排序：错误行 > 警告行 > 普通行
+    let is_error = |line: &str| {
+        let upper = line.to_uppercase();
+        upper.contains("ERROR") || upper.contains("CRIT") || upper.contains("EMERG")
+            || upper.contains("FATAL") || upper.contains("FAIL") || upper.contains("DENIED")
+            || upper.contains("OOM") || upper.contains("PANIC")
+    };
+    let is_warning = |line: &str| {
+        let upper = line.to_uppercase();
+        upper.contains("WARNING") || upper.contains("ALERT") || upper.contains("NOTICE")
+            || upper.contains("ABNORMAL") || upper.contains("DROPPED") || upper.contains("TIMEOUT")
+    };
+
+    // 分割
+    let mut errors: Vec<&str> = Vec::new();
+    let mut warnings: Vec<&str> = Vec::new();
+    let mut normals: Vec<&str> = Vec::new();
+
+    for line in &deduped {
+        if is_error(line) {
+            errors.push(line);
+        } else if is_warning(line) {
+            warnings.push(line);
+        } else {
+            normals.push(line);
+        }
+    }
+
+    // 3. 按优先级填充，直到 max_chars
+    let mut result_lines: Vec<String> = Vec::new();
+    let mut remaining = max_chars;
+
+    for batch in [&errors, &warnings, &normals] {
+        for line in batch {
+            let line_len = line.len() + 1;
+            if line_len <= remaining {
+                result_lines.push(line.to_string());
+                remaining -= line_len;
+            } else if remaining > 50 {
+                let truncated: String = line.chars().take(remaining.saturating_sub(4)).collect();
+                result_lines.push(format!("{}...", truncated.trim()));
+                remaining = 0;
+                break;
+            } else {
+                break;
+            }
+        }
+        if remaining < 10 {
+            break;
+        }
+    }
+
+    let kept = result_lines.len();
+    let dropped = deduped.len() - kept;
+    let result = result_lines.join("\n");
+
+    let reason = if skipped > 0 && dropped > 0 {
+        format!("，已合并 {} 行重复 + 丢弃 {} 行低优先级内容", skipped, dropped)
+    } else if dropped > 0 {
+        format!("，丢弃 {} 行低优先级内容（优先保留错误/警告）", dropped)
+    } else if skipped > 0 {
+        format!("，已合并 {} 行重复内容", skipped)
+    } else {
+        String::new()
+    };
+
+    (result, total, kept, reason)
+}
+
+/// 构建日志分析系统提示词
+fn build_log_analysis_prompt(log_type: &str) -> String {
+    let base_prompt = r#"你是一位专业的 IT 运维工程师。请分析以下日志内容，识别关键事件、异常和安全隐患。
+
+请按 JSON 格式返回分析结果：
+{
+  "summary": "整体分析概述，一句话总结",
+  "overall": "ok/info/warning/critical",
+  "entries": [
+    {
+      "time": "事件时间（如果日志包含时间戳）",
+      "level": "级别（如 ERROR/WARNING/INFO）",
+      "source": "来源模块或进程",
+      "content": "原始日志内容（保留原文）",
+      "analysis": "对此条日志的分析判断（≤20字）",
+      "severity": "危害等级（high/medium/low）"
+    }
+  ],
+  "stats": {
+    "total": 总条数,
+    "errors": 错误数,
+    "warnings": 警告数,
+    "info": 信息数
+  },
+  "advice": "运维建议（基于日志分析给出的改进建议，≤100字）"
+}
+
+注意：
+- 只分析有意义的日志行，忽略空行/分隔行
+- severity 标注每条日志的危害程度
+- 如果日志数量较多，请合理归类后分析
+- 对于高危事件（如登录失败、配置变更、异常复位等）要特别标注"#
+;
+
+    let type_prompt = match log_type {
+        "network" => r#"
+【网络设备日志分析要点】
+- 重点关注接口 UP/DOWN、链路振荡、STP 拓扑变更
+- CPU 和内存告警、FAN/POWER 硬件故障
+- 配置变更、登录认证失败、ACL 拒绝记录
+- OSPF/BGP 邻居震荡、路由环路
+- 常见厂商格式：H3C(%MMM DD HH:MM:SS:mmm YYYY hostname MODULE/SEV/MNEMONIC: msg), Cisco(*MMM DD HH:MM:SS.mmm: %FACILITY-SEV-MNEMONIC: msg)
+"#.to_string(),
+        "security" => r#"
+【安全设备/安全日志分析要点】
+- 重点关注暴力破解、DDoS 攻击、端口扫描等攻击行为
+- 防火墙策略命中/拒绝记录、IPS/IDS 告警
+- VPN 隧道状态、用户认证失败（多次）
+- 恶意软件检测、异常流量、DNS 异常查询
+- 0Day/漏洞利用特征、权限提升尝试
+- 合规性违规记录
+"#.to_string(),
+        "linux" => r#"
+【Linux 系统日志分析要点】
+- 重点关注 SSH 登录记录（成功/失败）、sudo 提权操作
+- 系统错误（如 disk I/O error、file system full、OOM killer）
+- 服务启动/停止异常（systemd 服务状态变更）
+- 内核错误、panic、硬件错误（EDAC、MCE）
+- cron 任务执行异常、应用程序崩溃
+- 安全相关：fail2ban 封禁、firewalld/iptables 规则变更、SELinux 告警
+- 常见文件：/var/log/syslog, /var/log/messages, /var/log/auth.log, /var/log/kern.log
+"#.to_string(),
+        _ => "".to_string(),
+    };
+
+    format!("{}{}", base_prompt, type_prompt)
+}
+
+/// 导出日志分析结果到文件（前端调用 save 对话框后写入）
+#[tauri::command]
+pub fn export_log_analysis(
+    save_path: String,
+    content: String,
+) -> Result<(), String> {
+    std::fs::write(&save_path, &content)
+        .map_err(|e| format!("写入文件失败: {}", e))
+}
+
 /// 用系统文件管理器打开报告目录，方便用户查看历史报告
 #[tauri::command]
 pub fn open_reports_dir() -> Result<(), String> {

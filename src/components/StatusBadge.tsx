@@ -59,7 +59,7 @@ export default function StatusBadge({ status }: { status: Status }) {
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${STYLES[status]}`}
     >
       <span
-        className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[status]}`}
+        className={`w-1.5 h-1.5 rounded-full ${DOT_COLORS[status]} ${status === "online" || status === "running" ? "animate-pulse-dot" : ""}`}
       />
       {LABELS[status]}
     </span>

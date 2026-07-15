@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info,
+  LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info, BugPlay,
   Bot, Plus, MessageCircle, Trash2, RotateCw, Sun, Moon, Monitor,
 } from "lucide-react";
 import { loadSessions, deleteSession } from "../pages/ChatPage";
 import type { ChatSession } from "../pages/ChatPage";
 import { useTheme } from "../hooks/useTheme";
 
-type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "settings" | "about" | "chat";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "vulnscan" | "settings" | "about" | "chat";
 
 interface NavItem {
   key: PageKey;
@@ -36,8 +36,9 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   {
     label: "运维工具",
     items: [
-      { key: "tools",      label: "工具箱", path: "/tools",      icon: Wrench },
-      { key: "logs",       label: "日志分析",   path: "/logs",       icon: FileSearch },
+      { key: "tools",      label: "工具箱",     path: "/tools",     icon: Wrench },
+      { key: "logs",       label: "日志分析",    path: "/logs",      icon: FileSearch },
+      { key: "vulnscan",   label: "漏洞扫描",    path: "/vulnscan",  icon: BugPlay },
     ],
   },
   {
@@ -141,19 +142,30 @@ export default function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside
-          className={`${collapsed ? "w-[56px]" : "w-[260px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out`}
+          className={`${collapsed ? "w-[56px]" : "w-[220px]"} shrink-0 flex flex-col transition-[width] duration-200 ease-out`}
           style={{ backgroundColor: sidebarBg }}
         >
           {/* Brand — 点击收起 */}
           <div
             onClick={() => setCollapsed(!collapsed)}
-            className={`flex items-center h-14 border-b px-3 gap-2 cursor-pointer select-none transition-colors hover:bg-[hsl(var(--sidebar-hover))]
+            className={`flex items-center h-14 border-b px-3 gap-2.5 cursor-pointer select-none transition-colors hover:bg-[hsl(var(--sidebar-hover))]
               ${collapsed ? "justify-center" : ""}`}
             style={{ borderColor: "hsl(var(--sidebar-hover))" }}
             title={collapsed ? "展开菜单" : "收起菜单"}
           >
-            <img src="/router.svg" alt="AI巡检助手" className="h-9 w-9 object-contain shrink-0" />
-            {!collapsed && <span className="text-base font-bold text-white truncate">AI巡检助手</span>}
+            <img src="/hope-logo.svg" alt="@Hope 巡检助手" className="h-9 w-9 object-contain shrink-0" />
+            {!collapsed && (
+              <div className="flex flex-col leading-tight">
+                <div className="flex items-baseline gap-0">
+                  <span className="text-[20px] font-extrabold text-white leading-none">@</span>
+                  <span className="text-[19px] font-extrabold text-white tracking-[0.05em] leading-none">Hope</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="w-4 h-[2px] rounded-full bg-[#3B82F6] shrink-0" />
+                  <span className="text-[12px] font-medium text-[hsl(var(--sidebar-text-muted))] tracking-[0.15em]">巡检助手</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {navMode ? (
@@ -180,7 +192,11 @@ export default function AppShell() {
                               ${collapsed ? "justify-center h-10 w-10 mx-auto" : "gap-3 px-3 h-9"}
                               ${active ? "font-medium" : "hover:bg-[hsl(var(--sidebar-hover))]"}`}
                             style={active
-                              ? { backgroundColor: sidebarActive, color: "hsl(var(--accent-foreground))" }
+                              ? {
+                                  backgroundColor: sidebarActive,
+                                  color: "hsl(var(--accent-foreground))",
+                                  boxShadow: "inset 3px 0 0 0 hsl(var(--accent))"
+                                }
                               : { color: "hsl(var(--sidebar-text-muted))" }
                             }
                             title={collapsed ? item.label : undefined}
@@ -308,7 +324,7 @@ export default function AppShell() {
 
         {/* Content */}
         <main className="flex-1 overflow-auto" style={{ backgroundColor: "hsl(var(--bg-content))" }}>
-          <div className="animate-in p-6">
+          <div key={location.pathname} className="animate-in p-6">
             <Outlet />
           </div>
         </main>

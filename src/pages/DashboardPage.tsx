@@ -17,7 +17,9 @@ function SummaryCard({ label, value, icon: Icon, color, muted, onClick }: {
   const c = colorVar(color);
   return (
     <div onClick={onClick}
-      className="relative overflow-hidden rounded-xl border bg-[hsl(var(--bg-card))] px-5 py-5 cursor-pointer hover:shadow-lg transition-all group">
+      className="relative overflow-hidden rounded-xl border bg-[hsl(var(--bg-card))] px-5 py-5 cursor-pointer transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md group">
+      {/* 蓝色顶边渐变条 */}
+      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#3B82F6] via-[#60A5FA] to-[#3B82F6] opacity-80" />
       <div className="absolute right-3 top-3 opacity-[0.07] group-hover:opacity-[0.12] transition-opacity">
         <Icon size={64} />
       </div>

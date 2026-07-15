@@ -180,7 +180,7 @@ export default function SettingsPage() {
               : "bg-[hsl(var(--danger)_/_0.1)] border border-[hsl(var(--danger)_/_0.3)] text-[hsl(var(--danger))]"
           }`}>
             <span className="font-medium">{testResult.ok ? "✓" : "✗"}</span>
-            {testResult.msg}
+            {testResult.ok ? "成功" : "失败"}
             <button onClick={() => setTestResult(null)} className="ml-auto text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-primary))]">✕</button>
           </div>
         )}

@@ -193,6 +193,10 @@ export default function AboutPage() {
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
                 <Mail size={14} className="text-[hsl(var(--accent))]" />
+                <span className="text-sm font-medium text-[hsl(var(--text-primary))]">huangxy@ahope.com.cn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail size={14} className="text-[hsl(var(--accent))]" />
                 <span className="text-sm font-medium text-[hsl(var(--text-primary))]">neowong2005@gmail.com</span>
               </div>
               <div className="flex items-center gap-2">

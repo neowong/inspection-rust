@@ -596,6 +596,8 @@ pub fn run() {
             commands::reports::open_reports_dir,
             commands::reports::analyze_record_logs,
             commands::reports::parse_log_text,
+            commands::reports::analyze_logs_ai,
+            commands::reports::export_log_analysis,
             // Tools
             commands::tools::scan_live_hosts,
             commands::tools::scan_ports,
@@ -615,6 +617,17 @@ pub fn run() {
             commands::tools::stop_tftp_server,
             commands::tools::start_syslog_server,
             commands::tools::stop_syslog_server,
+            // Vuln scan
+            commands::vuln_scan::scan_ip_vulns,
+            commands::vuln_scan::scan_device_vulns,
+            commands::vuln_scan::estimate_scan_time,
+            commands::vuln_scan::test_cve_api,
+            commands::vuln_scan::get_nuclei_status,
+            commands::vuln_scan::download_nuclei,
+            commands::vuln_scan::run_nuclei_scan,
+            commands::vuln_scan::download_cve_db,
+            commands::vuln_scan::get_cve_db_info,
+            commands::vuln_scan::has_cve_local_db,
             // Stats
             get_stats,
             // Chat
