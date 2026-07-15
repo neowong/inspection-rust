@@ -4,7 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-运维巡检系统 (IT Operations Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷/飞塔）、Linux 服务器，执行巡检命令收集状态数据，调用 AI（OpenAI/Anthropic/DeepSeek）分析结果并生成可编辑 DOCX 报告。
+运维巡检系统 (IT Operations Inspection System) — Rust + Tauri v2 桌面版。通过 SSH 连接网络设备（H3C/华为/思科/锐捷/飞塔）、Linux 服务器、数据库，执行巡检命令收集状态数据，调用 AI 分析结果并生成可编辑 DOCX 报告。支持漏洞扫描（CPE 版本匹配 + nuclei 探针验证）、日志分析、网络工具箱等。
+
+## CVE 服务中心
+
+漏洞扫描依赖一个独立的 CVE 查询服务（`192.168.9.72:18080`），Docker 容器化部署：
+- **API**: `GET /api/v1/cve?product=nginx&version=1.20.0` — CPE 版本范围匹配
+- **下载**: `GET /api/v1/download/nuclei_windows.zip` — nuclei 二进制分发
+- **数据源**: NVD API 2.0 关键词搜索 + 全量 CPE 数据后台下载
+- **同步**: cron 每日凌晨 2 点自动更新
+- **部署方式**: Docker Compose，数据持久化在 `./data` 目录
+- **客户端连接**: Rust 代码硬编码地址（`http://192.168.9.72:18080`），需根据实际部署修改
+
+## nuclei 验证引擎
+
+可选安装，不打包进安装包，首次使用时从 CVE 服务下载：
+- **大小**: ~60MB（二进制 20MB + 模板 30MB + 压缩）
+- **下载目录**: `~/.local/share/inspection-rust/tools/`
+- **调用方式**: Rust 通过 `std::process::Command` 调 nuclei 子进程
+- **输出**: JSONL 格式，逐行解析
+- **扫描速度**: 每个端口几秒到十几秒
+- **模式**: 安装后自动启用，未安装时回退到 CPE 版本匹配
 
 ## Tech Stack
 
@@ -66,7 +86,8 @@ ai-inspection/
 │   │   │   ├── inspections.rs    # Batch CRUD + run/pause/stop/restart/retry
 │   │   │   ├── reports.rs        # AI analysis, report generation, report templates
 │   │   │   ├── ai_config.rs      # AI model config CRUD + activate/deactivate
-│   │   │   └── tools.rs           # Toolbox: scan hosts/ports/UDP, web check, SNMP v2c/v3, Zabbix agent
+│   │   │   ├── tools.rs           # Toolbox: scan hosts/ports/UDP, web check, SNMP v2c/v3, Zabbix agent
+│   │   │   └── vuln_scan.rs       # Vulnerabilty scan: port scan + banner grab + CVE match + nuclei probe
 │   │   └── services/
 │   │       ├── crypto.rs         # Fernet encryption (password/API key)
 │   │       ├── inspection_runner.rs  # SSH execution via ssh2 (netmiko-style)
@@ -79,7 +100,11 @@ ai-inspection/
 │   │       ├── port_scanner.rs   # TCP connect scan + UDP scan (connect/ICMP detection)
 │   │       ├── web_checker.rs    # HTTP/HTTPS status check, IP defaults to HTTP
 │   │       ├── snmp_checker.rs   # SNMP v2c + v3 USM (MD5/SHA1/SHA256 auth, DES/AES128 priv)
-│   │       └── zabbix_checker.rs # Zabbix agent passive mode detection (protocol frame)
+│   │       ├── zabbix_checker.rs # Zabbix agent passive mode detection (protocol frame)
+│   │       ├── banner_grabber.rs # Service banner grabbing (HTTP/SSH/MySQL) + version extraction
+│   │       ├── cve_checker.rs    # CVE API client (TridentStack + CPE server queries)
+│   │       ├── cve_db.rs         # Local CVE database (SQLite) + CPE cache management
+│   │       └── nuclei_runner.rs  # nuclei binary download/install + vulnerability probe execution
 │   └── sql/001_init.sql          # 8 tables: devices, device_status_logs, inspection_templates, command_pool, inspection_batches, inspection_records, ai_model_configs, report_templates
 ```
 

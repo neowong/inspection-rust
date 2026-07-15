@@ -609,7 +609,7 @@ export default function TemplatesPage() {
         <Modal
           open={templateModal}
           title={editingTemplate ? "编辑模板" : "添加模板"}
-          width="max-w-5xl"
+          width="max-w-3xl"
           onClose={() => setTemplateModal(false)}
           footer={
             <div className="flex gap-2">

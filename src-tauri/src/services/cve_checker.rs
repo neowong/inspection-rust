@@ -24,9 +24,6 @@ pub struct VersionCheckResult {
     pub total_cves: usize,
 }
 
-/// 默认 CVE 服务地址（用户可在设置中修改）
-const CVE_SERVER_URL: &str = "http://192.168.9.72:18080";
-
 /// 通过自建 CVE 服务查询（NVD 关键词搜索 + SQLite 缓存）
 pub async fn query_cve_from_server(product: &str, server_url: &str) -> Result<Vec<CveItem>, String> {
     let client = reqwest::Client::builder()
@@ -73,7 +70,6 @@ struct ServerCve {
     cve_id: String,
     summary: String,
     cvss: f64,
-    severity: String,
 }
 
 /// 通过 TridentStack API 搜索某个产品的关联 CVE（文本搜索，不取详情，速度块）。
@@ -183,10 +179,6 @@ fn urlencoding(s: &str) -> String {
         }
     }
     result
-}
-
-fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() <= max { s.to_string() } else { format!("{}...", &s[..max]) }
 }
 
 // ============================================================================

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
 interface Props {
@@ -63,10 +63,6 @@ export default function Modal({
     return () => document.removeEventListener("keydown", handler);
   }, [rendered, closing, onClose]);
 
-  const handleBackdropClick = useCallback(() => {
-    if (!closing) onClose();
-  }, [closing, onClose]);
-
   if (!rendered) return null;
 
   return (
@@ -74,7 +70,6 @@ export default function Modal({
       className={`fixed inset-0 z-[999] flex items-center justify-center bg-black/50 ${
         closing ? "animate-[fadeOut_0.15s_ease-in_forwards]" : "animate-[fadeInOnly_0.15s_ease-out]"
       }`}
-      onClick={handleBackdropClick}
     >
       <div
         className={`relative bg-[hsl(var(--bg-card))] border border-[hsl(var(--border))] rounded-xl shadow-2xl w-full mx-4 max-h-[80vh] flex flex-col ${
