@@ -21,7 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 可选安装，不打包进安装包，首次使用时从 CVE 服务下载：
 - **大小**: ~60MB（二进制 20MB + 模板 30MB + 压缩）
 - **下载目录**: `~/.local/share/inspection-rust/tools/`
-- **调用方式**: Rust 通过 `std::process::Command` 调 nuclei 子进程
+- **调用方式**: Rust 通过 `std::process::Command` 调 nuclei 子进程，Windows下使用`CREATE_NO_WINDOW`隐藏控制台窗口
+- **隐藏窗口**: `nuclei_runner.rs` 中定义 `hide_window()` 辅助函数，`#[cfg(windows)]` 设置 `creation_flags(0x08000000)`
 - **输出**: JSONL 格式，逐行解析
 - **扫描速度**: 每个端口几秒到十几秒
 - **模式**: 安装后自动启用，未安装时回退到 CPE 版本匹配
