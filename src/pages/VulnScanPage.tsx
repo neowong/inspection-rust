@@ -94,6 +94,7 @@ export default function VulnScanPage() {
   const [nucleiReady, setNucleiReady] = useState(false);
   const [downloadingNuclei, setDownloadingNuclei] = useState(false);
   const [showAllPorts, setShowAllPorts] = useState(false);
+  const [showCpeRef, setShowCpeRef] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   // 全扫时获取预估时长 + CVE 数据库状态 + nuclei 状态
@@ -202,7 +203,7 @@ export default function VulnScanPage() {
           <Target size={18} className="text-[hsl(var(--info))] shrink-0 mt-0.5" />
           <div className="text-sm text-[hsl(var(--text-secondary))] leading-relaxed">
             <span className="font-semibold text-[hsl(var(--text-primary))]">功能定位：</span>
-            全端口扫描 → 服务版本识别 → CVE 数据库匹配已知漏洞。支持安装验证引擎后对目标发送探测包，确认漏洞真实存在。<br />
+            全端口扫描 → 服务版本识别 → CPE 数据库匹配关联 CVE（理论参考）。安装验证引擎后可对目标发探测包确认哪些漏洞真实存在。<br />
             <span className="text-xs text-[hsl(var(--text-tertiary))] mt-2 block space-y-0.5">
               <span className="flex items-center gap-1.5"><Database size={12} /> 优先使用本地 CVE 库，查不到时自动联网查询</span>
               <span className="flex items-center gap-1.5">
@@ -348,22 +349,42 @@ export default function VulnScanPage() {
             <div className="flex items-center gap-2 mb-2">
               <OverallIcon size={20} />
               <span className="text-sm font-semibold">
-                {result.overall === "critical" ? "存在严重漏洞"
-                  : result.overall === "warning" ? "存在高危漏洞"
-                  : result.overall === "info" ? "存在中低危漏洞"
-                  : result.total_ports === 0 ? "未发现开放端口"
-                  : "未发现已知漏洞"}
+                {result.nuclei_findings.length > 0
+                  ? `验证确认 ${result.nuclei_findings.length} 个漏洞`
+                  : result.total_cves > 0
+                    ? `CPE 匹配 ${result.total_cves} 条关联 CVE（待验证）`
+                    : result.total_ports === 0 ? "未发现开放端口"
+                    : "未匹配到已知 CVE"}
               </span>
             </div>
             <p className="text-sm text-[hsl(var(--text-secondary))]">{result.summary}</p>
+            {/* 验证状态条 */}
+            <div className="flex items-center gap-3 mt-2 text-xs">
+              {result.nuclei_findings.length > 0 && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-[hsl(var(--danger)/0.1)] text-[hsl(var(--danger))] font-medium">
+                  🛡 已确认 {result.nuclei_findings.length} 个漏洞
+                </span>
+              )}
+              {result.nuclei_enabled && result.nuclei_findings.length === 0 && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]">
+                  ✅ 验证引擎完成扫描，未从网络层面确认到漏洞
+                </span>
+              )}
+              {!result.nuclei_enabled && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-[hsl(var(--text-tertiary)/0.1)] text-[hsl(var(--text-tertiary))]">
+                  ⚡ 当前为版本匹配模式（理论参考），安装验证引擎可确认漏洞真实性
+                </span>
+              )}
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-[hsl(var(--info)/0.08)] text-[hsl(var(--info))]">
+                📋 CPE 后台匹配 {result.total_cves} 条
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-[hsl(var(--text-tertiary))]">
               <span className="flex items-center gap-1"><Globe size={12} />{result.ip}</span>
               <span>·</span>
               <span className="flex items-center gap-1"><Monitor size={12} />{result.os_info}</span>
               <span>·</span>
               <span><List size={12} className="inline mr-0.5" />开放端口 {result.total_ports}</span>
-              <span>·</span>
-              <span>CVE 数量 {result.total_cves}</span>
               {result.max_cvss > 0 && <><span>·</span><span>最高 CVSS {result.max_cvss.toFixed(1)}</span></>}
             </div>
           </div>
@@ -401,12 +422,23 @@ export default function VulnScanPage() {
             </div>
           )}
 
-          {/* CVE 详情 */}
+          {/* 后台参考：CPE 版本匹配（折叠） */}
           {result.cve_details.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold text-[hsl(var(--text-tertiary))] uppercase tracking-wider mb-2">
-                漏洞详情
-              </h3>
+              <button
+                onClick={() => setShowCpeRef(!showCpeRef)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors hover:bg-[hsl(var(--bg-hover))]"
+                style={{ borderColor: "hsl(var(--border-light))", color: "hsl(var(--text-tertiary))" }}
+              >
+                {showCpeRef ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                📋 CPE 后台匹配 — {result.total_cves} 条关联 CVE（版本比对参考）
+              </button>
+              {showCpeRef && (
+                <div className="mt-2">
+              <div className="text-[11px] text-[hsl(var(--text-tertiary))] mb-2 px-3 py-1.5 rounded bg-[hsl(var(--info)/0.06)] border border-[hsl(var(--info)/0.15)]">
+                ⚠️ 以下 CVE 基于版本号自动匹配，不代表已在当前系统确认存在。
+                验证引擎未能在网络层面触发这些漏洞，可能需要认证检测或特定利用条件。
+              </div>
               <div className="space-y-2">
                 {result.cve_details.map((detail) => (
                   <div key={detail.product + detail.version} className="border border-[hsl(var(--border))] rounded-xl overflow-hidden">
@@ -475,22 +507,24 @@ export default function VulnScanPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
 
-          {/* 空结果 */}
+      {/* 空结果 */}
           {result.total_cves === 0 && !result.cve_api_ok && (
             <div className="text-center py-8 text-sm border border-dashed rounded-xl"
               style={{ borderColor: "hsl(var(--warning)/0.3)", color: "hsl(var(--text-secondary))" }}>
               <WifiOff size={32} className="mx-auto mb-2 text-[hsl(var(--warning))] opacity-50" />
               <p className="font-medium text-[hsl(var(--warning))]">CVE 数据库不可达</p>
               <p className="text-xs mt-1">当前环境无网络连接，仅显示端口扫描结果</p>
-              <p className="text-xs mt-0.5">请检查网络后重新扫描</p>
+              <p className="text-xs mt-0.5">请检查网络后重新扫描以获取 CVE 匹配</p>
             </div>
           )}
           {result.total_cves === 0 && result.cve_api_ok && (
             <div className="text-center py-8 text-sm text-[hsl(var(--text-tertiary))] border border-dashed border-[hsl(var(--border-light))] rounded-xl">
               <ShieldCheck size={32} className="mx-auto mb-2 text-[hsl(var(--success))] opacity-50" />
-              <p>未发现已知 CVE 漏洞</p>
-              <p className="text-xs mt-1">扫描服务版本均为安全版本，未匹配到公开漏洞</p>
+              <p>CPE 版本匹配：未匹配到公开 CVE</p>
+              <p className="text-xs mt-1">当前服务版本均为安全版本，未发现已知风险</p>
             </div>
           )}
         </div>
