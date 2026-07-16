@@ -5,6 +5,7 @@ import DevicesPage from "./pages/DevicesPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import InspectionPage from "./pages/InspectionPage";
 import ReportManagementPage from "./pages/ReportManagementPage";
+import ConfigCheckPage from "./pages/ConfigCheckPage";
 import SettingsPage from "./pages/SettingsPage";
 import LogAnalysisPage from "./pages/LogAnalysisPage";
 import VulnScanPage from "./pages/VulnScanPage";
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/inspection" element={<InspectionPage />} />
         <Route path="/reports" element={<ReportManagementPage />} />
+        <Route path="/config-check" element={<ConfigCheckPage />} />
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/logs" element={<LogAnalysisPage />} />
         <Route path="/vulnscan" element={<VulnScanPage />} />

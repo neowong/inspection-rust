@@ -8,6 +8,7 @@ import Card from "../components/ui/Card";
 import StatBadge from "../components/StatBadge";
 import StatusBadge from "../components/StatusBadge";
 import { batchStatusColor } from "../lib/status";
+import PeriodicReportSection from "../components/PeriodicReportSection";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
   ok:       { label: "正常", color: "var(--success)" },
@@ -20,6 +21,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 const processingBatchesRef: { current: Record<number, "ai" | "manual"> } = { current: {} };
 
 export default function ReportManagementPage() {
+  const [activeTab, setActiveTab] = useState<"batch" | "periodic">("batch");
   const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -315,13 +317,35 @@ export default function ReportManagementPage() {
   ], [deviceMap, downloading, handleDownload, loadRecordDetail]);
 
   return (
-    <div>
-      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm">
-        <h1 className="text-lg font-bold">报告管理</h1>
-        <p className="text-xs text-[hsl(var(--text-tertiary))] mt-0.5">AI 分析、DOCX 报告生成与下载</p>
+    <div className="space-y-6">
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-0 bg-[hsl(var(--bg-content))] shadow-sm relative">
+        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">报告管理</h1>
+        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1 mb-3">AI 分析、DOCX 报告生成与下载</p>
+        <div className="flex gap-0 border-b border-[hsl(var(--border))]">
+          <button
+            onClick={() => setActiveTab("batch")}
+            className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
+              activeTab === "batch"
+                ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
+                : "text-[hsl(var(--text-secondary))] border-transparent hover:text-[hsl(var(--text-primary))]"
+            }`}
+          >
+            批次报告
+          </button>
+          <button
+            onClick={() => setActiveTab("periodic")}
+            className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
+              activeTab === "periodic"
+                ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
+                : "text-[hsl(var(--text-secondary))] border-transparent hover:text-[hsl(var(--text-primary))]"
+            }`}
+          >
+            周期报告
+          </button>
+        </div>
       </div>
 
-
+      {activeTab === "batch" ? (
       <div className="flex gap-4" style={{ height: "calc(100vh - 160px)" }}>
         {/* Left: Batch list */}
         <div className="w-[300px] shrink-0 flex flex-col border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-card))] overflow-hidden">
@@ -553,6 +577,10 @@ export default function ReportManagementPage() {
           )}
         </div>
       </div>
+      ) : (
+        /* ── Periodic Reports Tab ── */
+        <PeriodicReportSection />
+      )}
 
     </div>
   );

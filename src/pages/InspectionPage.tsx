@@ -11,6 +11,7 @@ import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 import StatusBadge from "../components/StatusBadge";
 import { batchStatusColor } from "../lib/status";
+import ScheduledTaskSection from "../components/ScheduledTaskSection";
 
 interface BatchForm {
   name: string;
@@ -26,6 +27,7 @@ function getDefaultBatchForm(): BatchForm {
 }
 
 export default function InspectionPage() {
+  const [activeTab, setActiveTab] = useState<"manual" | "scheduled">("manual");
   const [batches, setBatches] = useState<InspectionBatch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<InspectionBatch | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -193,34 +195,70 @@ export default function InspectionPage() {
   };
 
   return (
-    <div className="flex gap-4" style={{ height: "calc(100vh - 120px)" }}>
+    <div className="space-y-6">
+      <div className="sticky top-0 z-20 -mt-6 pt-6 pb-0 bg-[hsl(var(--bg-content))] shadow-sm relative">
+        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">巡检任务</h1>
+        <p className="text-sm text-[hsl(var(--text-secondary))] mt-1 mb-3">手动执行和定时自动巡检</p>
+        <div className="flex gap-0 border-b border-[hsl(var(--border))]">
+          <button
+            onClick={() => setActiveTab("manual")}
+            className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
+              activeTab === "manual"
+                ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
+                : "text-[hsl(var(--text-secondary))] border-transparent hover:text-[hsl(var(--text-primary))]"
+            }`}
+          >
+            手动巡检
+          </button>
+          <button
+            onClick={() => setActiveTab("scheduled")}
+            className={`px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ${
+              activeTab === "scheduled"
+                ? "text-[hsl(var(--accent))] border-[hsl(var(--accent))]"
+                : "text-[hsl(var(--text-secondary))] border-transparent hover:text-[hsl(var(--text-primary))]"
+            }`}
+          >
+            定时巡检
+          </button>
+        </div>
+      </div>
+
+      {/* ── Content ── */}
+      {activeTab === "manual" ? (
+    <div className="flex gap-4" style={{ height: "calc(100vh - 180px)" }}>
       {/* ── Left: Batch list panel ── */}
       <div className="w-[300px] shrink-0 flex flex-col border border-[hsl(var(--border))] rounded-lg bg-[hsl(var(--bg-card))] overflow-hidden">
-        <div className="p-3 border-b border-[hsl(var(--border))] space-y-2">
-          <div className="flex items-center justify-between">
-            <h1 className="text-base font-bold text-[hsl(var(--text-primary))]">巡检任务</h1>
+        <div className="p-3 border-b border-[hsl(var(--border))]">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-bold text-[hsl(var(--text-primary))]">手动巡检</h2>
             <Button onClick={() => { setBatchForm(getDefaultBatchForm()); setModalOpen(true); }} size="sm">+</Button>
           </div>
-          <p className="text-[11px] text-[hsl(var(--text-tertiary))]">{batches.length} 个任务</p>
-          {/* Select all + batch delete */}
-          {batches.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1 text-xs text-[hsl(var(--text-secondary))] cursor-pointer select-none">
-                <input type="checkbox" className="w-3.5 h-3.5 accent-[hsl(var(--accent))]"
-                  checked={batchDeleteIds.size === batches.length && batches.length > 0}
-                  onChange={() => {
-                    if (batchDeleteIds.size === batches.length) setBatchDeleteIds(new Set());
-                    else setBatchDeleteIds(new Set(batches.map((x: any) => x.id)));
-                  }} />
-                全选
-              </label>
-              {batchDeleteIds.size > 0 && (
-                <Button size="sm" variant="danger" onClick={() => setConfirmBatchDelete(true)}>
+          {/* 固定高度的批量操作区域，避免布局跳动 */}
+          <div className="h-6 flex items-center">
+            {batches.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-xs text-[hsl(var(--text-secondary))] cursor-pointer select-none">
+                  <input type="checkbox" className="w-3.5 h-3.5 accent-[hsl(var(--accent))]"
+                    checked={batchDeleteIds.size === batches.length && batches.length > 0}
+                    onChange={() => {
+                      if (batchDeleteIds.size === batches.length) setBatchDeleteIds(new Set());
+                      else setBatchDeleteIds(new Set(batches.map((x: any) => x.id)));
+                    }} />
+                  全选
+                </label>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  className={`transition-opacity ${batchDeleteIds.size > 0 ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+                  onClick={() => setConfirmBatchDelete(true)}
+                >
                   删除选中 ({batchDeleteIds.size})
                 </Button>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <p className="text-[11px] text-[hsl(var(--text-tertiary))]">{batches.length} 个任务</p>
+            )}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {batches.length === 0 && (
@@ -261,24 +299,6 @@ export default function InspectionPage() {
                   <span>{b.device_ids?.length || 0} 台设备</span>
                   {b.started_at && <span>{new Date(b.started_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
                 </div>
-                <div className="flex gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
-                  {(b.status === "pending" || b.status === "waiting") && (
-                    <Button size="sm" variant="ghost" loading={actionLoading === b.id} onClick={() => handleAction(b.id, "run")}>执行</Button>
-                  )}
-                  {b.status === "running" && (
-                    <>
-                      <Button size="sm" variant="ghost" loading={actionLoading === b.id} disabled={actionLoading === b.id} onClick={() => handleAction(b.id, "pause")}>暂停</Button>
-                      <Button size="sm" variant="ghost" loading={actionLoading === b.id} disabled={actionLoading === b.id} onClick={() => handleAction(b.id, "stop")}>停止</Button>
-                    </>
-                  )}
-                  {(b.status === "stopped" || b.status === "paused" || b.status === "failed") && (
-                    <Button size="sm" variant="ghost" loading={actionLoading === b.id} onClick={() => handleAction(b.id, "restart")}>重启</Button>
-                  )}
-                  {(b.status === "completed" || b.status === "partially_completed") && (
-                    <Button size="sm" variant="ghost" loading={actionLoading === b.id} onClick={() => handleRestartAndRun(b.id)}>重新巡检</Button>
-                  )}
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(b.id)}>删除</Button>
-                </div>
               </div>
             );
           })}
@@ -295,9 +315,31 @@ export default function InspectionPage() {
         ) : (
           <>
             <div className="sticky top-0 z-10 bg-[hsl(var(--bg-content))] pb-2">
-              <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))]">
-                {selectedBatch.name || `任务 #${selectedBatch.id}`}
-              </h2>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-semibold text-[hsl(var(--text-primary))]">
+                    {selectedBatch.name || `任务 #${selectedBatch.id}`}
+                  </h2>
+                  <StatusBadge status={batchStatusColor(selectedBatch.status)} />
+                </div>
+                <div className="flex gap-2">
+                  {(selectedBatch.status === "pending" || selectedBatch.status === "waiting") && (
+                    <Button size="sm" loading={actionLoading === selectedBatch.id} onClick={() => handleAction(selectedBatch.id, "run")}>执行</Button>
+                  )}
+                  {selectedBatch.status === "running" && (
+                    <>
+                      <Button size="sm" variant="secondary" loading={actionLoading === selectedBatch.id} onClick={() => handleAction(selectedBatch.id, "pause")}>暂停</Button>
+                      <Button size="sm" variant="danger" loading={actionLoading === selectedBatch.id} onClick={() => handleAction(selectedBatch.id, "stop")}>停止</Button>
+                    </>
+                  )}
+                  {(selectedBatch.status === "stopped" || selectedBatch.status === "paused" || selectedBatch.status === "failed") && (
+                    <Button size="sm" loading={actionLoading === selectedBatch.id} onClick={() => handleAction(selectedBatch.id, "restart")}>重启</Button>
+                  )}
+                  {(selectedBatch.status === "completed" || selectedBatch.status === "partially_completed") && (
+                    <Button size="sm" variant="secondary" loading={actionLoading === selectedBatch.id} onClick={() => handleRestartAndRun(selectedBatch.id)}>重新巡检</Button>
+                  )}
+                </div>
+              </div>
             </div>
 
 
@@ -545,6 +587,11 @@ export default function InspectionPage() {
           </>;
         })()}
       </Modal>
+    </div>
+      ) : (
+        /* ── Scheduled Tasks Tab ── */
+        <ScheduledTaskSection />
+      )}
     </div>
   );
 }

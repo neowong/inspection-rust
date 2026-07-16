@@ -1397,5 +1397,349 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+// ============================================================
+// 周期报告 DOCX 生成
+// ============================================================
+
+/// 生成周期报告 DOCX
+pub fn generate_periodic_docx(
+    report_type: &str,
+    period_start: &str,
+    period_end: &str,
+    stats: &serde_json::Value,
+    ai_summary: &str,
+    output_path: &Path,
+) -> Result<(), String> {
+    tracing::info!("周期报告 DOCX 生成开始: type={}, period={}~{}", report_type, period_start, period_end);
+    let start = std::time::Instant::now();
+
+    let report_type_cn = match report_type {
+        "weekly" => "周报",
+        "monthly" => "月报",
+        "quarterly" => "季报",
+        "yearly" => "年报",
+        _ => "周期报告",
+    };
+
+    let title = format!("{} {}", period_start[..7.min(period_start.len())].to_string(), report_type_cn);
+    let subtitle = format!("{} ~ {}", period_start, period_end);
+
+    // 初始化文档
+    let mut docx = Docx::new()
+        .page_margin(PageMargin::new().top(1440).bottom(1440).left(1417).right(1417))
+        .title_pg();
+
+    // 页眉页脚
+    let header = Header::new().add_paragraph(paragraph_with_line(
+        build_running_paragraph(&format!("{} {}", title, report_type_cn)),
+        ParagraphBorderPosition::Bottom,
+        LineSpacing::new().before(0).after(80),
+    ));
+    let footer = Footer::new().add_paragraph(paragraph_with_line(
+        build_running_paragraph("第 {{page}} 页 / 共 {{total}} 页"),
+        ParagraphBorderPosition::Top,
+        LineSpacing::new().before(80).after(0),
+    ));
+    docx = docx.header(header).footer(footer);
+
+    // 封面
+    docx = build_periodic_cover(docx, &title, &subtitle, report_type);
+
+    // 第一部分：巡检概况
+    docx = page_break(docx);
+    docx = build_periodic_overview(docx, stats);
+
+    // 第二部分：趋势分析
+    docx = page_break(docx);
+    docx = build_periodic_trend(docx, stats);
+
+    // 第三部分：设备健康对比
+    docx = page_break(docx);
+    docx = build_periodic_comparison(docx, stats);
+
+    // 第四部分：AI 分析与建议
+    docx = page_break(docx);
+    docx = build_periodic_ai_analysis(docx, ai_summary);
+
+    // 写入文件
+    let result = write_docx(docx, output_path);
+    let latency = start.elapsed().as_millis();
+    match &result {
+        Ok(()) => tracing::info!("周期报告 DOCX 生成完成: latency={}ms", latency),
+        Err(e) => tracing::warn!("周期报告 DOCX 生成失败: latency={}ms, error={}", latency, e),
+    }
+    result
+}
+
+/// 周期报告封面
+fn build_periodic_cover(mut docx: Docx, title: &str, subtitle: &str, report_type: &str) -> Docx {
+    let report_type_cn = match report_type {
+        "weekly" => "周报",
+        "monthly" => "月报",
+        "quarterly" => "季报",
+        "yearly" => "年报",
+        _ => "周期报告",
+    };
+
+    // 空行使标题居中
+    for _ in 0..6 {
+        docx = docx.add_paragraph(Paragraph::new());
+    }
+
+    // 主标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(Run::new().add_text(title).size(52).bold().fonts(zh_fonts()))
+            .line_spacing(LineSpacing::new().after(200)),
+    );
+
+    // 副标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(Run::new().add_text(subtitle).size(28).fonts(zh_fonts()).color("666666"))
+            .line_spacing(LineSpacing::new().after(400)),
+    );
+
+    // 报告类型标签
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(Run::new().add_text(report_type_cn).size(36).bold().fonts(zh_fonts()).color("1F4E79"))
+            .line_spacing(LineSpacing::new().after(600)),
+    );
+
+    // 生成时间
+    let now = chrono::Local::now().format("%Y年%m月%d日").to_string();
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .align(AlignmentType::Center)
+            .add_run(Run::new().add_text(format!("生成时间: {}", now)).size(22).fonts(zh_fonts()).color("999999")),
+    );
+
+    docx
+}
+
+/// 巡检概况部分
+fn build_periodic_overview(mut docx: Docx, stats: &serde_json::Value) -> Docx {
+    let overview = stats.get("overview").unwrap_or(&serde_json::Value::Null);
+
+    // 标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .add_run(Run::new().add_text("一、巡检概况").size(32).bold().fonts(zh_fonts()))
+            .line_spacing(LineSpacing::new().after(200)),
+    );
+
+    // 统计表格
+    let status_counts = overview.get("status_counts").unwrap_or(&serde_json::Value::Null);
+    let rows = vec![
+        header_row(vec![table_cell("统计项", true), table_cell("数值", true)]),
+        body_row(vec![table_cell("设备数量", false), table_cell(&format!("{} 台", overview.get("total_devices").and_then(|v| v.as_i64()).unwrap_or(0)), false)]),
+        body_row(vec![table_cell("巡检次数", false), table_cell(&format!("{} 次", overview.get("total_inspections").and_then(|v| v.as_i64()).unwrap_or(0)), false)]),
+        body_row(vec![table_cell("正常次数", false), table_cell(&format!("{} 次", status_counts.get("ok").and_then(|v| v.as_i64()).unwrap_or(0)), false)]),
+        body_row(vec![table_cell("警告次数", false), table_cell(&format!("{} 次", status_counts.get("warning").and_then(|v| v.as_i64()).unwrap_or(0)), false)]),
+        body_row(vec![table_cell("严重次数", false), table_cell(&format!("{} 次", status_counts.get("critical").and_then(|v| v.as_i64()).unwrap_or(0)), false)]),
+        body_row(vec![table_cell("健康分数", true), table_cell(&format!("{}/100", overview.get("health_score").and_then(|v| v.as_i64()).unwrap_or(0)), true)]),
+    ];
+
+    docx = docx.add_table(Table::new(rows));
+    docx
+}
+
+/// 趋势分析部分
+fn build_periodic_trend(mut docx: Docx, stats: &serde_json::Value) -> Docx {
+    // 标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .add_run(Run::new().add_text("二、趋势分析").size(32).bold().fonts(zh_fonts()))
+            .line_spacing(LineSpacing::new().after(200)),
+    );
+
+    let daily_trend = match stats.get("daily_trend").and_then(|v| v.as_array()) {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => {
+            docx = docx.add_paragraph(
+                Paragraph::new().add_run(Run::new().add_text("暂无趋势数据").size(24).fonts(zh_fonts())),
+            );
+            return docx;
+        }
+    };
+
+    // 趋势表格
+    let mut rows = vec![
+        header_row(vec![
+            table_cell("日期", true),
+            table_cell("正常", true),
+            table_cell("警告", true),
+            table_cell("严重", true),
+        ]),
+    ];
+
+    for entry in daily_trend {
+        let date = entry.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        let ok = entry.get("ok").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+        let warning = entry.get("warning").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+        let critical = entry.get("critical").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+
+        rows.push(body_row(vec![
+            table_cell(date, false),
+            table_cell(&ok, false),
+            table_cell(&warning, false),
+            table_cell(&critical, false),
+        ]));
+    }
+
+    docx = docx.add_table(Table::new(rows));
+    docx
+}
+
+/// 设备健康对比部分
+fn build_periodic_comparison(mut docx: Docx, stats: &serde_json::Value) -> Docx {
+    // 标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .add_run(Run::new().add_text("三、设备健康对比").size(32).bold().fonts(zh_fonts()))
+            .line_spacing(LineSpacing::new().after(200)),
+    );
+
+    let comparison = stats.get("comparison").unwrap_or(&serde_json::Value::Null);
+    let per_device = stats.get("per_device").and_then(|v| v.as_array());
+
+    // 最佳/最差设备
+    if let Some(best) = comparison.get("best_device").and_then(|v| v.as_str()) {
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("最佳设备: ").size(24).fonts(zh_fonts()))
+                .add_run(Run::new().add_text(best).size(24).bold().fonts(zh_fonts()).color("28a745")),
+        );
+    }
+    if let Some(worst) = comparison.get("worst_device").and_then(|v| v.as_str()) {
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("最差设备: ").size(24).fonts(zh_fonts()))
+                .add_run(Run::new().add_text(worst).size(24).bold().fonts(zh_fonts()).color("dc3545"))
+                .line_spacing(LineSpacing::new().after(200)),
+        );
+    }
+
+    // 告警排行表
+    let alert_ranking = comparison.get("alert_ranking").and_then(|v| v.as_array());
+    if let Some(ranking) = alert_ranking {
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("告警排行:").size(24).bold().fonts(zh_fonts()))
+                .line_spacing(LineSpacing::new().after(100)),
+        );
+
+        let mut rows = vec![
+            header_row(vec![
+                table_cell("排名", true),
+                table_cell("设备名称", true),
+                table_cell("告警次数", true),
+            ]),
+        ];
+
+        for (i, item) in ranking.iter().enumerate() {
+            let name = item.get("device_name").and_then(|v| v.as_str()).unwrap_or("");
+            let count = item.get("alert_count").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+
+            rows.push(body_row(vec![
+                table_cell(&(i + 1).to_string(), false),
+                table_cell(name, false),
+                table_cell(&count, false),
+            ]));
+        }
+
+        docx = docx.add_table(Table::new(rows));
+    }
+
+    // 设备详情表
+    if let Some(devices) = per_device {
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text("设备详情:").size(24).bold().fonts(zh_fonts()))
+                .line_spacing(LineSpacing::new().before(200).after(100)),
+        );
+
+        let mut rows = vec![
+            header_row(vec![
+                table_cell("设备名称", true),
+                table_cell("厂商", true),
+                table_cell("IP", true),
+                table_cell("巡检次数", true),
+                table_cell("健康分", true),
+            ]),
+        ];
+
+        for device in devices {
+            let name = device.get("device_name").and_then(|v| v.as_str()).unwrap_or("");
+            let vendor = device.get("vendor").and_then(|v| v.as_str()).unwrap_or("");
+            let ip = device.get("ip").and_then(|v| v.as_str()).unwrap_or("");
+            let count = device.get("inspection_count").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+            let score = device.get("health_score").and_then(|v| v.as_i64()).unwrap_or(0).to_string();
+
+            rows.push(body_row(vec![
+                table_cell(name, false),
+                table_cell(vendor, false),
+                table_cell(ip, false),
+                table_cell(&count, false),
+                table_cell(&score, false),
+            ]));
+        }
+
+        docx = docx.add_table(Table::new(rows));
+    }
+
+    docx
+}
+
+/// AI 分析与建议部分
+fn build_periodic_ai_analysis(mut docx: Docx, ai_summary: &str) -> Docx {
+    // 标题
+    docx = docx.add_paragraph(
+        Paragraph::new()
+            .add_run(Run::new().add_text("四、AI 分析与建议").size(32).bold().fonts(zh_fonts()))
+            .line_spacing(LineSpacing::new().after(200)),
+    );
+
+    if ai_summary.is_empty() {
+        docx = docx.add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text("暂无 AI 分析数据").size(24).fonts(zh_fonts())),
+        );
+        return docx;
+    }
+
+    // 按段落分割 AI 总结
+    let paragraphs: Vec<&str> = ai_summary.split('\n').filter(|s| !s.trim().is_empty()).collect();
+    for para in paragraphs {
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text(para).size(24).fonts(zh_fonts()))
+                .line_spacing(LineSpacing::new().after(120)),
+        );
+    }
+
+    docx
+}
+
+/// 创建表格单元格
+fn table_cell(text: &str, bold: bool) -> TableCell {
+    let run = if bold {
+        Run::new().add_text(text).size(22).bold().fonts(zh_fonts())
+    } else {
+        Run::new().add_text(text).size(22).fonts(zh_fonts())
+    };
+
+    TableCell::new()
+        .add_paragraph(
+            Paragraph::new()
+                .add_run(run)
+                .line_spacing(LineSpacing::new().before(40).after(40)),
+        )
+        .vertical_align(VAlignType::Center)
+}
+
 
 

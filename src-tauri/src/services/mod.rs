@@ -16,3 +16,4 @@ pub mod cve_checker;
 pub mod banner_grabber;
 pub mod cve_db;
 pub mod nuclei_runner;
+pub mod scheduler;

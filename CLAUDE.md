@@ -163,6 +163,10 @@ ai-inspection/
 - **部署方式**: 仅支持 `direct`（包安装）/ `docker` / `podman`，已移除 k8s 支持。
 - **匿名使用统计**: 启动 2s 后自动上报 `device_id`（SHA-256）、版本号、OS 类型、OS 详情、时间戳。Linux 从 `/etc/os-release` 读取 `PRETTY_NAME` 获取完整版本（如 "Ubuntu 26.04 LTS"），其他平台用 `os_info` crate。服务端使用 ip2region 解析 IP 归属地。
 - **设备状态合并显示**: 设备列表状态列合并在线状态和 SSH 账号状态为统一显示：离线→"离线"，在线+正常→"在线"，在线+异常→显示具体异常（账号错误/连接超时/检测失败等）。不再使用独立的 AuthBadge 组件。
+- **后台日志规范**: 统一使用 `tracing` 框架（`info`/`warn`/`error`/`debug`），默认 `info` 级别。关键业务流程必须在入口（info）、出口（info）、错误点（warn/error）添加日志。外部调用（SSH/AI API/HTTP）前后需记录参数和结果。格式: `中文描述: key={value}, key={value}`。参考 `inspection_runner.rs`（19条）和 `docx_engine.rs`（11条）。
+- **配置文件检查**: `config_check.rs` 支持 11 种配置文件类型（Nginx/Apache/MySQL/Redis/Zabbix/SSH/Docker Compose/Systemd 等）。功能包括注释自动清理、本地上传/手动粘贴/SSH 远程读取、AI 分析（风险等级+分类问题+优化建议）。内容限制 50KB。
+- **定时任务**: `scheduled_tasks.rs` + `scheduler.rs` 实现定时巡检和周期报告。CRUD + 启用/禁用 + 手动执行。调度器每 60s 轮询到期任务。支持 `inspection` 和 `periodic_report` 两种任务类型。Cron 表达式解析为简化版（+1天），待引入 `cron` crate。
+- **周期报告**: `periodic_reports.rs` 按周/月/季/年聚合巡检统计，生成 DOCX 报告（封面+概况+趋势+对比+AI分析）。`aggregate_inspection_stats` 从 `inspection_records` 聚合数据。AI 总结当前为占位文本，待接入真正 AI API。
 
 ## Windows 交叉编译注意事项
 

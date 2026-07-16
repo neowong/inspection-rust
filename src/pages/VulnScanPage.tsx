@@ -53,7 +53,7 @@ export default function VulnScanPage() {
   return (
     <div className="space-y-5">
       <div className="sticky top-0 z-20 -mt-6 pt-6 pb-3 bg-[hsl(var(--bg-content))] shadow-sm relative">
-        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">漏洞验证</h1>
+        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">漏洞检测</h1>
         <p className="text-sm text-[hsl(var(--text-secondary))] mt-1">
           根据外部安全扫描报告的 CVE 编号，验证目标漏洞是否已修复（需安装验证引擎）
         </p>

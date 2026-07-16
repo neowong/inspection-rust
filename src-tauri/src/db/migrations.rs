@@ -925,6 +925,75 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), Box<dyn std::error::E
             .map_err(|e| format!("migration 34: {}", e))?;
     }
 
+    // ── v35: 周期报告表 + 定时任务表 + 命令指标提取配置 ──
+    if version < 35 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS periodic_reports (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_type     TEXT NOT NULL CHECK(report_type IN ('weekly','monthly','quarterly','yearly')),
+                period_start    TEXT NOT NULL,
+                period_end      TEXT NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'pending'
+                                CHECK(status IN ('pending','generating','completed','failed')),
+                device_ids      TEXT DEFAULT '[]',
+                report_path     TEXT,
+                ai_summary      TEXT,
+                stats_json      TEXT,
+                error_message   TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_periodic_reports_type ON periodic_reports(report_type);
+            CREATE INDEX IF NOT EXISTS idx_periodic_reports_period ON periodic_reports(period_start, period_end);
+
+            CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL,
+                task_type       TEXT NOT NULL CHECK(task_type IN ('inspection','periodic_report')),
+                cron_expr       TEXT NOT NULL,
+                enabled         INTEGER NOT NULL DEFAULT 1,
+                config_json     TEXT NOT NULL DEFAULT '{}',
+                last_run_at     TEXT,
+                next_run_at     TEXT,
+                run_count       INTEGER NOT NULL DEFAULT 0,
+                last_error      TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks(enabled);
+
+            ALTER TABLE command_pool ADD COLUMN metrics_schema TEXT;
+            "
+        ).map_err(|e| format!("migration 35: {}", e))?;
+        conn.execute_batch("PRAGMA user_version = 35;")
+            .map_err(|e| format!("migration 35: {}", e))?;
+    }
+
+    // ── v36: 创建巡检指标快照表 ──
+    // 每次巡检完成后提取关键指标，用于周期报告的趋势分析
+    if version < 36 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS inspection_metrics (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_id       INTEGER NOT NULL REFERENCES inspection_records(id) ON DELETE CASCADE,
+                device_id       INTEGER NOT NULL,
+                batch_id        INTEGER NOT NULL,
+                inspected_at    TEXT NOT NULL,
+                overall_status  TEXT NOT NULL,
+                ai_summary      TEXT,
+                metrics_json    TEXT DEFAULT '{}',
+                alerts_json     TEXT DEFAULT '[]',
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_inspection_metrics_device ON inspection_metrics(device_id);
+            CREATE INDEX IF NOT EXISTS idx_inspection_metrics_time ON inspection_metrics(inspected_at);
+            CREATE INDEX IF NOT EXISTS idx_inspection_metrics_record ON inspection_metrics(record_id);
+            "
+        ).map_err(|e| format!("migration 36: {}", e))?;
+        conn.execute_batch("PRAGMA user_version = 36;")
+            .map_err(|e| format!("migration 36: {}", e))?;
+    }
+
     Ok(())
 }
 

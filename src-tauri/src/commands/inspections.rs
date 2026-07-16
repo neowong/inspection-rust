@@ -596,6 +596,79 @@ fn execute_device_ssh(
 // Batch Query Commands
 // ============================================================
 
+/// 内部运行批次（供定时任务调度器调用）
+/// 创建新的 batch_cancels 标志，执行巡检，等待完成
+pub async fn run_batch_internal(
+    db: Arc<parking_lot::Mutex<rusqlite::Connection>>,
+    batch_id: i64,
+) -> Result<(), String> {
+    let batch_cancels: Arc<parking_lot::Mutex<std::collections::HashMap<i64, Arc<AtomicBool>>>> =
+        Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+    let cancel = {
+        let mut cancels = batch_cancels.lock();
+        let flag = Arc::new(AtomicBool::new(false));
+        cancels.insert(batch_id, Arc::clone(&flag));
+        flag
+    };
+
+    // 读取批次信息和设备列表
+    let device_ids = {
+        let conn = db.lock();
+        let sql = format!("SELECT {} FROM inspection_batches WHERE id = ?1", BATCH_COLUMNS);
+        let batch = crate::db::query::query_one(&conn, &sql, rusqlite::params![batch_id], batch_from_row)?
+            .ok_or_else(|| format!("巡检任务 ID {} 不存在", batch_id))?;
+
+        if batch.status == "running" {
+            return Err(format!("巡检任务 #{} 正在运行中", batch_id));
+        }
+
+        let device_ids_str = batch.device_ids.unwrap_or_else(|| "[]".to_string());
+        let ids: Vec<i64> = serde_json::from_str(&device_ids_str)
+            .map_err(|e| format!("解析设备ID列表失败: {}", e))?;
+
+        if ids.is_empty() {
+            let now = now_str();
+            conn.execute(
+                "UPDATE inspection_batches SET status = 'completed', started_at = ?1, \
+                 completed_at = ?1, updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, batch_id],
+            ).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
+        // 前置校验
+        if let Err(e) = validate_devices_ready(&conn, &ids) {
+            return Err(e);
+        }
+
+        // 更新状态为 running
+        let now = now_str();
+        conn.execute(
+            "UPDATE inspection_batches SET status = 'running', started_at = ?1, \
+             updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, batch_id],
+        ).map_err(|e| e.to_string())?;
+
+        ids
+    };
+
+    // 并发执行各设备
+    let handles: Vec<_> = device_ids
+        .into_iter()
+        .map(|device_id| {
+            let db = Arc::clone(&db);
+            let cancel = Arc::clone(&cancel);
+            tokio::spawn(async move { inspect_one_device(batch_id, device_id, db, cancel).await })
+        })
+        .collect();
+
+    // 等待所有设备完成
+    await_handles_and_finalize(batch_id, handles, db, cancel, batch_cancels).await;
+
+    Ok(())
+}
+
 /// 获取巡检批次列表，支持按状态筛选，最多返回 50 条。
 /// 每条记录包含完整的批次字段 + 记录摘要数组。
 #[tauri::command]

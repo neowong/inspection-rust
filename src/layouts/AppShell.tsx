@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, FolderTree, Server, Play, Settings, FileSearch, FileText, Wrench, Info, BugPlay,
-  Bot, Plus, MessageCircle, Trash2, RotateCw, Sun, Moon, Monitor,
+  Bot, Plus, MessageCircle, Trash2, RotateCw, Sun, Moon, Monitor, FileCheck,
 } from "lucide-react";
 import { loadSessions, deleteSession } from "../pages/ChatPage";
 import type { ChatSession } from "../pages/ChatPage";
 import { useTheme } from "../hooks/useTheme";
 
-type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "tools" | "logs" | "vulnscan" | "settings" | "about" | "chat";
+type PageKey = "dashboard" | "templates" | "devices" | "inspection" | "reports" | "config-check" | "tools" | "logs" | "vulnscan" | "settings" | "about" | "chat";
 
 interface NavItem {
   key: PageKey;
@@ -29,16 +29,17 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
     items: [
       { key: "templates",  label: "巡检模板", path: "/templates",  icon: FolderTree },
       { key: "devices",    label: "设备管理", path: "/devices",    icon: Server },
-      { key: "inspection", label: "执行巡检", path: "/inspection", icon: Play },
+      { key: "inspection", label: "巡检任务", path: "/inspection", icon: Play },
       { key: "reports",    label: "报告管理", path: "/reports",    icon: FileText },
     ],
   },
   {
     label: "运维工具",
     items: [
-      { key: "tools",      label: "工具箱",     path: "/tools",     icon: Wrench },
-      { key: "logs",       label: "日志分析",    path: "/logs",      icon: FileSearch },
-      { key: "vulnscan",   label: "漏洞验证",    path: "/vulnscan",  icon: BugPlay },
+      { key: "tools",       label: "工具箱",     path: "/tools",       icon: Wrench },
+      { key: "config-check", label: "配置检查",   path: "/config-check", icon: FileCheck },
+      { key: "logs",        label: "日志分析",    path: "/logs",        icon: FileSearch },
+      { key: "vulnscan",    label: "漏洞检测",    path: "/vulnscan",    icon: BugPlay },
     ],
   },
   {

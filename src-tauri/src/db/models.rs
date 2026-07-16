@@ -309,6 +309,89 @@ pub struct ReportTemplateUpdate {
 }
 
 // ============================
+// 周期报告 (Periodic Reports)
+// ============================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PeriodicReport {
+    pub id: i64,
+    pub report_type: String,  // weekly|monthly|quarterly|yearly
+    pub period_start: String,
+    pub period_end: String,
+    pub status: String,       // pending|generating|completed|failed
+    pub device_ids: String,   // JSON array
+    pub report_path: Option<String>,
+    pub ai_summary: Option<String>,
+    pub stats_json: Option<String>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PeriodicReportCreate {
+    pub report_type: String,
+    pub period_start: String,
+    pub period_end: String,
+    pub device_ids: Option<Vec<i64>>,
+}
+
+// ============================
+// 定时任务 (Scheduled Tasks)
+// ============================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScheduledTask {
+    pub id: i64,
+    pub name: String,
+    pub task_type: String,    // inspection|periodic_report
+    pub cron_expr: String,
+    pub enabled: i64,         // 0|1
+    pub config_json: String,
+    pub last_run_at: Option<String>,
+    pub next_run_at: Option<String>,
+    pub run_count: i64,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScheduledTaskCreate {
+    pub name: String,
+    pub task_type: String,
+    pub cron_expr: String,
+    pub enabled: Option<bool>,
+    pub config_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScheduledTaskUpdate {
+    pub name: Option<String>,
+    pub cron_expr: Option<String>,
+    pub enabled: Option<bool>,
+    pub config_json: Option<String>,
+}
+
+// ============================
+// 巡检指标快照 (Inspection Metrics)
+// ============================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InspectionMetric {
+    pub id: i64,
+    pub record_id: i64,
+    pub device_id: i64,
+    pub batch_id: i64,
+    pub inspected_at: String,
+    pub overall_status: String,
+    pub ai_summary: Option<String>,
+    pub metrics_json: String,   // JSON: {"cpu_usage": 45.0, "memory_usage": 78.0, ...}
+    pub alerts_json: String,    // JSON: [{command, status, finding}]
+    pub created_at: String,
+}
+
+// ============================
 // 公共工具函数
 // ============================
 
@@ -350,6 +433,18 @@ pub const RECORD_SUMMARY_COLUMNS: &str =
 
 pub const REPORT_TEMPLATE_COLUMNS: &str =
     "id, name, vendor, is_default, description, config_json, created_at, updated_at";
+
+pub const PERIODIC_REPORT_COLUMNS: &str =
+    "id, report_type, period_start, period_end, status, device_ids, report_path, \
+     ai_summary, stats_json, error_message, created_at, updated_at";
+
+pub const SCHEDULED_TASK_COLUMNS: &str =
+    "id, name, task_type, cron_expr, enabled, config_json, last_run_at, next_run_at, \
+     run_count, last_error, created_at, updated_at";
+
+pub const INSPECTION_METRIC_COLUMNS: &str =
+    "id, record_id, device_id, batch_id, inspected_at, overall_status, ai_summary, \
+     metrics_json, alerts_json, created_at";
 
 // ============================
 // 行映射函数（统一去重）
@@ -491,5 +586,54 @@ pub fn report_template_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportT
         config_json: row.get(5)?,
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
+    })
+}
+
+pub fn periodic_report_from_row(row: &rusqlite::Row) -> rusqlite::Result<PeriodicReport> {
+    Ok(PeriodicReport {
+        id: row.get(0)?,
+        report_type: row.get(1)?,
+        period_start: row.get(2)?,
+        period_end: row.get(3)?,
+        status: row.get(4)?,
+        device_ids: row.get(5)?,
+        report_path: row.get(6)?,
+        ai_summary: row.get(7)?,
+        stats_json: row.get(8)?,
+        error_message: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+pub fn scheduled_task_from_row(row: &rusqlite::Row) -> rusqlite::Result<ScheduledTask> {
+    Ok(ScheduledTask {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        task_type: row.get(2)?,
+        cron_expr: row.get(3)?,
+        enabled: row.get(4)?,
+        config_json: row.get(5)?,
+        last_run_at: row.get(6)?,
+        next_run_at: row.get(7)?,
+        run_count: row.get(8)?,
+        last_error: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+pub fn inspection_metric_from_row(row: &rusqlite::Row) -> rusqlite::Result<InspectionMetric> {
+    Ok(InspectionMetric {
+        id: row.get(0)?,
+        record_id: row.get(1)?,
+        device_id: row.get(2)?,
+        batch_id: row.get(3)?,
+        inspected_at: row.get(4)?,
+        overall_status: row.get(5)?,
+        ai_summary: row.get(6)?,
+        metrics_json: row.get(7)?,
+        alerts_json: row.get(8)?,
+        created_at: row.get(9)?,
     })
 }

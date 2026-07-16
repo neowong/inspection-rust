@@ -488,6 +488,11 @@ pub fn run() {
     });
     debug_log("后台检测线程已启动");
 
+    // 启动定时任务调度器
+    let scheduler_db = state.db.clone();
+    services::scheduler::start_scheduler(scheduler_db);
+    debug_log("定时任务调度器已启动");
+
     startup_log("注册插件和命令...");
     debug_log("准备创建 Tauri Builder...");
     debug_log("创建 Tauri Builder...");
@@ -629,6 +634,26 @@ pub fn run() {
             commands::vuln_scan::download_cve_db,
             commands::vuln_scan::get_cve_db_info,
             commands::vuln_scan::has_cve_local_db,
+            // Periodic Reports
+            commands::periodic_reports::suggest_period_range,
+            commands::periodic_reports::generate_periodic_report,
+            commands::periodic_reports::list_periodic_reports,
+            commands::periodic_reports::get_periodic_report,
+            commands::periodic_reports::delete_periodic_report,
+            commands::periodic_reports::download_periodic_report,
+            // Scheduled Tasks
+            commands::scheduled_tasks::create_scheduled_task,
+            commands::scheduled_tasks::list_scheduled_tasks,
+            commands::scheduled_tasks::get_scheduled_task,
+            commands::scheduled_tasks::update_scheduled_task,
+            commands::scheduled_tasks::delete_scheduled_task,
+            commands::scheduled_tasks::toggle_scheduled_task,
+            commands::scheduled_tasks::run_scheduled_task,
+            // Config Check
+            commands::config_check::get_config_file_types,
+            commands::config_check::clean_config_content,
+            commands::config_check::analyze_config,
+            commands::config_check::read_remote_config,
             // Stats
             get_stats,
             // Chat
