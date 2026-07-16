@@ -625,6 +625,7 @@ pub fn run() {
             commands::vuln_scan::get_nuclei_status,
             commands::vuln_scan::download_nuclei,
             commands::vuln_scan::run_nuclei_scan,
+            commands::vuln_scan::verify_specific_cve,
             commands::vuln_scan::download_cve_db,
             commands::vuln_scan::get_cve_db_info,
             commands::vuln_scan::has_cve_local_db,

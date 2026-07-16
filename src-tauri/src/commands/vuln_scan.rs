@@ -324,6 +324,21 @@ pub fn run_nuclei_scan(target: String, port: u16, service: String) -> Result<Vec
     crate::services::nuclei_runner::scan_target(&target, port, &service)
 }
 
+/// 通过 CVE ID 针对性验证漏洞
+#[tauri::command]
+pub fn verify_specific_cve(target: String, cve_id: String, port: u16) -> Result<serde_json::Value, String> {
+    let findings = crate::services::nuclei_runner::verify_cve(&target, &cve_id, port)?;
+    let found = !findings.is_empty();
+    Ok(serde_json::json!({
+        "cve_id": cve_id,
+        "target": target,
+        "port": port,
+        "found": found,
+        "findings": findings,
+        "message": if found { format!("检测到 {} 存在漏洞 {}", target, cve_id) } else { format!("未在 {} 上检测到 {}", target, cve_id) },
+    }))
+}
+
 /// 诊断：测试 CVE API 是否正常
 #[tauri::command]
 pub async fn test_cve_api() -> Result<serde_json::Value, String> {

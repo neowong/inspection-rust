@@ -199,3 +199,32 @@ pub fn scan_target(target: &str, port: u16, service: &str) -> Result<Vec<serde_j
     tracing::info!("nuclei 发现 {} 个漏洞", results.len());
     Ok(results)
 }
+
+/// 验证指定 CVE 是否在目标上存在
+pub fn verify_cve(target: &str, cve_id: &str, port: u16) -> Result<Vec<serde_json::Value>, String> {
+    if !is_nuclei_ready() {
+        return Err("nuclei 未安装".to_string());
+    }
+    let tgt = if port > 0 { format!("{}:{}", target, port) } else { target.to_string() };
+    let tmpl = templates_dir();
+
+    tracing::info!("nuclei 验证 CVE: target={}, cve={}", tgt, cve_id);
+
+    let output = nuclei_cmd()
+        .args(["-u", &tgt, "-id", cve_id, "-j", "-timeout", "15", "-t", &tmpl.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("nuclei 执行失败: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    tracing::info!("nuclei verify 完成: exit={}, stdout_lines={}, stderr={}",
+        output.status, stdout.lines().count(), stderr.trim());
+
+    let mut results = Vec::new();
+    for line in stdout.lines() {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+            results.push(v);
+        }
+    }
+    Ok(results)
+}

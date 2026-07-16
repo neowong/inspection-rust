@@ -38,7 +38,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
     items: [
       { key: "tools",      label: "工具箱",     path: "/tools",     icon: Wrench },
       { key: "logs",       label: "日志分析",    path: "/logs",      icon: FileSearch },
-      { key: "vulnscan",   label: "漏洞扫描",    path: "/vulnscan",  icon: BugPlay },
+      { key: "vulnscan",   label: "漏洞验证",    path: "/vulnscan",  icon: BugPlay },
     ],
   },
   {

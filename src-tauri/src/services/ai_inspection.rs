@@ -254,8 +254,17 @@ pub async fn analyze_with_openai(
 
     let finish_reason = parsed["choices"][0]["finish_reason"].as_str().unwrap_or("");
 
+    // 去除可能的 markdown 代码块包裹（```json ... ```）
+    let cleaned = content
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| content.trim().strip_prefix("```"))
+        .map(|s| s.strip_suffix("```").unwrap_or(s))
+        .unwrap_or(content)
+        .trim();
+
     // The content itself should be JSON
-    let analysis: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+    let analysis: serde_json::Value = serde_json::from_str(cleaned).map_err(|e| {
         if finish_reason == "length" {
             warn!(
                 "AI 输出被 max_tokens 截断: model={}, finish_reason=length, content_len={}",
