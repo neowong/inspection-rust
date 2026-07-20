@@ -1,5 +1,26 @@
 # 更新日志
 
+## v3.62.0 (2026-07-17) 🚧 草稿版
+
+### ✨ 新功能
+
+- **配置文件检查**：支持 11 种配置文件类型（Nginx/Apache/MySQL/Redis/Zabbix/SSH/Docker Compose/Systemd 等），自动清理注释，支持本地上传/手动粘贴/SSH 远程读取，AI 分析风险等级+分类问题+优化建议
+- **定时任务**：定时巡检和周期报告的 CRUD + 启用/禁用 + 手动执行，调度器每 60s 轮询到期任务
+- **周期报告**：按周/月/季/年聚合巡检统计，生成 DOCX 报告（封面+概况+趋势+对比+AI分析）
+
+### 🛠 修复
+
+- **AI分析JSON解析失败**：去除 AI 返回的 markdown 代码块包裹（` ```json ... ``` `），修复 JSON 解析报错
+- **Windows nuclei 控制台窗口**：子进程隐藏控制台窗口（`CREATE_NO_WINDOW`），修复扫描时闪 cmd 窗口
+- **漏洞扫描结果展示**：CPE 匹配结果和 nuclei 验证结果分离显示，更清晰
+
+### 🔧 技术
+
+- 后台日志完善：config_check/periodic_reports/scheduled_tasks/scheduler 四文件补充 35 条 tracing 日志
+- 项目文档完善：README/CLAUDE/USER_MANUAL + 清理编译警告
+
+---
+
 ## v3.61.0 (2026-07-15)
 
 ### ✨ 新功能
