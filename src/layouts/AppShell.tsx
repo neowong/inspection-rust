@@ -76,6 +76,11 @@ export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, setTheme } = useTheme();
+
+  // 首次渲染完成后通知 Rust 显示窗口（避免启动白屏闪烁）
+  useEffect(() => {
+    import("@tauri-apps/api/core").then(({ invoke }) => invoke("show_main_window")).catch(() => {});
+  }, []);
   const [collapsed, setCollapsed] = useState(false);
   const [navMode, setNavMode] = useState(() => {
     // 默认传统模式，仅当用户之前明确选择过 AI 模式时恢复

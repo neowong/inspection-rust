@@ -503,13 +503,27 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             startup_log("Tauri setup 完成，窗口即将显示");
-            // 加载离线 IP 归属地库（与二进制同目录的 ip2region_v4.xdb）
+            // 加载离线 IP 归属地库：优先 APP_DATA_DIR，兼容 exe_dir 旧文件自动迁移
+            let data_dir = crate::APP_DATA_DIR.get().map(|p| p.clone());
             let exe_dir = std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-            let xdb_path = exe_dir.as_ref().map(|d| d.join("ip2region_v4.xdb"));
-            match xdb_path.as_deref() {
-                Some(path) if path.exists() => {
+            let data_xdb = data_dir.as_ref().map(|d| d.join("ip2region_v4.xdb"));
+            let exe_xdb = exe_dir.as_ref().map(|d| d.join("ip2region_v4.xdb"));
+
+            // 找到可用路径：优先数据目录，其次 exe 目录（旧版本遗留）
+            let xdb_path = data_xdb.as_ref().filter(|p| p.exists())
+                .or_else(|| exe_xdb.as_ref().filter(|p| p.exists()));
+
+            match xdb_path {
+                Some(path) => {
+                    // 如果文件在 exe_dir 但不在 data_dir，自动迁移
+                    if let (Some(dd), Some(ep)) = (&data_dir, &exe_xdb) {
+                        if path == ep && !data_xdb.as_ref().map_or(false, |p| p.exists()) {
+                            let _ = std::fs::copy(ep, dd.join("ip2region_v4.xdb"));
+                            tracing::info!("[ip-db] 已从 exe 目录迁移到数据目录");
+                        }
+                    }
                     match crate::services::ip_location::load_xdb(path) {
                         Ok(data) => {
                             let state = app.state::<AppState>();
@@ -523,18 +537,15 @@ pub fn run() {
                 }
                 _ => {
                     tracing::info!(
-                        "ip2region_v4.xdb 未找到（路由跟踪归属地不可用）。请下载放到程序同目录: {}",
-                        exe_dir.map(|d| d.display().to_string()).unwrap_or_default()
+                        "ip2region_v4.xdb 未找到（路由跟踪归属地不可用），可通过工具箱一键下载"
                     );
                 }
             }
-            // 非 Linux: 窗口 visible:true 会在 WebView 就绪前闪白，
-            // 这里立即 hide 再等所有内容加载后 show 消除闪烁。
-            // Linux: visible:true 保持，hide+show 会导致关闭按钮失效。
+            // Windows/macOS: 立即隐藏窗口，等前端渲染完成后再显示，消除启动白屏闪烁
+            // Linux: 保持 visible:true，hide+show 会导致 WebKitGTK 标题栏装饰初始化失败（关闭按钮失效）
             #[cfg(not(target_os = "linux"))]
             if let Some(window) = app.get_webview_window("main") {
                 window.hide().ok();
-                window.show().ok();
             }
             Ok(())
         })
@@ -656,6 +667,8 @@ pub fn run() {
             commands::config_check::read_remote_config,
             // Stats
             get_stats,
+            // Window
+            show_main_window,
             // Chat
             chat_with_ai,
         ])
@@ -1135,6 +1148,16 @@ fn get_stats_inner(state: &tauri::State<'_, AppState>) -> Result<serde_json::Val
         "other_device_count": other_device_count,
         "report_count": report_count,
     }))
+}
+
+/// 前端渲染完成后调用，显示主窗口（避免启动时白屏闪烁）
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        tracing::info!("[startup] 主窗口已显示");
+    }
 }
 
 /// 对话模式：发送消息到 AI 并返回回复，支持 tool calling

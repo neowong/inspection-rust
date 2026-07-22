@@ -440,7 +440,7 @@ fn get_mac_address() -> Option<String> {
     }
 }
 
-/// 静默下载 ip2region_v4.xdb 到二进制同目录，完成后自动加载到内存
+/// 下载 ip2region_v4.xdb 到用户数据目录，完成后自动加载到内存
 /// 前端通过 listen("ip-db-download-progress") 监听进度 {percent, downloaded, total}
 #[tauri::command]
 pub async fn download_ip_db(
@@ -448,11 +448,13 @@ pub async fn download_ip_db(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<String, String> {
     let url = "https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb";
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .ok_or("无法获取程序目录")?;
-    let dest = exe_dir.join("ip2region_v4.xdb");
+    let data_dir = crate::APP_DATA_DIR
+        .get()
+        .ok_or("数据目录未初始化")?
+        .clone();
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("创建数据目录失败: {}", e))?;
+    let dest = data_dir.join("ip2region_v4.xdb");
 
     tracing::info!("[ip-db] 开始下载 {} → {}", url, dest.display());
 
@@ -636,17 +638,46 @@ fn run_traceroute_stream(
     let stdout = child.stdout.take().expect("stdout was piped");
     let mut last_hop: u32 = 0;
 
-    // Windows 使用 GBK 解码，Linux/macOS 使用 UTF-8
+    // Windows 使用 GBK 解码（逐块读取+实时解析，兼容多字节编码）
     #[cfg(target_os = "windows")]
     {
         use std::io::Read;
-        let mut buf = Vec::new();
-        BufReader::new(stdout).read_to_end(&mut buf).map_err(|e| format!("读取输出失败: {}", e))?;
-        // 尝试 GBK 解码，失败则用 UTF-8
-        let (decoded, _, _) = encoding_rs::GBK.decode(&buf);
-        for line in decoded.lines() {
-            let line = line.to_string();
-            process_trace_line(&app, ip_db, &line, &hop_re, &ip_re, &ms_re, &mut last_hop);
+        let mut reader = BufReader::new(stdout);
+        let mut raw_buf = [0u8; 4096];
+        let mut pending: Vec<u8> = Vec::new();
+        loop {
+            let n = match reader.read(&mut raw_buf) {
+                Ok(0) => break, // EOF
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            pending.extend_from_slice(&raw_buf[..n]);
+            // 按 \n 分割，处理完整行，保留不完整的尾部
+            while let Some(pos) = pending.iter().position(|&b| b == b'\n') {
+                let line_bytes = pending.drain(..=pos).collect::<Vec<u8>>();
+                // 去除 \r\n
+                let line_bytes = if line_bytes.ends_with(&[b'\n']) {
+                    &line_bytes[..line_bytes.len() - 1]
+                } else {
+                    &line_bytes
+                };
+                let line_bytes = if line_bytes.ends_with(&[b'\r']) {
+                    &line_bytes[..line_bytes.len() - 1]
+                } else {
+                    line_bytes
+                };
+                let (decoded, _, _) = encoding_rs::GBK.decode(line_bytes);
+                let line = decoded.to_string();
+                process_trace_line(&app, ip_db, &line, &hop_re, &ip_re, &ms_re, &mut last_hop);
+            }
+        }
+        // 处理 EOF 后的残余数据
+        if !pending.is_empty() {
+            let (decoded, _, _) = encoding_rs::GBK.decode(&pending);
+            let line = decoded.to_string();
+            if !line.trim().is_empty() {
+                process_trace_line(&app, ip_db, &line, &hop_re, &ip_re, &ms_re, &mut last_hop);
+            }
         }
     }
     #[cfg(not(target_os = "windows"))]

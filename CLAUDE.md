@@ -239,3 +239,6 @@ panic = "abort"        # 移除展开表
 - **SSH TCP 超时不回退**: `connect_session()` 检测到 TCP 连接失败直接返回错误，不再浪费 10s 试旧算法
 - **linux_runner TCP 预检**: `run_commands_exec()` 入口处 3s TCP 探测，不通直接返回，避免 N 个 worker 同时超时
 - **检测结果 `_warn` 字段**: `detect_db_info_sync` 返回 JSON 含 `_warn` 键，前端解析后以 warn 级别提示具体原因（密码错/端口不对/客户端未安装）
+- **用户数据必须存 APP_DATA_DIR**: 下载文件、缓存等用户可写数据必须存到 `APP_DATA_DIR`（`~/.local/share/inspection-rust/`），不能用 `exe_dir`（程序安装目录）。deb/exe 安装后程序目录无写权限。参考 nuclei_runner 使用 `APP_DATA_DIR/tools/`
+- **子进程实时输出禁止 read_to_end**: 需要逐行实时处理的子进程输出（如 traceroute），不能用 `read_to_end()` 一次性读完。应逐块读取后按 `\n` 分割，逐行解码处理并 emit。GBK 多字节编码下按 `\n` 分割是安全的
+- **窗口启动不闪烁方案**: `tauri.conf.json` 保持 `visible: true`，lib.rs setup 中 `#[cfg(not(target_os = "linux"))]` 立即 hide，前端 AppShell 渲染完成后调用 `invoke("show_main_window")` 显示。Linux 不能用 `visible: false` + show，否则 WebKitGTK 标题栏装饰不初始化、关闭按钮失效

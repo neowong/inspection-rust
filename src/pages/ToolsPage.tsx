@@ -829,7 +829,7 @@ function Traceroute() {
             <p className="text-xs text-[hsl(var(--danger))]">{downloadError}</p>
           )}
           <p className="text-xs text-[hsl(var(--text-tertiary))]">
-            自动下载 ip2region_v4.xdb（~11MB）到程序目录。也可手动下载：
+            自动下载 ip2region_v4.xdb（~11MB）到用户数据目录。也可手动下载：
             <a href="https://github.com/lionsoul2014/ip2region/raw/master/data/ip2region_v4.xdb" target="_blank" rel="noopener noreferrer" className="text-[hsl(var(--accent))] underline ml-1">GitHub</a>
           </p>
         </div>
