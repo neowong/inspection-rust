@@ -242,3 +242,4 @@ panic = "abort"        # 移除展开表
 - **用户数据必须存 APP_DATA_DIR**: 下载文件、缓存等用户可写数据必须存到 `APP_DATA_DIR`（`~/.local/share/inspection-rust/`），不能用 `exe_dir`（程序安装目录）。deb/exe 安装后程序目录无写权限。参考 nuclei_runner 使用 `APP_DATA_DIR/tools/`
 - **子进程实时输出禁止 read_to_end**: 需要逐行实时处理的子进程输出（如 traceroute），不能用 `read_to_end()` 一次性读完。应逐块读取后按 `\n` 分割，逐行解码处理并 emit。GBK 多字节编码下按 `\n` 分割是安全的
 - **窗口启动不闪烁方案**: `tauri.conf.json` 保持 `visible: true`，lib.rs setup 中 `#[cfg(not(target_os = "linux"))]` 立即 hide，前端 AppShell 渲染完成后调用 `invoke("show_main_window")` 显示。Linux 不能用 `visible: false` + show，否则 WebKitGTK 标题栏装饰不初始化、关闭按钮失效
+- **Windows 目录可写性检测**: `Permissions::readonly()` 在 Windows 上**不检查 NTFS ACL**，只检查 `FILE_ATTRIBUTE_READONLY` 标志，不能用于判断 Program Files 子目录是否可写。`create_dir_all` 在已存在的目录上即使无写权限也返回 `Ok`。Win11 的 Controlled Folder Access 会额外阻止写入。检测目录可写性必须用 `is_dir_writable()` 实际创建测试文件
