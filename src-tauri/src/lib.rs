@@ -152,15 +152,27 @@ fn is_webview2_installed() -> bool {
     false
 }
 
+/// 检测目录是否真正可写：创建目录 + 实际写入测试文件。
+/// Windows 上 `Permissions::readonly()` 只检查 FILE_ATTRIBUTE_READONLY，不检查 NTFS ACL；
+/// `create_dir_all` 在已存在的目录上即使无写权限也返回 Ok。
+/// Win11 的 Controlled Folder Access 会额外阻止写入 Program Files。
+fn is_dir_writable(dir: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(".write_probe");
+    match std::fs::OpenOptions::new().create(true).write(true).open(&probe) {
+        Ok(_) => { let _ = std::fs::remove_file(&probe); true }
+        Err(_) => false
+    }
+}
+
 /// 启动日志路径：优先 exe_dir/logs/，fallback 到 %LOCALAPPDATA%\ai-inspection\
 pub fn startup_log_path() -> std::path::PathBuf {
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
         let log_dir = exe_dir.join("logs");
-        if std::fs::create_dir_all(&log_dir).is_ok() {
-            let test_file = log_dir.join("startup.log");
-            if std::fs::OpenOptions::new().create(true).append(true).open(&test_file).is_ok() {
-                return test_file;
-            }
+        if is_dir_writable(&log_dir) {
+            return log_dir.join("startup.log");
         }
     }
     let fallback = dirs::data_local_dir()
@@ -287,7 +299,7 @@ pub fn run() {
     let debug_log = |msg: &str| {
         let log_file = if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
             let log_dir = exe_dir.join("logs");
-            if std::fs::create_dir_all(&log_dir).is_ok() {
+            if is_dir_writable(&log_dir) {
                 log_dir.join("debug.log")
             } else {
                 std::env::temp_dir().join("ai-inspection-debug.log")
@@ -367,10 +379,9 @@ pub fn run() {
         .and_then(|v| v.as_str())
         .map(|p| resolve_path(&exe_dir, p))
         .unwrap_or_else(|| {
-            // 尝试在 exe 目录创建 logs/，失败则 fallback
-            if std::fs::create_dir_all(&preferred_log_dir).is_ok()
-                && preferred_log_dir.metadata().map(|m| !m.permissions().readonly()).unwrap_or(false)
-            {
+            // 尝试在 exe 目录创建 logs/，实际写入测试确认权限
+            // Permissions::readonly() 在 Windows 上不检查 NTFS ACL，不可靠
+            if is_dir_writable(&preferred_log_dir) {
                 preferred_log_dir
             } else {
                 app_data_dir.join("logs")
